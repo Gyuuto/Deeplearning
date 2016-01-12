@@ -29,7 +29,7 @@ private:
 	std::mt19937 m;
 	std::uniform_real_distribution<double> d_rand;
 
-	std::vector<Mat> calc_gradient (const std::vector<Mat>& u, const Mat& d);
+	std::vector<Mat> calc_gradient (const std::vector<Mat>& u, const Mat& d, std::vector<Vec>& rho);
 public:
 	Neuralnet( const std::vector<int>& num_unit );
 	void set_function ( const int& idx,
@@ -59,7 +59,7 @@ public:
 
 //////////////////// PRIVATE FUNCTION ////////////////////
 std::vector<Neuralnet::Mat> Neuralnet::calc_gradient (
-	const std::vector<Mat>& u, const Mat& d )
+	const std::vector<Mat>& u, const Mat& d, std::vector<Vec>& rho )
 {
 	Mat delta(d.m, d.n);
 	for( int i = 0; i < delta.m; ++i ){
@@ -86,21 +86,34 @@ std::vector<Neuralnet::Mat> Neuralnet::calc_gradient (
 		auto W_T = Matrix<double>::transpose(W[i]);
 		auto nx_delta = W_T*delta;
 		delta = Mat(nx_delta.m-1, nx_delta.n);
+
+		const double R_LAMBDA = 0.9;
+		if( RHO > 1.0E-10 ){
+			for( int j = 0; j < u[i].m-1; ++j ){
+				double tmp_rho = 0.0;
+				for( int k = 0; k < u[i].n; ++k ){
+					tmp_rho += activate_func[i-1](u[i][1+j][k]);
+				}
+				tmp_rho /= u[i].n;
+				rho[i][j] = R_LAMBDA*rho[i][j] + (1-R_LAMBDA)*tmp_rho;
+			}
+		}
 		for( int j = 0; j < delta.m; ++j ){
+			double KL = (RHO > 1.0E-10 ? (1-RHO)/(1-std::abs(rho[i][j])) - RHO/std::abs(rho[i][j]) : 0.0);
 			for( int k = 0; k < delta.n; ++k ){
-				delta[j][k] = nx_delta[j+1][k]*activate_diff_func[i-1](u[i][j+1][k]);
+				delta[j][k] = (nx_delta[j+1][k] + BETA*KL)*activate_diff_func[i-1](u[i][j+1][k]);
 			}
 		}
 	}
-	
+
 	return nabla_w;
 }
 
 //////////////////// PUBLIC FUNCTION ////////////////////
 Neuralnet::Neuralnet( const std::vector<int>& num_unit )
-	:num_layer(num_unit.size()), num_unit(num_unit), EPS(1.0E-1), LAMBDA(1.0E-5), MU(0.3), BETA(0.0), RHO(0.0), BATCH_SIZE(1), K(1.0)
+	:num_layer(num_unit.size()), num_unit(num_unit), EPS(1.0E-1), LAMBDA(1.0E-5), MU(0.0), BETA(0.0), RHO(-1.0), BATCH_SIZE(1), K(1.0)
 {
-	m = std::mt19937(time(NULL));
+	m = std::mt19937(20160112);//time(NULL));
 	for( int i = 1; i < this->num_layer; ++i ){
 		double tmp = sqrt(6.0/(num_unit[i] + num_unit[i-1]));
 		d_rand = std::uniform_real_distribution<double>(-tmp, tmp);
@@ -108,7 +121,7 @@ Neuralnet::Neuralnet( const std::vector<int>& num_unit )
 
 		auto& w = *W.rbegin();
 		for( int j = 0; j < w.m; ++j )
-			for( int k = 0; k < w.n; ++k )
+			for( int k = 1; k < w.n; ++k )
 				w[j][k] = d_rand(m);
 	}
 
@@ -203,11 +216,20 @@ void Neuralnet::learning ( const std::vector<Vec>& x, const std::vector<Vec>& y,
 	int cnt = 0;
 	std::vector<Mat> prev_W(num_layer-1);
 	std::vector<Mat> ada_grad(num_layer-1);
+	std::vector<Vec> rho(num_layer-1);
 	for( int i = 0; i < num_layer-1; ++i ){
 		prev_W[i] = Mat(W[i].m, W[i].n);
 		ada_grad[i] = Mat(W[i].m, W[i].n);
+		rho[i] = Vec(num_unit[i+1], 0.5);
 	}
 	for( int n = 0; n <= MAX_ITER; ++n ){
+		// weight tied
+		// for( int i = 0; i < W[num_layer-2].m; ++i ){
+		// 	for( int j = 0; j < W[num_layer-2].n-1; ++j ){
+		// 		W[num_layer-2][i][1+j] = W[0][1+j][i];
+		// 	}
+		// }
+
 		Mat D(y[0].size(), BATCH_SIZE);
 		std::vector<Mat> U(num_layer);
 		U[0] = Mat(x[0].size()+1, BATCH_SIZE);
@@ -249,8 +271,8 @@ void Neuralnet::learning ( const std::vector<Vec>& x, const std::vector<Vec>& y,
 			}
 		}
 
-		auto nabla_w = calc_gradient(U, D);
-		for( int i = 0; i < nabla_w.size(); ++i ) nabla_w[i] = 1.0/BATCH_SIZE * nabla_w[i];
+		auto nabla_w = calc_gradient(U, D, rho);
+		// for( int i = 0; i < nabla_w.size(); ++i ) nabla_w[i] = 1.0/BATCH_SIZE * nabla_w[i];
 
 		// Calculate gradient numerically for confirmation of computing
 		// BATCH_SIZE = 1 is required!!
@@ -335,8 +357,17 @@ void Neuralnet::learning ( const std::vector<Vec>& x, const std::vector<Vec>& y,
 			}
 			error *= 0.5;
 
-			printf("Error : %.6E\nAverage : %.6E\nMin : %.6E\nMax : %.6E\n", error, error/x.size(), min_err, max_err);
-			printf("Learning Rate : \n");
+			double tmp = 0.0;
+			if( RHO > 1.0E-10 ){
+				for( int j = 1; j < num_layer-1; ++j )
+					for( int k = 0; k < num_unit[j]; ++k )
+						tmp += RHO*log(RHO/std::abs(rho[j][k])) + (1.0-RHO)*log((1.0-RHO)/std::abs(1.0-rho[j][k]));
+			}
+			error += BETA*tmp;
+			
+			printf("Error         :   Average    |      Min     |      Max    \n");
+			printf("                %12.6E | %12.6E | %12.6E\n", error/x.size(), min_err, max_err);
+			printf("Learning Rate :   Average    |      Min     |      Max    \n");
 			for( int i = 0; i < num_layer-1; ++i ){
 				double learn_rate = 0.0;
 				double max_learn_rate = EPS/sqrt(1.0 + ada_grad[i][0][0]);
@@ -347,7 +378,7 @@ void Neuralnet::learning ( const std::vector<Vec>& x, const std::vector<Vec>& y,
 						max_learn_rate = std::max(max_learn_rate, EPS/(1.0 + sqrt(ada_grad[i][j][k])));
 						min_learn_rate = std::min(min_learn_rate, EPS/(1.0 + sqrt(ada_grad[i][j][k])));
 					}
-				printf("\tLayer %d : (%.6E, %.6E, %.6E)\n", i, learn_rate / (ada_grad[i].m*ada_grad[i].n), max_learn_rate, min_learn_rate);
+				printf("      Layer %d   %12.6E | %12.6E | %12.6E\n", i, learn_rate / (ada_grad[i].m*ada_grad[i].n), min_learn_rate, max_learn_rate);
 			}
 			puts("");
 			fflush(stdout);
@@ -380,6 +411,19 @@ Neuralnet::Mat Neuralnet::apply ( const Mat& X )
 			U[0][j] = 1.0;
 			for( int k = 0; k < V.m; ++k ) U[k+1][j] = activate_func[i](V[k][j]);
 		}
+
+		if( K == 1.0 || i == num_layer-1 ) continue;
+		std::vector<int> idx(V.m);
+		std::iota(idx.begin(), idx.end(), 0);
+		for( int j = 0; j < V.n; ++j ){
+			auto cmp = [&]( const int& i1, const int& i2 ) -> bool {
+				return U[i1+1][j] > U[i2+1][j];
+			};
+
+			sort( idx.begin(), idx.end(), cmp );
+
+			for( int k = K*V.m; k < V.m; ++k ) U[1+idx[k]][j] = 0.0;
+		}
 	}
 
 	return U;
@@ -387,23 +431,7 @@ Neuralnet::Mat Neuralnet::apply ( const Mat& X )
 
 Neuralnet::Vec Neuralnet::apply ( const Vec& x )
 {
-	Mat u(x.size()+1, 1);
-
-	u[0][0] = 1.0;
-	for( int i = 0; i < x.size(); ++i ) u[i+1][0] = x[i];
-	for( int i = 0; i < num_layer-1; ++i ){
-		auto v = W[i]*u;
-
-		if( i == num_layer-2 ){
-			u = Mat(v.m, 1);
-			for( int j = 0; j < v.m; ++j ) u[j][0] = activate_func[i](v[j][0]);
-			continue;
-		}
-		u = Mat(v.m+1, 1);
-		u[0][0] = 1.0;
-		for( int j = 0; j < v.m; ++j ) u[j+1][0] = activate_func[i](v[j][0]);
-	}
-
+	Mat u = apply(Mat(x));
 	Vec ret(u.m);
 	for( int i = 0; i < u.m; ++i ) ret[i] = u[i][0];
 
