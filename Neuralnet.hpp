@@ -17,7 +17,7 @@ private:
 	typedef std::vector<double> Vec;
 
 	int BATCH_SIZE;
-	double EPS, LAMBDA, MU, BETA, RHO, K, P;
+	double EPS, LAMBDA, MU, ALPHA, BETA, RHO, K, P;
 
 	int num_layer;
 	std::vector<int> num_unit;
@@ -38,6 +38,7 @@ public:
 	void set_EPS ( const double& EPS );
 	void set_LAMBDA ( const double& LAMBDA );
 	void set_MU ( const double& MU );
+	void set_ALPHA ( const double& ALPHA );
 	void set_BETA ( const double& BETA );
 	void set_RHO ( const double& RHO );
 	void set_K ( const double& K );
@@ -88,7 +89,7 @@ std::vector<Neuralnet::Mat> Neuralnet::calc_gradient (
 		delta = Mat(nx_delta.m-1, nx_delta.n);
 
 		const double R_LAMBDA = 0.9;
-		if( RHO > 1.0E-10 ){
+		if( RHO > -1.0E-10 ){
 			for( int j = 0; j < u[i].m-1; ++j ){
 				double tmp_rho = 0.0;
 				for( int k = 0; k < u[i].n; ++k ){
@@ -99,7 +100,7 @@ std::vector<Neuralnet::Mat> Neuralnet::calc_gradient (
 			}
 		}
 		for( int j = 0; j < delta.m; ++j ){
-			double KL = (RHO > 1.0E-10 ? (1-RHO)/(1-std::abs(rho[i][j])) - RHO/std::abs(rho[i][j]) : 0.0);
+			double KL = (RHO > -1.0E-10 ? (1-RHO)/(1-rho[i][j]) - RHO/rho[i][j] : 0.0);
 			for( int k = 0; k < delta.n; ++k ){
 				delta[j][k] = (nx_delta[j+1][k] + BETA*KL)*activate_diff_func[i-1](u[i][j+1][k]);
 			}
@@ -111,9 +112,10 @@ std::vector<Neuralnet::Mat> Neuralnet::calc_gradient (
 
 //////////////////// PUBLIC FUNCTION ////////////////////
 Neuralnet::Neuralnet( const std::vector<int>& num_unit )
-	:num_layer(num_unit.size()), num_unit(num_unit), EPS(1.0E-1), LAMBDA(1.0E-5), MU(0.0), BETA(0.0), RHO(-1.0), BATCH_SIZE(1), K(1.0)
+	:num_layer(num_unit.size()), num_unit(num_unit),
+	 EPS(1.0E-1), LAMBDA(1.0E-5), MU(0.0), ALPHA(1.0), BETA(0.0), RHO(-1.0), BATCH_SIZE(1), K(1.0)
 {
-	m = std::mt19937(20160112);//time(NULL));
+	m = std::mt19937(time(NULL));
 	for( int i = 1; i < this->num_layer; ++i ){
 		double tmp = sqrt(6.0/(num_unit[i] + num_unit[i-1]));
 		d_rand = std::uniform_real_distribution<double>(-tmp, tmp);
@@ -152,6 +154,11 @@ void Neuralnet::set_MU ( const double& MU )
 	this->MU = MU;
 }
 	
+void Neuralnet::set_ALPHA ( const double& ALPHA )
+{
+	this->ALPHA = ALPHA;
+}
+
 void Neuralnet::set_BETA ( const double& BETA )
 {
 	this->BETA = BETA;
@@ -220,7 +227,7 @@ void Neuralnet::learning ( const std::vector<Vec>& x, const std::vector<Vec>& y,
 	for( int i = 0; i < num_layer-1; ++i ){
 		prev_W[i] = Mat(W[i].m, W[i].n);
 		ada_grad[i] = Mat(W[i].m, W[i].n);
-		rho[i] = Vec(num_unit[i+1], 0.5);
+		rho[i] = Vec(num_unit[i+1], 1.0);
 	}
 	for( int n = 0; n <= MAX_ITER; ++n ){
 		// weight tied
@@ -309,7 +316,6 @@ void Neuralnet::learning ( const std::vector<Vec>& x, const std::vector<Vec>& y,
 
 			// AdaGrad
 			for( int j = 0; j < W[i].m; ++j ){
-				double tmp = 0.0;
 				for( int k = 0; k < W[i].n; ++k )
 					ada_grad[i][j][k] += nabla_w[i][j][k]*nabla_w[i][j][k];
 			}
@@ -355,18 +361,20 @@ void Neuralnet::learning ( const std::vector<Vec>& x, const std::vector<Vec>& y,
 				max_err = std::max(max_err, sum);
 				error += sum;
 			}
-			error *= 0.5;
+			// error *= 0.5;
 
 			double tmp = 0.0;
 			if( RHO > 1.0E-10 ){
 				for( int j = 1; j < num_layer-1; ++j )
-					for( int k = 0; k < num_unit[j]; ++k )
-						tmp += RHO*log(RHO/std::abs(rho[j][k])) + (1.0-RHO)*log((1.0-RHO)/std::abs(1.0-rho[j][k]));
+					for( int k = 0; k < num_unit[j]; ++k ){
+						tmp += RHO*log(RHO/rho[j][k]) + (1.0-RHO)*log((1.0-RHO)/(1.0-rho[j][k]));
+					}
 			}
-			error += BETA*tmp;
+			error = error/x.size() + BETA*tmp;
 			
 			printf("Error         :   Average    |      Min     |      Max    \n");
-			printf("                %12.6E | %12.6E | %12.6E\n", error/x.size(), min_err, max_err);
+			printf("                %12.6E | %12.6E | %12.6E\n", (error-BETA*tmp), min_err, max_err);
+			printf("                %12.6E = %12.6E + %12.6E\n", error, (error-BETA*tmp), BETA*tmp);
 			printf("Learning Rate :   Average    |      Min     |      Max    \n");
 			for( int i = 0; i < num_layer-1; ++i ){
 				double learn_rate = 0.0;
@@ -382,6 +390,8 @@ void Neuralnet::learning ( const std::vector<Vec>& x, const std::vector<Vec>& y,
 			}
 			puts("");
 			fflush(stdout);
+
+			output_W("autoenc_W.dat");
 			// for( int i = 0; i < num_layer-1; ++i ) ada_grad[i] *= 0.8;
 		}
 	}
@@ -422,7 +432,7 @@ Neuralnet::Mat Neuralnet::apply ( const Mat& X )
 
 			sort( idx.begin(), idx.end(), cmp );
 
-			for( int k = K*V.m; k < V.m; ++k ) U[1+idx[k]][j] = 0.0;
+			for( int k = ALPHA*K*V.m; k < V.m; ++k ) U[1+idx[k]][j] = 0.0;
 		}
 	}
 

@@ -83,22 +83,22 @@ struct Matrix
 		for( i = 0; i < m; ++i )
 			for( j = 0; j < n; ++j )
 				ret[i][j] = m1[i][j] + m2[i][j];
-
+		
 		return ret;
 	}
-
+	
 	friend Matrix<T> operator - ( const Matrix<T>& m1, const Matrix<T>& m2 )
 	{
 		int i, j;
 		int m = m1.m, n = m1.n;
 		Matrix<T> ret(m, n);
-
-#pragma omp parallel for default(none) \
+		
+#pragma omp parallel for default(none)			\
 	private(i,j) shared(m,n,m1,m2,ret)
 		for( i = 0; i < m; ++i )
 			for( j = 0; j < n; ++j )
 				ret[i][j] = m1[i][j] - m2[i][j];
-
+		
 		return ret;
 	}
 
@@ -179,7 +179,7 @@ template<class T>
 void LU_decomp ( Matrix<T> A, Matrix<T>& L, Matrix<T>& U, Matrix<T>& P )
 {
 	int m = A.m, n = A.n;
-
+	
 	if( m > n ){
 		L = Matrix<T>::eye(m, n);
 		U = Matrix<T>::zeros(n, n);
