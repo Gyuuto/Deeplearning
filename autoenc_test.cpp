@@ -24,6 +24,7 @@
 
 #include <random>
 #include <unistd.h>
+#include <chrono>
 
 using namespace std;
 
@@ -76,7 +77,7 @@ const int dy[] = { 0, -1, 0, 1 };
 
 int main()
 {
-	vector<int> num_unit = { 28*28, 400, 10 };
+	vector<int> num_unit = { 28*28, 400, 28*28 };
 	Neuralnet nn(num_unit);
 
 	const double alpha = 1.0;
@@ -89,15 +90,14 @@ int main()
 	auto o_f = [](double x) -> double { return x; };
 	auto o_d_f = [](double x) -> double { return 1.0; };
 	
-	for( int i = 0; i < num_unit.size()-2; ++i ){
-		nn.set_function(i, o_f, o_d_f);
+	for( int i = 0; i < num_unit.size()-1; ++i ){
+		nn.set_function(i, R_f, R_d_f);
 	}
-  	nn.set_function(num_unit.size()-2, o_f, o_d_f);
-	nn.set_function(num_unit.size()-1, o_f, o_d_f);
-	
+  	nn.set_function(num_unit.size()-1, o_f, o_d_f);
+
 	vector<int> lab;
 	vector<vector<double>> x;
-	const int N = 10000;
+	const int N = 3000;
 	ifstream image("train-images-idx3-ubyte", ios_base::in | ios_base::binary);
 	ifstream label("train-labels-idx1-ubyte", ios_base::in | ios_base::binary);
 	for( int i = 0; x.size() < N; ++i ){
@@ -148,20 +148,24 @@ int main()
 	}
 	
 	nn.set_EPS(1.0E-1);
-	nn.set_LAMBDA(1.0E-4);
+	nn.set_LAMBDA(0.0E-4);
 	nn.set_MU(0.0);
 	// nn.set_BETA(1.0);
-	// nn.set_RHO(0.1);
+	// nn.set_RHO(0.3);
 	// nn.set_K(10.0/num_unit[1]);
 	// nn.set_ALPHA(3.0);
 	nn.set_BATCHSIZE(50);
 	
-	// nn.set_W( "autoenc_W_recog.dat" );
+	// nn.set_W( "autoenc_W_ReLU_1000.dat" );
 	
 	vector<vector<double>> d(x.size(), vector<double>(10, 0.0));
 	rep(i, d.size()) d[i][lab[i]] = 1.0;		
-	
-	nn.learning(y, d, N/50*100);
+
+	auto beg = chrono::system_clock::now();
+	nn.learning(y, x, N/50*20);
+	auto end = chrono::system_clock::now();
+
+	cout << chrono::duration_cast<chrono::milliseconds>(end - beg).count()/1000.0 << "[s]" << endl;
 	
 	// rep(i, x.size()){
 	// 	auto y = nn.apply(x[i]);
@@ -170,40 +174,40 @@ int main()
 	// 	printf("%d %.6E %.6E %.6E\n", i, err, x[i][300], y[300]);
 	// }
 
-	ifstream t_image("t10k-images-idx3-ubyte", ios_base::in | ios_base::binary);
-	ifstream t_label("t10k-labels-idx1-ubyte", ios_base::in | ios_base::binary);
-	int ans_num = 0;
-	for( int i = 0; i < 10000; ++i ){
-		int beg = 4*4 + 28*28*i;
-		t_image.seekg(beg, ios_base::beg);
-		t_label.seekg(4*2+i, ios_base::beg);
+	// ifstream t_image("t10k-images-idx3-ubyte", ios_base::in | ios_base::binary);
+	// ifstream t_label("t10k-labels-idx1-ubyte", ios_base::in | ios_base::binary);
+	// int ans_num = 0;
+	// for( int i = 0; i < 10000; ++i ){
+	// 	int beg = 4*4 + 28*28*i;
+	// 	t_image.seekg(beg, ios_base::beg);
+	// 	t_label.seekg(4*2+i, ios_base::beg);
 
-		unsigned char tmp_lab;
-		t_label.read((char*)&tmp_lab, sizeof(unsigned char));
+	// 	unsigned char tmp_lab;
+	// 	t_label.read((char*)&tmp_lab, sizeof(unsigned char));
 		
-		vector<double> tmp(28*28);
-		for( int j = 0; j < 28*28; ++j ){
-			unsigned char c;
-			t_image.read((char*)&c, sizeof(unsigned char));
-			tmp[j] = ((c/255.0)-ave[j][0])/sigma;
-		}
+	// 	vector<double> tmp(28*28);
+	// 	for( int j = 0; j < 28*28; ++j ){
+	// 		unsigned char c;
+	// 		t_image.read((char*)&c, sizeof(unsigned char));
+	// 		tmp[j] = ((c/255.0)-ave[j][0])/sigma;
+	// 	}
 
-		auto y = nn.apply(tmp);
-		vector<double> prob(10, 0.0);
-		int idx;
-		double sum = 0.0, max_num = 0.0;
-		rep(j, 10) sum += exp(y[j]);
-		rep(j, 10){
-			prob[j] = exp(y[j]) / sum;
-			if( max_num < prob[j] ){
-				max_num = prob[j];
-				idx = j;
-			}
-		}
-		if( idx == tmp_lab ) ++ans_num;
-		// printf("%d : label = %d, select = %d\n\t", i, tmp_lab, idx);
-		// rep(j, 10) printf("(%d, %.4E) ", j, prob[j]);
-		// puts("");
-	}
-	printf("Answer rate : %.6E\n", (double)ans_num/10000.0);
+	// 	auto y = nn.apply(tmp);
+	// 	vector<double> prob(10, 0.0);
+	// 	int idx;
+	// 	double sum = 0.0, max_num = 0.0;
+	// 	rep(j, 10) sum += exp(y[j]);
+	// 	rep(j, 10){
+	// 		prob[j] = exp(y[j]) / sum;
+	// 		if( max_num < prob[j] ){
+	// 			max_num = prob[j];
+	// 			idx = j;
+	// 		}
+	// 	}
+	// 	if( idx == tmp_lab ) ++ans_num;
+	// 	// printf("%c%d : label = %d, select = %d\n\t", (idx == tmp_lab ? ' ' : '!'), i, tmp_lab, idx);
+	// 	// rep(j, 10) printf("(%d, %.4E) ", j, prob[j]);
+	// 	// puts("");
+	// }
+	// printf("Answer rate : %.2f%%\n", (double)ans_num/10000.0*100.0);
 }
