@@ -72,11 +72,10 @@ std::vector<Neuralnet::Mat> Neuralnet::calc_gradient (
 	
 	std::vector<Mat> nabla_w(W.size());
 	for( int i = 0; i < W.size(); ++i ) nabla_w[i] = Mat::zeros(W[i].m, W[i].n);
-	int i, j, k, l;
-	for( i = num_layer-2; i >= 0; --i ){
-		for( j = 0; j < nabla_w[i].m; ++j ){
-			for( k = 0; k < nabla_w[i].n; ++k ){
-				for( l = 0; l < delta.n; ++l ){
+	for( int i = num_layer-2; i >= 0; --i ){
+		for( int j = 0; j < nabla_w[i].m; ++j ){
+			for( int k = 0; k < nabla_w[i].n; ++k ){
+				for( int l = 0; l < delta.n; ++l ){
 					nabla_w[i][j][k] += delta[j][l]*(
 						i == 0 || k == 0 ? u[i][k][l] : activate_func[i-1](u[i][k][l])
 						);
@@ -91,18 +90,18 @@ std::vector<Neuralnet::Mat> Neuralnet::calc_gradient (
 
 		if( BETA > 1.0E-10 ){
 			const double R_LAMBDA = 0.9;
-			for( j = 0; j < u[i].m-1; ++j ){
+			for( int j = 0; j < u[i].m-1; ++j ){
 				double tmp_rho = 0.0;
-				for( k = 0; k < u[i].n; ++k ){
+				for( int k = 0; k < u[i].n; ++k ){
 					tmp_rho += activate_func[i-1](u[i][1+j][k]);
 				}
 				tmp_rho /= u[i].n;
 				rho[i][j] = R_LAMBDA*rho[i][j] + (1-R_LAMBDA)*tmp_rho;
 			}
 		}
-		for( j = 0; j < delta.m; ++j ){
+		for( int j = 0; j < delta.m; ++j ){
 			double KL = (BETA > 1.0E-10 ? (1-RHO)/(1-rho[i][j]) - RHO/rho[i][j] : 0.0);
-			for( k = 0; k < delta.n; ++k ){
+			for( int k = 0; k < delta.n; ++k ){
 				delta[j][k] = (nx_delta[j+1][k] + BETA*KL)*activate_diff_func[i-1](u[i][j+1][k]);
 			}
 		}
@@ -223,12 +222,12 @@ void Neuralnet::learning ( const std::vector<Vec>& x, const std::vector<Vec>& y,
 
 	int cnt = 0;
 	std::vector<Mat> prev_W(num_layer-1);
-	std::vector<Mat> ada_grad(num_layer-1);
 	std::vector<Vec> rho(num_layer-1);
+	std::vector<Mat> adagrad(num_layer-1);
 	for( int i = 0; i < num_layer-1; ++i ){
 		prev_W[i] = Mat(W[i].m, W[i].n);
-		ada_grad[i] = Mat::zeros(W[i].m, W[i].n);
-		rho[i] = Vec(num_unit[i+1], 1.0);
+		adagrad[i] = Mat::zeros(W[i].m, W[i].n);
+		rho[i] = Vec(num_unit[i], 0.0);
 	}
 	for( int n = 0; n <= MAX_ITER; ++n ){
 		Mat D(y[0].size(), BATCH_SIZE);
@@ -266,19 +265,19 @@ void Neuralnet::learning ( const std::vector<Vec>& x, const std::vector<Vec>& y,
 		// 	printf("\tlayer %d\n", i);
 		// 	for( int j = 0; j < nabla_w[i].m; ++j ){
 		// 		for( int k = 0; k < nabla_w[i].n; ++k ){
-		// 			const double EPS = 1.0E-6*(std::abs(W[i][j][k]) < 1.0E-10 ? 1.0 : std::abs(W[i][j][k]));
+		// 			const double EPS = 1.0E-10*(std::abs(W[i][j][k]) < 1.0E-5 ? 1.0 : std::abs(W[i][j][k]));
 					
 		// 			W[i][j][k] += EPS;
 		// 			auto tmp1 = Mat(apply(x[cnt]));
 		// 			auto E1 = (Mat::transpose(tmp1 - Mat(y[cnt]))*(tmp1 - Mat(y[cnt])))[0][0];
-		// 			for( int l = 0; l < nabla_w[i].m; ++l ) E1 += RHO*log(RHO/rho[i][l]) + (1.0-RHO)*log((1.0-RHO)/(1.0-rho[i][l]));
+		// 			// for( int l = 0; l < nabla_w[i].m; ++l ) E1 += RHO*log(RHO/rho[i][l]) + (1.0-RHO)*log((1.0-RHO)/(1.0-rho[i][l]));
 
 		// 			W[i][j][k] -= EPS;
 		// 			auto tmp2 = Mat(apply(x[cnt]));
 		// 			auto E2 = (Mat::transpose(tmp2 - Mat(y[cnt]))*(tmp2 - Mat(y[cnt])))[0][0];
-		// 			for( int l = 0; l < nabla_w[i].m; ++l ) E2 += RHO*log(RHO/rho[i][l]) + (1.0-RHO)*log((1.0-RHO)/std::max(0.0001,1.0-rho[i][l]));
+		// 			// for( int l = 0; l < nabla_w[i].m; ++l ) E2 += RHO*log(RHO/rho[i][l]) + (1.0-RHO)*log((1.0-RHO)/std::max(0.0001,1.0-rho[i][l]));
 					
-		// 			printf("\t%3d, %3d : ( %.10E, %.10E = %.10E)\n", j, k, 0.5*(E1 - E2)/EPS, nabla_w[i][j][k], std::abs(0.5*(E1 - E2)/EPS - nabla_w[i][j][k]));
+		// 			printf("\t%3d, %3d : ( %.10E, %.10E = %.10E)\n", j, k, 0.5*(E1 - E2)/EPS, nabla_w[i][j][k], (std::abs(0.5*(E1 - E2)/EPS - nabla_w[i][j][k]))/std::abs(0.5*(E1 - E2)/EPS));
 		// 			// tmp_nabla_w[j][k][l] = 0.5*(E1[0][0] - E2[0][0])/EPS;
 		// 		}
 		// 	}
@@ -292,20 +291,21 @@ void Neuralnet::learning ( const std::vector<Vec>& x, const std::vector<Vec>& y,
 		
 		// update W
 		for( int i = 0; i < num_layer-1; ++i ){
-			auto update_W = W[i];
-			for( int j = 0; j < update_W.m; ++j ) update_W[j][0] = 0.0;
-
-			// AdaGrad
-			const double beta = 0.0;
-			for( int j = 0; j < W[i].m; ++j ){
-				for( int k = 0; k < W[i].n; ++k )
-					ada_grad[i][j][k] += nabla_w[i][j][k]*nabla_w[i][j][k];
-			}
-
-			for( int j = 0; j < update_W.m; ++j )
-				for( int k = 0; k < update_W.n; ++k )
-					update_W[j][k] = -EPS/(1.0+sqrt(ada_grad[i][j][k]))*(LAMBDA*update_W[j][k] + nabla_w[i][j][k]) + MU*prev_W[i][j][k];
+			Mat update_W(W[i].m, W[i].n);
 			
+			// L2 norm regularization
+			for( int j = 0; j < W[i].m; ++j )
+				for( int k = 1; k < W[i].n; ++k )
+					nabla_w[i][j][k] += LAMBDA*W[i][j][k];
+
+			// Adagrad
+			for( int j = 0; j < W[i].m; ++j )
+				for( int k = 0; k < W[i].n; ++k )
+					adagrad[i][j][k] += nabla_w[i][j][k]*nabla_w[i][j][k];
+			for( int j = 0; j < W[i].m; ++j )
+				for( int k = 0; k < W[i].n; ++k )
+					update_W[j][k] = -EPS/(sqrt(adagrad[i][j][k])+1.0)*nabla_w[i][j][k] + MU*prev_W[i][j][k];
+
 			W[i] = W[i] + update_W;
 			prev_W[i] = update_W;
 		}
@@ -313,26 +313,6 @@ void Neuralnet::learning ( const std::vector<Vec>& x, const std::vector<Vec>& y,
 		if( n%(x.size()/BATCH_SIZE) == 0 ){
 			printf("%lu Epoch : \n", n/(x.size()/BATCH_SIZE));
 
-			// puts("Gradient of W :");
-			// for( int i = 0; i < num_layer-1; ++i ){
-			// 	printf("layer %d : \n", i);
-			// 	for( int j = 0; j < nabla_w[i].m; ++j ){
-			// 		printf("\t");
-			// 		for( int k = 0; k < nabla_w[i].n; ++k ) printf("%.3E ", nabla_w[i][j][k]);
-			// 		puts("");
-			// 	}
-			// }
-
-			// puts("W :");
-			// for( int i = 0; i < num_layer-1; ++i ){
-			// 	printf("layer %d : \n", i);
-			// 	for( int j = 0; j < W[i].m; ++j ){
-			// 		printf("\t");
-			// 		for( int k = 0; k < W[i].n; ++k ) printf("%.3E ", W[i][j][k]);
-			// 		puts("");
-			// 	}
-			// }
-			
 			double error[3] = { 0.0 }, min_err = 1.0E100, max_err = 0.0;
 			for( int i = 0; i < x.size(); ++i ){
 				Vec v = apply(x[i]);
@@ -363,24 +343,28 @@ void Neuralnet::learning ( const std::vector<Vec>& x, const std::vector<Vec>& y,
 			printf("                %12.6E | %12.6E | %12.6E\n", error[0], min_err, max_err);
 			printf("                %12.6E = %12.6E + %12.6E + %12.6E\n",
 				   error[0]+error[1]+error[2], error[0], error[1], error[2]);
-			printf("Learning Rate :   Average    |      Min     |      Max    \n");
+			printf("Learning rate :   Average    |      Min     |      Max    \n");
 			for( int i = 0; i < num_layer-1; ++i ){
-				double learn_rate = 0.0;
-				double max_learn_rate = EPS/sqrt(1.0 + ada_grad[i][0][0]);
-				double min_learn_rate = EPS/sqrt(1.0 + ada_grad[i][0][0]);
-				for( int j = 0; j < ada_grad[i].m; ++j )
-					for( int k = 0; k < ada_grad[i].n; ++k ){
-						learn_rate += EPS/sqrt(1.0 + ada_grad[i][j][k]);
-						max_learn_rate = std::max(max_learn_rate, EPS/(1.0 + sqrt(ada_grad[i][j][k])));
-						min_learn_rate = std::min(min_learn_rate, EPS/(1.0 + sqrt(ada_grad[i][j][k])));
+				double ave_learn_rate = 0.0;
+				double max_learn_rate = -1.0E100;
+				double min_learn_rate = 1.0E100;
+				
+				// Adagrad
+				for( int j = 0; j < adagrad[i].m; ++j )
+					for( int k = 0; k < adagrad[i].n; ++k ){
+						auto tmp = EPS/(sqrt(adagrad[i][j][k]) + 1.0);
+						ave_learn_rate += tmp;
+						max_learn_rate = std::max(max_learn_rate, tmp);
+						min_learn_rate = std::min(min_learn_rate, tmp);
 					}
-				printf("      Layer %d   %12.6E | %12.6E | %12.6E\n", i, learn_rate / (ada_grad[i].m*ada_grad[i].n), min_learn_rate, max_learn_rate);
+				ave_learn_rate /= (adagrad[i].m*adagrad[i].n);
+
+				printf("      Layer %d   %12.6E | %12.6E | %12.6E\n", i, ave_learn_rate, min_learn_rate, max_learn_rate);
 			}
 			puts("");
 			fflush(stdout);
 
 			output_W("autoenc_W.dat");
-			// for( int i = 0; i < num_layer-1; ++i ) ada_grad[i] *= 0.8;
 		}
 	}
 }
@@ -411,6 +395,10 @@ Neuralnet::Mat Neuralnet::apply ( const Mat& X )
 		}
 	}
 
+	for( int i = 0; i < U.m; ++i )
+		for( int j = 0; j < U.n; ++j )
+			U[i][j] = activate_func[num_layer-1](U[i][j]);
+	
 	return U;
 }
 
