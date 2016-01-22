@@ -223,10 +223,13 @@ void Neuralnet::learning ( const std::vector<Vec>& x, const std::vector<Vec>& y,
 	int cnt = 0;
 	std::vector<Mat> prev_W(num_layer-1);
 	std::vector<Vec> rho(num_layer-1);
-	std::vector<Mat> adagrad(num_layer-1);
+	std::vector<Mat> adam_v(num_layer-1), adam_r(num_layer-1);
+	const double adam_beta = 0.9, adam_gamma = 0.999, adam_eps = 1.0E-8;
+	double adam_beta_ = 1.0, adam_gamma_ = 1.0;
 	for( int i = 0; i < num_layer-1; ++i ){
 		prev_W[i] = Mat(W[i].m, W[i].n);
-		adagrad[i] = Mat::zeros(W[i].m, W[i].n);
+		adam_v[i] = Mat::zeros(W[i].m, W[i].n);
+		adam_r[i] = Mat::zeros(W[i].m, W[i].n);
 		rho[i] = Vec(num_unit[i], 0.0);
 	}
 	for( int n = 0; n <= MAX_ITER; ++n ){
@@ -298,13 +301,21 @@ void Neuralnet::learning ( const std::vector<Vec>& x, const std::vector<Vec>& y,
 				for( int k = 1; k < W[i].n; ++k )
 					nabla_w[i][j][k] += LAMBDA*W[i][j][k];
 
-			// Adagrad
+			// ADAM
+			adam_beta_ *= adam_beta;
+			adam_gamma_ *= adam_gamma;
 			for( int j = 0; j < W[i].m; ++j )
-				for( int k = 0; k < W[i].n; ++k )
-					adagrad[i][j][k] += nabla_w[i][j][k]*nabla_w[i][j][k];
+				for( int k = 0; k < W[i].n; ++k ){
+					adam_v[i][j][k] = adam_beta*adam_v[i][j][k] + (1.0 - adam_beta)*nabla_w[i][j][k];
+					adam_r[i][j][k] = adam_gamma*adam_r[i][j][k] + (1.0 - adam_gamma)*(nabla_w[i][j][k]*nabla_w[i][j][k]);
+				}
+
 			for( int j = 0; j < W[i].m; ++j )
-				for( int k = 0; k < W[i].n; ++k )
-					update_W[j][k] = -EPS/(sqrt(adagrad[i][j][k])+1.0)*nabla_w[i][j][k] + MU*prev_W[i][j][k];
+				for( int k = 0; k < W[i].n; ++k ){
+					auto v_hat = adam_v[i][j][k] / (1.0 - adam_beta_);
+					auto r_hat = adam_r[i][j][k] / (1.0 - adam_gamma_);
+					update_W[j][k] = -EPS*v_hat/(sqrt(r_hat)+adam_eps) + MU*prev_W[i][j][k];
+				}
 
 			W[i] = W[i] + update_W;
 			prev_W[i] = update_W;
@@ -335,31 +346,34 @@ void Neuralnet::learning ( const std::vector<Vec>& x, const std::vector<Vec>& y,
 
 			for( int i = 0; i < W.size(); ++i )
 				for( int j = 0; j < W[i].m; ++j )
-					for( int k = 0; k < W[i].n; ++k )
+					for( int k = 1; k < W[i].n; ++k )
 						error[2] += W[i][j][k]*W[i][j][k];
 			error[2] *= LAMBDA;
 			
-			printf("Error         :   Average    |      Min     |      Max    \n");
-			printf("                %12.6E | %12.6E | %12.6E\n", error[0], min_err, max_err);
-			printf("                %12.6E = %12.6E + %12.6E + %12.6E\n",
+			printf("Error    :    Average    |      Min      |      Max      |\n");
+			printf("           %13.6E | %13.6E | %13.6E |\n", error[0], min_err, max_err);
+			printf("           Sum of errors | Squared error | Sparse regul. |L2 norm regul. |\n");
+			printf("           %13.6E = %13.6E + %13.6E + %13.6E\n",
 				   error[0]+error[1]+error[2], error[0], error[1], error[2]);
-			printf("Learning rate :   Average    |      Min     |      Max    \n");
+			printf("Gradient :    Average    |      Min      |      Max      |\n");
 			for( int i = 0; i < num_layer-1; ++i ){
-				double ave_learn_rate = 0.0;
-				double max_learn_rate = -1.0E100;
-				double min_learn_rate = 1.0E100;
+				double ave_gradient = 0.0;
+				double max_gradient = -1.0E100;
+				double min_gradient = 1.0E100;
 				
-				// Adagrad
-				for( int j = 0; j < adagrad[i].m; ++j )
-					for( int k = 0; k < adagrad[i].n; ++k ){
-						auto tmp = EPS/(sqrt(adagrad[i][j][k]) + 1.0);
-						ave_learn_rate += tmp;
-						max_learn_rate = std::max(max_learn_rate, tmp);
-						min_learn_rate = std::min(min_learn_rate, tmp);
+				for( int j = 0; j < W[i].m; ++j )
+					for( int k = 0; k < W[i].n; ++k ){
+						auto v_hat = adam_v[i][j][k]/(1.0 - adam_beta_);
+						auto r_hat = adam_r[i][j][k]/(1.0 - adam_gamma_);
+						auto tmp = -EPS*v_hat/(sqrt(r_hat) + adam_eps);
+						
+						ave_gradient += tmp;
+						max_gradient = std::max(max_gradient, tmp);
+						min_gradient = std::min(min_gradient, tmp);
 					}
-				ave_learn_rate /= (adagrad[i].m*adagrad[i].n);
+				ave_gradient /= (W[i].m*W[i].n);
 
-				printf("      Layer %d   %12.6E | %12.6E | %12.6E\n", i, ave_learn_rate, min_learn_rate, max_learn_rate);
+				printf(" Layer %d   %13.6E | %13.6E | %13.6E |\n", i, ave_gradient, min_gradient, max_gradient);
 			}
 			puts("");
 			fflush(stdout);
