@@ -17,11 +17,12 @@ private:
 	typedef std::vector<double> Vec;
 
 	int BATCH_SIZE;
-	double EPS, LAMBDA, MU, ALPHA, BETA, RHO, K, P;
+	double EPS, LAMBDA, MU, BETA, RHO, DO_PROB;
 
 	int num_layer;
 	std::vector<int> num_unit;
 	std::vector<Mat> W;
+	std::vector<Vec> mask;
 	
 	std::vector<std::function<double(double)>> activate_func;
 	std::vector<std::function<double(double)>> activate_diff_func;
@@ -38,11 +39,9 @@ public:
 	void set_EPS ( const double& EPS );
 	void set_LAMBDA ( const double& LAMBDA );
 	void set_MU ( const double& MU );
-	void set_ALPHA ( const double& ALPHA );
 	void set_BETA ( const double& BETA );
 	void set_RHO ( const double& RHO );
-	void set_K ( const double& K );
-	void set_P ( const double& P );
+	void set_PROB ( const double& PROB );
 	void set_BATCHSIZE ( const int& BATCH_SIZE );
 
 	void set_W ( const std::string& filename );
@@ -113,7 +112,7 @@ std::vector<Neuralnet::Mat> Neuralnet::calc_gradient (
 //////////////////// PUBLIC FUNCTION ////////////////////
 Neuralnet::Neuralnet( const std::vector<int>& num_unit )
 	:num_layer(num_unit.size()), num_unit(num_unit),
-	 EPS(1.0E-1), LAMBDA(1.0E-5), MU(0.0), ALPHA(1.0), BETA(0.0), RHO(-1.0), BATCH_SIZE(1), K(1.0)
+	 EPS(1.0E-1), LAMBDA(1.0E-5), BETA(0.0), RHO(-1.0), BATCH_SIZE(1)
 {
 	m = std::mt19937(time(NULL));
 	for( int i = 1; i < this->num_layer; ++i ){
@@ -153,11 +152,6 @@ void Neuralnet::set_MU ( const double& MU )
 {
 	this->MU = MU;
 }
-	
-void Neuralnet::set_ALPHA ( const double& ALPHA )
-{
-	this->ALPHA = ALPHA;
-}
 
 void Neuralnet::set_BETA ( const double& BETA )
 {
@@ -174,14 +168,9 @@ void Neuralnet::set_BATCHSIZE ( const int& BATCH_SIZE )
 	this->BATCH_SIZE = BATCH_SIZE;
 }
 
-void Neuralnet::set_K ( const double& K )
+void Neuralnet::set_PROB ( const double& PROB )
 {
-	this->K = K;
-}
-
-void Neuralnet::set_P ( const double& P )
-{
-	this->P = P;
+	this->DO_PROB = PROB;
 }
 
 void Neuralnet::set_W ( const std::string& filename )
