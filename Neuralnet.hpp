@@ -42,6 +42,7 @@ public:
 	std::vector<Mat> apply ( const std::vector<Mat>& X );
 	std::vector<Vec> apply ( const std::vector<Vec>& x );
 
+	void set_W ( const std::string& filename );
 	void output_W ( const std::string& filename );
 };
 
@@ -65,11 +66,8 @@ std::vector<std::vector<Neuralnet::Mat>> Neuralnet::calc_gradient (
 	
 	std::vector<std::vector<Mat>> nabla_w(num_layer);
 	for( int i = num_layer-1; i >= 0; --i ){
-		std::function<double(double)> f, d_f;
-		if( i != 0 ) tie(f, d_f) = layer[i-1]->get_function();
-		else{ f = [](const double& x) -> double { return x; }; d_f = f; }
-		nabla_w[i] = layer[i]->calc_gradient(U[i], delta, f);
-		delta = layer[i]->calc_delta(U[i], delta, d_f);
+		nabla_w[i] = layer[i]->calc_gradient(U[i], delta);
+		delta = layer[i]->calc_delta(U[i], delta);
 	}
 
 	return nabla_w;
@@ -98,7 +96,18 @@ void Neuralnet::set_BATCHSIZE ( const int& BATCH_SIZE )
 
 void Neuralnet::add_layer( const std::shared_ptr<Layer>& layer )
 {
+	std::function<double(double)> f, d_f;
+	if( this->layer.size() == 0 ){
+		f = []( const double& x ) -> double {
+			return x;
+		};
+		d_f = f;
+	}
+	else{
+		tie(f, d_f) = this->layer[this->layer.size()-1]->get_function();
+	}
 	this->layer.emplace_back( layer );
+	this->layer[this->layer.size()-1]->set_prev_function(f, d_f);
 }
 
 void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::vector<std::vector<Vec>>& y, const int MAX_ITER )
@@ -159,9 +168,9 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 		
 		auto nabla_w = calc_gradient(U, D);
 		
-		for( int i = 0; i < nabla_w.size(); ++i )
-			for( int j = 0; j < nabla_w[i].size(); ++j )
-				nabla_w[i][j] = 1.0/BATCH_SIZE * nabla_w[i][j];
+		// for( int i = 0; i < nabla_w.size(); ++i )
+		// 	for( int j = 0; j < nabla_w[i].size(); ++j )
+		// 		nabla_w[i][j] = 1.0/BATCH_SIZE * nabla_w[i][j];
 		
 		// Calculate gradient numerically for confirmation of computing
 		// BATCH_SIZE = 1 is required!!
@@ -171,7 +180,7 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 		// 	for( int j = 0; j < nabla_w[i].size(); ++j ){
 		// 		for( int k = 0; k < nabla_w[i][j].m; ++k ){
 		// 			for( int l = 0; l < nabla_w[i][j].n; ++l ){
-		// 				auto tmp = 1.0E-8*(std::abs(W[j][k][l]) < 1.0E-4 ? 1.0 : std::abs(W[j][k][l]));;
+		// 				auto tmp = 1.0E-6*(std::abs(W[j][k][l]) < 1.0E-4 ? 1.0 : std::abs(W[j][k][l]));;
 		// 				std::vector<Mat> EPS;
 		// 				EPS.emplace_back(nabla_w[i][j].m, nabla_w[i][j].n);
 		// 				EPS[0][k][l] = tmp;
@@ -258,9 +267,9 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 			
 			printf("Error    :    Average    |      Min      |      Max      |\n");
 			printf("           %13.6E | %13.6E | %13.6E |\n", error[0], min_err, max_err);
-			printf("           Sum of errors | Squared error | Sparse regul. |L2 norm regul. |\n");
-			printf("           %13.6E = %13.6E + %13.6E + %13.6E\n",
-				   error[0]+error[1]+error[2], error[0], error[1], error[2]);
+			printf("           Sum of errors | Squared error |L2 norm regul. |\n");
+			printf("           %13.6E = %13.6E + %13.6E\n",
+				   error[0]+error[1]+error[2], error[0], error[2]);
 			printf("Gradient :    Average    |      Min      |      Max      |\n");
 			for( int i = 0; i < num_layer; ++i ){
 				double ave_gradient = 0.0;
@@ -344,10 +353,17 @@ std::vector<Neuralnet::Vec> Neuralnet::apply ( const std::vector<Vec>& x )
 	return ret;
 }
 
+void Neuralnet::set_W ( const std::string& filename )
+{
+	for( int i = 0; i < layer.size(); ++i ){
+		layer[i]->set_W("layer_" + std::to_string(i) + "_" + filename);
+	}
+}
+
 void Neuralnet::output_W ( const std::string& filename )
 {
 	for( int i = 0; i < layer.size(); ++i ){
-		layer[i]->output_W("layer_" + std::to_string(i) + filename);
+		layer[i]->output_W("layer_" + std::to_string(i) + "_" + filename);
 	}
 }
 
