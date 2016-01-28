@@ -157,22 +157,23 @@ std::vector<SparseFullyConnected::Mat> SparseFullyConnected::apply ( const std::
 
 std::vector<std::vector<SparseFullyConnected::Vec>> SparseFullyConnected::apply ( const std::vector<std::vector<Vec>>& u, bool use_func )
 {
-	const int prev_num_map = u.size();
 	std::vector<Mat> tmp(prev_num_map);
 	for( int i = 0; i < prev_num_map; ++i )
 		tmp[i] = Mat(u[i][0].size(), u.size());
 
 	for( int i = 0; i < prev_num_map; ++i )
-		for( int j = 0; j < u.size(); ++j )
-			for( int k = 0; k < u[i].size(); ++k )
-				tmp[i][k][j] = u[j][i][k];
-	
+		for( int j = 0; j < u[i][0].size(); ++j )
+			for( int k = 0; k < u.size(); ++k )
+				tmp[i][j][k] = u[k][i][j];
+
 	auto U = apply(tmp);
-	std::vector<std::vector<Vec>> ret(num_map);
-	for( int i = 0; i < num_map; ++i )
-		for( int j = 0; j < U[i].n; ++j )
-			for( int k = 0; k < U[i].m; ++k )
-				ret[i][k][j] = U[j][i][k];
+	std::vector<std::vector<Vec>> ret(U[0].n);
+	for( int i = 0; i < U[0].n; ++i ){
+		ret[i] = std::vector<Vec>(U.size(), Vec(U[0].m));
+		for( int j = 0; j < U.size(); ++j )
+			for( int k = 0; k < U[0].m; ++k )
+				ret[i][j][k] = U[j][k][i];
+	}
 
 	return ret;
 }

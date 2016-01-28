@@ -40,7 +40,7 @@ public:
 					const int MAX_ITER = 1000 );
 
 	std::vector<Mat> apply ( const std::vector<Mat>& X );
-	std::vector<Vec> apply ( const std::vector<Vec>& x );
+	std::vector<std::vector<Vec>> apply ( const std::vector<std::vector<Vec>>& x );
 
 	void set_W ( const std::string& filename );
 	void output_W ( const std::string& filename );
@@ -78,7 +78,7 @@ std::vector<std::vector<std::vector<Neuralnet::Mat>>> Neuralnet::calc_gradient (
 Neuralnet::Neuralnet()
 	:EPS(1.0E-1), LAMBDA(1.0E-5), BATCH_SIZE(1)
 {
-	m = std::mt19937(0);
+	m = std::mt19937(time(NULL));
 }
 
 void Neuralnet::set_EPS ( const double& EPS )
@@ -173,7 +173,7 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 				}
 			}
 		}
-		
+
 		auto nabla_w = calc_gradient(U, D);
 		
 		// for( int i = 0; i < nabla_w.size(); ++i )
@@ -265,12 +265,12 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 			printf("%lu Epoch : \n", n/(x.size()/BATCH_SIZE));
 			
 			double error[3] = { 0.0 }, min_err = 1.0E100, max_err = 0.0;
+			auto v = apply(x);
 			for( int i = 0; i < x.size(); ++i ){
-				std::vector<Vec> v = apply(x[i]);
 				double sum = 0.0;
-				for( int j = 0; j < v.size(); ++j )
-					for( int k = 0; k < v[j].size(); ++k )
-						sum += (v[j][k] - y[i][j][k])*(v[j][k] - y[i][j][k]);
+				for( int j = 0; j < v[i].size(); ++j )
+					for( int k = 0; k < v[i][j].size(); ++k )
+						sum += (v[i][j][k] - y[i][j][k])*(v[i][j][k] - y[i][j][k]);
 				min_err = std::min(min_err, sum);
 				max_err = std::max(max_err, sum);
 				error[0] += sum;
@@ -352,17 +352,23 @@ std::vector<Neuralnet::Mat> Neuralnet::apply ( const std::vector<Mat>& X )
 	return ret;
 }
 
-std::vector<Neuralnet::Vec> Neuralnet::apply ( const std::vector<Vec>& x )
+std::vector<std::vector<Neuralnet::Vec>> Neuralnet::apply ( const std::vector<std::vector<Vec>>& x )
 {
-	std::vector<Mat> u(x.size());
-	for( int i = 0; i < x.size(); ++i ) u[i] = Mat(x[i]);
+	std::vector<Mat> u(x[0].size());
+	for( int i = 0; i < x[0].size(); ++i ) u[i] = Mat(x[i][0].size(), x.size());
+	for( int i = 0; i < x.size(); ++i )
+		for( int j = 0; j < x[0].size(); ++j )
+			for( int k = 0; k < x[0][0].size(); ++k )
+				u[j][k][i] = x[i][j][k];
+
 	u = apply(u);
-	
-	std::vector<Vec> ret(x.size());
-	for( int i = 0; i < x.size(); ++i ){
-		ret[i] = Vec(u[i].m);
-		for( int j = 0; j < u[i].m; ++j )
-			ret[i][j] = u[i][j][0];
+
+	std::vector<std::vector<Vec>> ret(u[0].n);
+	for( int i = 0; i < u[0].n; ++i ){
+		ret[i] = std::vector<Vec>(u.size(), Vec(u[0].m));
+		for( int j = 0; j < u.size(); ++j )
+			for( int k = 0; k < u[0].m; ++k )
+				ret[i][j][k] = u[j][k][i];
 	}
 	
 	return ret;
