@@ -3,7 +3,6 @@
 
 #include <fstream>
 
-#include <chrono>
 #include <random>
 
 #include "Layer.hpp"
@@ -13,14 +12,16 @@ class FullyConnected : public Layer
 private:
 
 public:
-	FullyConnected ( int num_map, int num_input, int num_output, 
+	FullyConnected ( int prev_num_map, int prev_num_unit, int num_map, int num_unit,
 					 const std::function<double(double)>& f,
 					 const std::function<double(double)>& d_f );
 
+	void init( std::mt19937& m );
+	
+	std::vector<std::vector<Mat>> calc_gradient ( const std::vector<Mat>& U, const std::vector<Mat>& delta );
 	std::vector<Mat> calc_delta ( const std::vector<Mat>& U, const std::vector<Mat>& delta );
-	std::vector<Mat> calc_gradient ( const std::vector<Mat>& U, const std::vector<Mat>& delta );
-	void update_W ( const std::vector<Mat>& dW );
-
+	void update_W ( const std::vector<std::vector<Mat>>& dW );
+	
 	std::vector<Mat> apply ( const std::vector<Mat>& U, bool use_func = true );
 	std::vector<std::vector<Vec>> apply ( const std::vector<std::vector<Vec>>& u, bool use_func = true );
 
@@ -28,74 +29,89 @@ public:
 	void output_W ( const std::string& filename );
 };
 
-FullyConnected::FullyConnected( int num_map, int num_input, int num_output,
+FullyConnected::FullyConnected( int prev_num_map, int prev_num_unit, int num_map, int num_unit,
 								const std::function<double(double)>& f,
 								const std::function<double(double)>& d_f )
 {
+	this->prev_num_map = prev_num_map;
+	this->prev_num_unit = prev_num_unit;
 	this->num_map = num_map;
-	this->num_input = num_input;
-	this->num_output = num_output;
-
-	const double r = sqrt(6.0/(num_input + num_output));
-
-	std::mt19937 m(time(NULL));
-	std::uniform_real_distribution<double> d_rand(-r, r);
-	
-	for( int i = 0; i < num_map; ++i ){
-		W.emplace_back(num_output, 1+num_input);
-		for( int j = 0; j < W[i].m; ++j )
-			for( int k = 0; k < W[i].n; ++k )
-				W[i][j][k] = d_rand(m);
-	}
+	this->num_unit = num_unit;
 
 	activate_func = f;
 	activate_diff_func = d_f;
 }
 
-std::vector<FullyConnected::Mat> FullyConnected::calc_delta ( const std::vector<Mat>& U, const std::vector<Mat>& delta )
+void FullyConnected::init ( std::mt19937& m )
 {
-	std::vector<Mat> tmp(num_map), nx_delta(num_map);
+	const double r = sqrt(6.0/(num_unit + prev_num_unit));
+	std::uniform_real_distribution<double> d_rand(-r, r);
 	for( int i = 0; i < num_map; ++i ){
-		tmp[i] = Mat::transpose(W[i])*delta[i];
-		nx_delta[i] = Mat(tmp[i].m-1, tmp[i].n);
+		W.emplace_back(prev_num_map);
+		for( int j = 0; j < prev_num_map; ++j ){
+			W[i][j] = Mat(num_unit, 1+prev_num_unit);
+			for( int k = 0; k < W[i][j].m; ++k )
+				for( int l = 0; l < W[i][j].n; ++l )
+					W[i][j][k][l] = d_rand(m);
+		}
 	}
-
-	for( int i = 0; i < num_map; ++i ) 
-		for( int j = 0; j < tmp[i].m-1; ++j )
-			for( int k = 0; k < tmp[i].n; ++k )
-				nx_delta[i][j][k] = tmp[i][j+1][k]*prev_activate_diff_func(U[i][j][k]);
-	
-	return nx_delta;
 }
 
-std::vector<FullyConnected::Mat> FullyConnected::calc_gradient ( const std::vector<Mat>& U, const std::vector<Mat>& delta )
+std::vector<std::vector<FullyConnected::Mat>> FullyConnected::calc_gradient ( const std::vector<Mat>& U, const std::vector<Mat>& delta )
 {
-	std::vector<Mat> nabla(num_map);
+	std::vector<std::vector<Mat>> nabla(num_map);
+	for( int i = 0; i < num_map; ++i ){
+		nabla[i] = std::vector<Mat>(prev_num_map);
+		for( int j = 0; j < prev_num_map; ++j )
+			nabla[i][j] = Mat(W[i][j].m, W[i][j].n);
+	}
+
 	for( int i = 0; i < num_map; ++i )
-		nabla[i] = Mat::zeros(W[i].m, W[i].n);
-	
-	for( int i = 0; i < num_map; ++i )
-		for( int j = 0; j < nabla[i].m; ++j )
-			for( int k = 0; k < nabla[i].n; ++k )
-				for( int l = 0; l < delta[i].n; ++l )
-					nabla[i][j][k] += delta[i][j][l]*(
-						k == 0 ? 1.0 : prev_activate_func(U[i][k-1][l])
-						);
+		for( int j = 0; j < prev_num_map; ++j )
+			for( int k = 0; k < nabla[i][j].m; ++k )
+				for( int l = 0; l < nabla[i][j].n; ++l )
+					for( int m = 0; m < delta[i].n; ++m )
+						nabla[i][j][k][l] += delta[i][k][m]*(
+							l == 0 ? 1.0 : prev_activate_func(U[j][l-1][m])
+							);
 
 	return nabla;
 }
 
-void FullyConnected::update_W ( const std::vector<Mat>& dW )
+std::vector<FullyConnected::Mat> FullyConnected::calc_delta ( const std::vector<Mat>& U, const std::vector<Mat>& delta )
+{
+	std::vector<Mat> tmp(num_map), nx_delta(prev_num_map);
+
+	for( int i = 0; i < num_map; ++i ){
+		tmp[i] = Mat(W[i][0].n, delta[0].n);
+		for( int j = 0; j < prev_num_map; ++j ){
+			tmp[i] = tmp[i] + Mat::transpose(W[i][j])*delta[j];
+		}
+	}
+	for( int i = 0; i < prev_num_map; ++i )
+		nx_delta[i] = Mat(tmp[0].m-1, tmp[0].n);
+
+	for( int i = 0; i < num_map; ++i )
+		for( int j = 0; j < prev_num_map; ++j )
+			for( int k = 0; k < tmp[i].m-1; ++k )
+				for( int l = 0; l < tmp[i].n; ++l )
+					nx_delta[j][k][l] += tmp[i][k+1][l]*prev_activate_diff_func(U[j][k][l]);
+	
+	return nx_delta;
+}
+
+void FullyConnected::update_W ( const std::vector<std::vector<Mat>>& dW )
 {
 	for( int i = 0; i < num_map; ++i )
-		W[i] = W[i] + dW[i];
+		for( int j = 0; j < prev_num_map; ++j )
+			W[i][j] = W[i][j] + dW[i][j];
 }
 
 std::vector<FullyConnected::Mat> FullyConnected::apply ( const std::vector<Mat>& U, bool use_func )
 {
 	std::vector<Mat> ret(num_map);
-	std::vector<Mat> V(num_map);
-	for( int i = 0; i < num_map; ++i ){
+	std::vector<Mat> V(prev_num_map);
+	for( int i = 0; i < prev_num_map; ++i ){
 		V[i] = Mat(U[i].m+1, U[i].n);
 		for( int j = 0; j < U[i].n; ++j ){
 			V[i][0][j] = 1.0;
@@ -105,7 +121,9 @@ std::vector<FullyConnected::Mat> FullyConnected::apply ( const std::vector<Mat>&
 	}
 
 	for( int i = 0; i < num_map; ++i ){
-		ret[i] = W[i]*V[i];
+		ret[i] = Mat(W[i][0].m, V[0].n);
+		for( int j = 0; j < prev_num_map; ++j )
+			ret[i] = ret[i] + W[i][j]*V[j];
 	}
 
 	for( int i = 0; i < num_map; ++i )
@@ -118,21 +136,24 @@ std::vector<FullyConnected::Mat> FullyConnected::apply ( const std::vector<Mat>&
 
 std::vector<std::vector<FullyConnected::Vec>> FullyConnected::apply ( const std::vector<std::vector<Vec>>& u, bool use_func )
 {
-	std::vector<Mat> tmp(num_map);
-	for( int i = 0; i < num_map; ++i )
+	const int prev_num_map = u.size();
+	std::vector<Mat> tmp(prev_num_map);
+	for( int i = 0; i < prev_num_map; ++i )
 		tmp[i] = Mat(u[i][0].size(), u.size());
 
-	for( int i = 0; i < num_map; ++i )
+	for( int i = 0; i < prev_num_map; ++i )
 		for( int j = 0; j < u.size(); ++j )
 			for( int k = 0; k < u[i].size(); ++k )
 				tmp[i][k][j] = u[j][i][k];
 	
 	auto U = apply(tmp);
 	std::vector<std::vector<Vec>> ret(num_map);
-	for( int i = 0; i < num_map; ++i )
+	for( int i = 0; i < num_map; ++i ){
+		ret[i] = std::vector<Vec>(U[i].m, Vec(U[i].n));
 		for( int j = 0; j < U[i].n; ++j )
 			for( int k = 0; k < U[i].m; ++k )
 				ret[i][k][j] = U[j][i][k];
+	}
 
 	return ret;
 }
@@ -141,26 +162,28 @@ void FullyConnected::set_W ( const std::string& filename )
 {
 	std::ifstream ifs(filename, std::ios::binary);
 
-	for( int i = 0; i < num_map; ++i ){
-		ifs.read((char*)&W[i].m, sizeof(W[i].m));
-		ifs.read((char*)&W[i].n, sizeof(W[i].n));
-		for( int j = 0; j < W[i].m; ++j )
-			for( int k = 0; k < W[i].n; ++k )
-				ifs.read((char*)&W[i][j][k], sizeof(W[i][j][k]));
-	}
+	for( int i = 0; i < num_map; ++i )
+		for( int j = 0; j < prev_num_map; ++j ){
+			ifs.read((char*)&W[i][j].m, sizeof(W[i][j].m));
+			ifs.read((char*)&W[i][j].n, sizeof(W[i][j].n));
+			for( int k = 0; k < W[i][j].m; ++k )
+				for( int l = 0; l < W[i][j].n; ++l )
+					ifs.read((char*)&W[i][j][k][l], sizeof(W[i][j][k][l]));
+		}
 }
 
 void FullyConnected::output_W ( const std::string& filename )
 {
 	std::ofstream ofs(filename, std::ios::binary);
 
-	for( int i = 0; i < num_map; ++i ){
-		ofs.write((char*)&W[i].m, sizeof(W[i].m));
-		ofs.write((char*)&W[i].n, sizeof(W[i].n));
-		for( int j = 0; j < W[i].m; ++j )
-			for( int k = 0; k < W[i].n; ++k )
-				ofs.write((char*)&W[i][j][k], sizeof(W[i][j][k]));
-	}
+	for( int i = 0; i < num_map; ++i )
+		for( int j = 0; j < prev_num_map; ++j ){
+			ofs.write((char*)&W[i][j].m, sizeof(W[i][j].m));
+			ofs.write((char*)&W[i][j].n, sizeof(W[i][j].n));
+			for( int k = 0; k < W[i][j].m; ++k )
+				for( int l = 0; l < W[i][j].n; ++l )
+					ofs.write((char*)&W[i][j][k][l], sizeof(W[i][j][k][l]));
+		}
 }
 
 #endif
