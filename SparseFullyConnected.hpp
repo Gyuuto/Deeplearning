@@ -105,7 +105,7 @@ std::vector<SparseFullyConnected::Mat> SparseFullyConnected::calc_delta ( const 
 	for( int i = 0; i < num_map; ++i ){
 		tmp[i] = Mat(W[i][0].n, delta[0].n);
 		for( int j = 0; j < prev_num_map; ++j )
-			tmp[i] = tmp[i] + Mat::transpose(W[i][j])*delta[j];
+			tmp[i] = tmp[i] + Mat::transpose(W[i][j])*delta[i];
 	}
 	for( int i = 0; i < prev_num_map; ++i )
 		nx_delta[i] = Mat(tmp[0].m-1, tmp[0].n);
