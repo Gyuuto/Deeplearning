@@ -65,7 +65,7 @@ std::vector<std::vector<FullyConnected::Mat>> FullyConnected::calc_gradient ( co
 		for( int j = 0; j < prev_num_map; ++j )
 			nabla[i][j] = Mat(W[i][j].m, W[i][j].n);
 	}
-
+	
 	for( int i = 0; i < num_map; ++i )
 		for( int j = 0; j < prev_num_map; ++j )
 			for( int k = 0; k < nabla[i][j].m; ++k )
@@ -85,7 +85,7 @@ std::vector<FullyConnected::Mat> FullyConnected::calc_delta ( const std::vector<
 	for( int i = 0; i < num_map; ++i ){
 		tmp[i] = Mat(W[i][0].n, delta[0].n);
 		for( int j = 0; j < prev_num_map; ++j ){
-			tmp[i] = tmp[i] + Mat::transpose(W[i][j])*delta[j];
+			tmp[i] = tmp[i] + Mat::transpose(W[i][j])*delta[i];
 		}
 	}
 	for( int i = 0; i < prev_num_map; ++i )
