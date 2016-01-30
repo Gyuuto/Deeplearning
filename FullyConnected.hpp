@@ -65,7 +65,7 @@ std::vector<std::vector<FullyConnected::Mat>> FullyConnected::calc_gradient ( co
 		for( int j = 0; j < prev_num_map; ++j )
 			nabla[i][j] = Mat(W[i][j].m, W[i][j].n);
 	}
-	
+
 	for( int i = 0; i < num_map; ++i )
 		for( int j = 0; j < prev_num_map; ++j )
 			for( int k = 0; k < nabla[i][j].m; ++k )
@@ -80,22 +80,21 @@ std::vector<std::vector<FullyConnected::Mat>> FullyConnected::calc_gradient ( co
 
 std::vector<FullyConnected::Mat> FullyConnected::calc_delta ( const std::vector<Mat>& U, const std::vector<Mat>& delta )
 {
-	std::vector<Mat> tmp(num_map), nx_delta(prev_num_map);
+	std::vector<Mat> tmp(prev_num_map), nx_delta(prev_num_map);
 
-	for( int i = 0; i < num_map; ++i ){
-		tmp[i] = Mat(W[i][0].n, delta[0].n);
-		for( int j = 0; j < prev_num_map; ++j ){
-			tmp[i] = tmp[i] + Mat::transpose(W[i][j])*delta[i];
+	for( int i = 0; i < prev_num_map; ++i ){
+		tmp[i] = Mat(W[0][0].n, delta[0].n);
+		for( int j = 0; j < num_map; ++j ){
+			tmp[i] = tmp[i] + Mat::transpose(W[j][i])*delta[j];
 		}
 	}
 	for( int i = 0; i < prev_num_map; ++i )
 		nx_delta[i] = Mat(tmp[0].m-1, tmp[0].n);
 
-	for( int i = 0; i < num_map; ++i )
-		for( int j = 0; j < prev_num_map; ++j )
-			for( int k = 0; k < tmp[i].m-1; ++k )
-				for( int l = 0; l < tmp[i].n; ++l )
-					nx_delta[j][k][l] += tmp[i][k+1][l]*prev_activate_diff_func(U[j][k][l]);
+	for( int i = 0; i < prev_num_map; ++i )
+		for( int j = 0; j < tmp[i].m-1; ++j )
+			for( int k = 0; k < tmp[i].n; ++k )
+				nx_delta[i][j][k] += tmp[i][j+1][k]*prev_activate_diff_func(U[i][j][k]);
 	
 	return nx_delta;
 }

@@ -80,7 +80,7 @@ std::vector<std::vector<SparseFullyConnected::Mat>> SparseFullyConnected::calc_g
 			double tmp_rho = 0.0;
 			for( int k = 0; k < V[i].n; ++k )
 				tmp_rho += activate_func(V[i][j][k]);
-			rho[j][i] = R_LAMBDA*rho[j][i] + (1.0-R_LAMBDA)*tmp_rho;
+			rho[j][i] = R_LAMBDA*rho[j][i] + (1.0-R_LAMBDA)*tmp_rho/V[i].n;
 		}
 	}
 
@@ -100,12 +100,12 @@ std::vector<std::vector<SparseFullyConnected::Mat>> SparseFullyConnected::calc_g
 
 std::vector<SparseFullyConnected::Mat> SparseFullyConnected::calc_delta ( const std::vector<Mat>& U, const std::vector<Mat>& delta )
 {
-	std::vector<Mat> tmp(num_map), nx_delta(prev_num_map);
+	std::vector<Mat> tmp(prev_num_map), nx_delta(prev_num_map);
 
-	for( int i = 0; i < num_map; ++i ){
-		tmp[i] = Mat(W[i][0].n, delta[0].n);
-		for( int j = 0; j < prev_num_map; ++j )
-			tmp[i] = tmp[i] + Mat::transpose(W[i][j])*delta[i];
+	for( int i = 0; i < prev_num_map; ++i ){
+		tmp[i] = Mat(W[0][0].n, delta[0].n);
+		for( int j = 0; j < num_map; ++j )
+			tmp[i] = tmp[i] + Mat::transpose(W[j][i])*delta[j];
 	}
 	for( int i = 0; i < prev_num_map; ++i )
 		nx_delta[i] = Mat(tmp[0].m-1, tmp[0].n);
@@ -113,9 +113,9 @@ std::vector<SparseFullyConnected::Mat> SparseFullyConnected::calc_delta ( const 
 	for( int i = 0; i < num_map; ++i )
 		for( int j = 0; j < prev_num_map; ++j )
 			for( int k = 0; k < tmp[i].m-1; ++k ){
-				double KL = (1.0-RHO)/(1.0-rho[k][j]) - RHO/rho[k][j];
+				double KL = (1.0-RHO)/(1.0-rho[k][i]) - RHO/rho[k][i];
 				for( int l = 0; l < tmp[i].n; ++l )
-					nx_delta[j][k][l] += (tmp[i][k+1][l] + BETA*KL)*prev_activate_diff_func(U[j][k][l]);
+					nx_delta[j][k][l] += (tmp[j][k+1][l] + BETA*KL)*prev_activate_diff_func(U[j][k][l]);
 			}
 	
 	return nx_delta;

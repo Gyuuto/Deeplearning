@@ -78,7 +78,7 @@ std::vector<std::vector<std::vector<Neuralnet::Mat>>> Neuralnet::calc_gradient (
 Neuralnet::Neuralnet()
 	:EPS(1.0E-1), LAMBDA(1.0E-5), BATCH_SIZE(1)
 {
-	m = std::mt19937(time(NULL));
+	m = std::mt19937(10);//time(NULL));
 }
 
 void Neuralnet::set_EPS ( const double& EPS )
@@ -181,7 +181,7 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 		// 		nabla_w[i][j] = 1.0/BATCH_SIZE * nabla_w[i][j];
 		
 		// Calculate gradient numerically for confirmation of computing
-		// BATCH_SIZE = 1 and num_map = 1 are required!!
+		// BATCH_SIZE = 1 is required!!
  		// for( int i = 0; i < num_layer; ++i ){
 		// 	printf("\tlayer %d\n", i);
 		// 	auto W = layer[i]->get_W();
@@ -189,6 +189,7 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 		// 	for( int j = 0; j < W.size(); ++j )
 		// 		for( int k = 0; k < W[j].size(); ++k )
 		// 			EPS[j].emplace_back(W[j][k].m, W[j][k].n);
+		// 	std::vector<std::vector<Vec>> X(1, x[cnt]);
 		// 	for( int j = 0; j < std::min(5, (int)W.size()); ++j ){ // num_map
 		// 		for( int k = 0; k < std::min(5, (int)W[j].size()); ++k ){ // prev_num_map
 		// 			for( int l = 0; l < std::min(5, (int)W[j][k].m); ++l ){
@@ -197,7 +198,7 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 		// 					EPS[j][k][l][m] = tmp;
 		// 					layer[i]->update_W(EPS);
 		// 					double E1 = 0.0;
-		// 					auto tmp1 = apply(x)[cnt];
+		// 					auto tmp1 = apply(X)[0];
 		// 					for( int n = 0; n < tmp1.size(); ++n )
 		// 						E1 += (Mat::transpose(Mat(tmp1[n]) - Mat(y[cnt][n]))*
 		// 							   (Mat(tmp1[n]) - Mat(y[cnt][n])))[0][0];
@@ -205,7 +206,7 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 		// 					EPS[j][k][l][m] *= -1.0;
 		// 					layer[i]->update_W(EPS);
 		// 					double E2 = 0.0;
-		// 					auto tmp2 = apply(x)[cnt];
+		// 					auto tmp2 = apply(X)[0];
 		// 					for( int n = 0; n < tmp2.size(); ++n )
 		// 						E2 += (Mat::transpose(Mat(tmp2[n]) - Mat(y[cnt][n]))*
 		// 							   (Mat(tmp2[n]) - Mat(y[cnt][n])))[0][0];
@@ -355,7 +356,7 @@ std::vector<Neuralnet::Mat> Neuralnet::apply ( const std::vector<Mat>& X )
 std::vector<std::vector<Neuralnet::Vec>> Neuralnet::apply ( const std::vector<std::vector<Vec>>& x )
 {
 	std::vector<Mat> u(x[0].size());
-	for( int i = 0; i < x[0].size(); ++i ) u[i] = Mat(x[i][0].size(), x.size());
+	for( int i = 0; i < x[0].size(); ++i ) u[i] = Mat(x[0][0].size(), x.size());
 	for( int i = 0; i < x.size(); ++i )
 		for( int j = 0; j < x[0].size(); ++j )
 			for( int k = 0; k < x[0][0].size(); ++k )
