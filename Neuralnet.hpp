@@ -127,6 +127,7 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 	double adam_beta_ = 1.0, adam_gamma_ = 1.0;
 	for( int i = 0; i < num_layer; ++i ){
 		auto w_i = layer[i]->get_W();
+
 		adam_v[i] = std::vector<std::vector<Mat>>(w_i.size());
 		adam_r[i] = std::vector<std::vector<Mat>>(w_i.size());
 		for( int j = 0; j < w_i.size(); ++j ){
@@ -230,6 +231,8 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 		for( int i = 0; i < num_layer; ++i ){
 			// L2 norm regularization
 			auto W = layer[i]->get_W();
+			
+			if( W.size() == 0 ) continue;
 			for( int j = 0; j < W.size(); ++j )
 				for( int k = 0; k < W[j].size(); ++k )
 					for( int l = 0; l < W[j][k].m; ++l )
@@ -318,7 +321,10 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 				}
 				ave_gradient /= num;
 
-				printf(" Layer %d   %13.6E | %13.6E | %13.6E |\n", i, ave_gradient, min_gradient, max_gradient);
+				if( W.size() == 0 )
+					printf(" Layer %d   ------------- | ------------- | ------------- |\n", i);
+				else
+					printf(" Layer %d   %13.6E | %13.6E | %13.6E |\n", i, ave_gradient, min_gradient, max_gradient);
 			}
 			puts("");
 			fflush(stdout);

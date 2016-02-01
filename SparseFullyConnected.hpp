@@ -166,7 +166,7 @@ std::vector<std::vector<SparseFullyConnected::Vec>> SparseFullyConnected::apply 
 			for( int k = 0; k < u.size(); ++k )
 				tmp[i][j][k] = u[k][i][j];
 
-	auto U = apply(tmp);
+	auto U = apply(tmp, use_func);
 	std::vector<std::vector<Vec>> ret(U[0].n);
 	for( int i = 0; i < U[0].n; ++i ){
 		ret[i] = std::vector<Vec>(U.size(), Vec(U[0].m));
