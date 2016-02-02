@@ -78,7 +78,7 @@ std::vector<std::vector<std::vector<Neuralnet::Mat>>> Neuralnet::calc_gradient (
 Neuralnet::Neuralnet()
 	:EPS(1.0E-1), LAMBDA(1.0E-5), BATCH_SIZE(1)
 {
-	m = std::mt19937(10);//time(NULL));
+	m = std::mt19937(time(NULL));
 }
 
 void Neuralnet::set_EPS ( const double& EPS )
@@ -177,9 +177,10 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 
 		auto nabla_w = calc_gradient(U, D);
 		
-		// for( int i = 0; i < nabla_w.size(); ++i )
-		// 	for( int j = 0; j < nabla_w[i].size(); ++j )
-		// 		nabla_w[i][j] = 1.0/BATCH_SIZE * nabla_w[i][j];
+		for( int i = 0; i < nabla_w.size(); ++i )
+			for( int j = 0; j < nabla_w[i].size(); ++j )
+				for( int k = 0; k < nabla_w[i][j].size(); ++k )
+					nabla_w[i][j][k] = 1.0/BATCH_SIZE * nabla_w[i][j][k];
 		
 		// Calculate gradient numerically for confirmation of computing
 		// BATCH_SIZE = 1 is required!!
