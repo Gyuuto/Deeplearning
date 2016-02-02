@@ -183,36 +183,31 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 		
 		// Calculate gradient numerically for confirmation of computing
 		// BATCH_SIZE = 1 is required!!
- 		// for( int i = 0; i < num_layer; ++i ){
+		// for( int i = 0; i < num_layer; ++i ){
 		// 	printf("\tlayer %d\n", i);
 		// 	auto W = layer[i]->get_W();
-		// 	std::vector<std::vector<Mat>> EPS(W.size());
-		// 	for( int j = 0; j < W.size(); ++j )
-		// 		for( int k = 0; k < W[j].size(); ++k )
-		// 			EPS[j].emplace_back(W[j][k].m, W[j][k].n);
 		// 	std::vector<std::vector<Vec>> X(1, x[cnt]);
-		// 	for( int j = 0; j < std::min(5, (int)W.size()); ++j ){ // num_map
-		// 		for( int k = 0; k < std::min(5, (int)W[j].size()); ++k ){ // prev_num_map
+		// 	for( int j = 0; j < std::min(2, (int)W.size()); ++j ){ // num_map
+		// 		for( int k = 0; k < std::min(2, (int)W[j].size()); ++k ){ // prev_num_map
 		// 			for( int l = 0; l < std::min(5, (int)W[j][k].m); ++l ){
 		// 				for( int m = 0; m < std::min(5, (int)W[j][k].n); ++m ){
 		// 					auto tmp = 1.0E-6*(std::abs(W[j][k][l][m]) < 1.0E-6 ? 1.0 : std::abs(W[j][k][l][m]));;
-		// 					EPS[j][k][l][m] = tmp;
-		// 					layer[i]->update_W(EPS);
+		// 					W[j][k][l][m] += tmp;
+		// 					layer[i]->set_W(W);
 		// 					double E1 = 0.0;
 		// 					auto tmp1 = apply(X)[0];
 		// 					for( int n = 0; n < tmp1.size(); ++n )
 		// 						E1 += (Mat::transpose(Mat(tmp1[n]) - Mat(y[cnt][n]))*
 		// 							   (Mat(tmp1[n]) - Mat(y[cnt][n])))[0][0];
 							
-		// 					EPS[j][k][l][m] *= -1.0;
-		// 					layer[i]->update_W(EPS);
+		// 					W[j][k][l][m] -= tmp;
+		// 					layer[i]->set_W(W);
 		// 					double E2 = 0.0;
 		// 					auto tmp2 = apply(X)[0];
 		// 					for( int n = 0; n < tmp2.size(); ++n )
 		// 						E2 += (Mat::transpose(Mat(tmp2[n]) - Mat(y[cnt][n]))*
 		// 							   (Mat(tmp2[n]) - Mat(y[cnt][n])))[0][0];
 
-		// 					EPS[j][k][l][m] = 0.0;
 		// 					printf("\t%3d, %3d, %3d, %3d : ( %.10E, %.10E = %.10E)\n", j, k, l, m, 0.5*(E1 - E2)/tmp, nabla_w[i][j][k][l][m], (std::abs(0.5*(E1 - E2)/tmp - nabla_w[i][j][k][l][m]))/std::abs(0.5*(E1 - E2)/tmp));
 		// 					// nabla_w[i][j][k][l] = 0.5*(E1 - E2)/tmp;
 		// 				}

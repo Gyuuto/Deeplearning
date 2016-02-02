@@ -61,11 +61,10 @@ void Convolutional::init ( std::mt19937& m )
 	const double r = sqrt(6.0/(num_unit + prev_num_unit));
 	std::uniform_real_distribution<double> d_rand(-r, r);
 
-	bias = Vec(num_map); d_bias = Vec(num_map);
+	bias = Vec(num_map, 0.0); d_bias = Vec(num_map, 0.0);
 	this->r = Vec(num_map, 0.0); v = Vec(num_map, 0.0);
 	for( int i = 0; i < num_map; ++i ){
 		W.emplace_back(prev_num_map);
-		bias[i] = d_rand(m);
 		for( int j = 0; j < prev_num_map; ++j ){
 			W[i][j] = Mat(this->m, this->n);
 			for( int k = 0; k < W[i][j].m; ++k )
@@ -94,8 +93,7 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 						for( int y = 0; y < Y; y += stlide )
 							for( int x = 0; x < X; x += stlide ){
 								int nx = x + s, ny = y + t;
-								if( nx < 0 || nx >= X ||
-									ny < 0 || ny >= Y ) continue;
+								if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
 								
 								nabla[i][j][s+m/2][t+n/2] += delta[i][x/stlide+ldu*(y/stlide)][k]*
 									prev_activate_func(U[j][nx+prev_ldu*ny][k]);
@@ -103,34 +101,52 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 		for( int j = 0; j < delta[i].n; ++j )
 			for( int y = 0; y < Y; y += stlide )
 				for( int x = 0; x < X; x += stlide ){
-					d_bias[i] += delta[i][x/stlide+ldu*(y/stlide)][j] / delta[i].n;
+					double val = 0.0;
+					for( int k = 0; k < prev_num_map; ++k )
+						for( int s = -m/2; s < (m+1)/2; ++s )
+							for( int t = -n/2; t < (n+1)/2; ++t ){
+								int nx = x + s, ny = y + t;
+								if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
+								val += prev_activate_func(U[k][nx+prev_ldu*ny][j]);
+							}
+					d_bias[i] += delta[i][x/stlide+ldu*(y/stlide)][j] * val;
 				}
 	}
+
 	return nabla;				
 }
 
 std::vector<Convolutional::Mat> Convolutional::calc_delta ( const std::vector<Mat>& U, const std::vector<Mat>& delta )
 {
 	const int X = prev_ldu, Y = prev_num_unit/prev_ldu;
-	std::vector<Mat> nx_delta(prev_num_map);
-	
+	const int X_ = ldu, Y_ = num_unit/ldu;
+	std::vector<Mat> tmp(prev_num_map), nx_delta(prev_num_map);
+
 	for( int i = 0; i < prev_num_map; ++i ){
-		nx_delta[i] = Mat(U[i].m, U[i].n);
-		for( int j = 0; j < U[i].n; ++j )
-			for( int x = 0; x < X; ++x )
-				for( int y = 0; y < Y; ++y )
-					for( int s = -m/2; s < (m+1)/2; ++s )
-						for( int t = -n/2; t < (n+1)/2; ++t ){
-							int nx = x/stlide + s, ny = y/stlide + t;
-							if( nx < 0 || nx >= X|| ny < 0 || ny >= Y ) continue;
-							double val_w = 0.0;
-							for( int k = 0; k < num_map; ++k ) val_w += W[k][i][s+m/2][t+n/2];
-							nx_delta[i][x+y*prev_ldu][j] += delta[i][nx+ny*ldu][j]*
-								val_w*
-								prev_activate_diff_func(U[i][x+y*prev_ldu][j]);
-						}
+		tmp[i] = Mat(prev_num_unit, U[0].n);
+		for( int j = 0; j < num_map; ++j ){
+			for( int k = 0; k < U[0].n; ++k )
+				for( int x = 0; x < X; ++x )
+					for( int y = 0; y < Y; ++ y ){
+						for( int s = -m/2; s < (m+1)/2; ++s )
+							for( int t = -n/2; t < (n+1)/2; ++t ){
+								int nx = (x - s),
+									ny = (y - t);
+								if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
+								nx /= stlide; ny /= stlide;
+								tmp[i][x+ldu*y][k] += W[j][i][s+m/2][t+n/2]*delta[j][nx+ldu*ny][k];
+							}
+					}
+		}
 	}
 
+	for( int i = 0; i < prev_num_map; ++i ){
+		nx_delta[i] = Mat(U[i].m, U[i].n);
+		for( int j = 0; j < U[i].m; ++j )
+			for( int k = 0; k < U[i].n; ++k )
+				nx_delta[i][j][k] += tmp[i][j][k]*prev_activate_diff_func(U[i][j][k]);
+	}
+	
 	return nx_delta;
 }
 
@@ -157,24 +173,23 @@ std::vector<Convolutional::Mat> Convolutional::apply ( const std::vector<Mat>& U
 		ret[i] = Mat(num_unit, U[0].n);
 		for( int j = 0; j < prev_num_map; ++j ){
 			for( int k = 0; k < U[0].n; ++k ){
-				for( int y = 0; y < Y; y+=stlide )
-					for( int x = 0; x < X; x+=stlide ){
+				for( int y = 0; y < Y; y += stlide )
+					for( int x = 0; x < X; x += stlide ){
 						double val = 0.0;
 
 						for( int s = -m/2; s < (m+1)/2; ++s )
 							for( int t = -n/2; t < (n+1)/2; ++t ){
-								int nx = x+s, ny = y+t;
-								if( nx < 0 || nx >= X ||
-									ny < 0 || ny >= Y ) continue;
+								int nx = x + s, ny = y + t;
+								if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
 								val += W[i][j][s+m/2][t+n/2]*U[j][nx + ny*prev_ldu][k];
 							}
 
-						ret[i][y/stlide*ldu + x/stlide][k] = val + bias[i];
+						ret[i][y/stlide*ldu + x/stlide][k] += val + bias[i];
 					}
 			}
 		}
 	}
-	
+
 	for( int i = 0; i < num_map; ++i )
 		for( int j = 0; j < ret[i].m; ++j )
 			for( int k = 0; k < ret[i].n; ++k )

@@ -68,18 +68,28 @@ std::vector<Pooling::Mat> Pooling::calc_delta ( const std::vector<Mat>& U, const
 	for( int i = 0; i < prev_num_map; ++i ){
 		nx_delta[i] = Mat(U[i].m, U[i].n);
 		for( int j = 0; j < U[i].n; ++j )
-			for( int x = 0; x < X; ++x )
-				for( int y = 0; y < Y; ++y ){
-					for( int s = -m/2; s < (m+1)/2; ++s )
-						for( int t = -n/2; t < (n+1)/2; ++t ){
-							int nx = x/stlide + s, ny = y/stlide + t;
+			for( int x = 0; x < X; x += stlide )
+				for( int y = 0; y < Y; y += stlide ){
+					int idx1 = x/stlide + y/stlide*ldu, idx2 = x+y*prev_ldu;
+					double val = U[i][x+y*prev_ldu][j];
+					
+					for( int s = 0; s < m; ++s )
+						for( int t = 0; t < n; ++t ){
+							int nx = x + s, ny = y + t;
 							if( nx < 0 || nx >= X|| ny < 0 || ny >= Y ) continue;
-							nx_delta[i][x+y*prev_ldu][j] += delta[i][nx+ny*ldu][j]*
-								prev_activate_diff_func(U[i][x+y*prev_ldu][j]);
+							nx = (x + s)/stlide; ny = (y + t)/stlide;
+
+							if( val < U[i][(x+s)+(y+t)*prev_ldu][j] ){
+								idx1 = nx+ny*ldu;
+								idx2 = (x+s)+(y+t)*prev_ldu;
+								val = U[i][idx2][j];
+							}
 						}
+					nx_delta[i][idx2][j] = delta[i][idx1][j] *
+						prev_activate_diff_func(U[i][idx2][j]);
 				}
 	}
-
+	
 	return nx_delta;
 }
 
@@ -95,22 +105,19 @@ std::vector<Pooling::Mat> Pooling::apply ( const std::vector<Mat>& U, bool use_f
 
 	for( int i = 0; i < num_map; ++i ){
 		ret[i] = Mat(num_unit, U[0].n);
-		for( int j = 0; j < prev_num_map; ++j ){
-			for( int k = 0; k < U[0].n; ++k ){
-				for( int y = 0; y < Y; y+=stlide )
-					for( int x = 0; x < X; x+=stlide ){
-						double val = U[j][0][k];
+		for( int j = 0; j < U[0].n; ++j ){
+			for( int y = 0; y < Y; y += stlide )
+				for( int x = 0; x < X; x += stlide ){
+					double val = U[i][x+prev_ldu*y][j];
 
-						for( int s = -m/2; s < (m+1)/2; ++s )
-							for( int t = -n/2; t < (n+1)/2; ++t ){
-								int nx = x+s, ny = y+t;
-								if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
-								val = std::max(val, U[j][nx + ny*prev_ldu][k]);
-							}
-
-						ret[i][y/stlide*ldu + x/stlide][k] = val;
-					}
-			}
+					for( int s = 0; s < m; ++s )
+						for( int t = 0; t < n; ++t ){
+							int nx = x+s, ny = y+t;
+							if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
+							val = std::max(val, U[i][nx + ny*prev_ldu][j]);
+						}
+					ret[i][x/stlide + (y/stlide)*ldu][j] = val;
+				}
 		}
 	}
 	
@@ -141,6 +148,8 @@ std::vector<std::vector<Pooling::Vec>> Pooling::apply ( const std::vector<std::v
 			for( int k = 0; k < U[0].m; ++k )
 				ret[i][j][k] = U[j][k][i];
 	}
+
+
 
 	return ret;
 }
