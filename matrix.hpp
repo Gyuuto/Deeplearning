@@ -6,6 +6,7 @@
 #include <cmath>
 #include <vector>
 #include <algorithm>
+#include <functional>
 
 template<class T>
 struct Matrix
@@ -108,7 +109,6 @@ struct Matrix
 				ret[i][j] = f(v[i][j]);
 		
 		return ret;
-
 	}
 
 	friend Matrix<T> operator + ( const Matrix<T>& m1, const Matrix<T>& m2 )

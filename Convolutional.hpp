@@ -95,9 +95,11 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 								int nx = x + s, ny = y + t;
 								if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
 								
-								nabla[i][j][s+m/2][t+n/2] += delta[i][x/stlide+ldu*(y/stlide)][k]*
+								nabla[i][j][s+m/2][t+n/2] +=
+									delta[i][x/stlide+ldu*(y/stlide)][k]*
 									prev_activate_func(U[j][nx+prev_ldu*ny][k]);
 							}
+		
 		for( int j = 0; j < delta[i].n; ++j )
 			for( int y = 0; y < Y; y += stlide )
 				for( int x = 0; x < X; x += stlide ){

@@ -31,6 +31,7 @@ public:
 	virtual std::vector<Mat> apply ( const std::vector<Mat>& U, bool use_func = true ) = 0;
 	virtual std::vector<std::vector<Vec>> apply ( const std::vector<std::vector<Vec>>& u, bool use_func = true ) = 0;
 
+	// virtual std::map<std::string, double> get_error () = 0;
 	
 	std::vector<std::vector<Mat>> get_W ();
 	std::tuple<std::function<double(double)>, std::function<double(double)>> get_function ();
