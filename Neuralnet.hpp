@@ -346,7 +346,7 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 						for( int l = 0; l < W[j][k].m; ++l )
 							for( int m = 0; m < W[j][k].n; ++m ){
 								auto tmp = std::abs(W[j][k][k][m]);
-						
+
 								ave_weight += tmp;
 								max_weight = std::max(max_weight, tmp);
 								min_weight = std::min(min_weight, tmp);
