@@ -85,13 +85,16 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 	}
 
 	const int Y = prev_num_unit/prev_ldu, X = prev_ldu;
-	for( int i = 0; i < num_map; ++i ){
-		for( int j = 0; j < prev_num_map; ++j )
-			for( int k = 0; k < delta[i].n; ++k )
-				for( int s = -m/2; s < (m+1)/2; ++s )
-					for( int t = -n/2; t < (n+1)/2; ++t )
-						for( int y = 0; y < Y; y += stlide )
-							for( int x = 0; x < X; x += stlide ){
+	int i, j, k, s, t, y, x;
+#pragma omp parallel for default(none) \
+	private(i,j,k,s,t,y,x) shared(Y, X, delta, nabla, U)
+	for( i = 0; i < num_map; ++i ){
+		for( j = 0; j < prev_num_map; ++j )
+			for( k = 0; k < delta[i].n; ++k )
+				for( s = -m/2; s < (m+1)/2; ++s )
+					for( t = -n/2; t < (n+1)/2; ++t )
+						for( y = 0; y < Y; y += stlide )
+							for( x = 0; x < X; x += stlide ){
 								int nx = x + s, ny = y + t;
 								if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
 								
@@ -100,13 +103,13 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 									prev_activate_func(U[j][nx+prev_ldu*ny][k]);
 							}
 		
-		for( int j = 0; j < delta[i].n; ++j )
-			for( int y = 0; y < Y; y += stlide )
-				for( int x = 0; x < X; x += stlide ){
+		for( j = 0; j < delta[i].n; ++j )
+			for( y = 0; y < Y; y += stlide )
+				for( x = 0; x < X; x += stlide ){
 					double val = 0.0;
-					for( int k = 0; k < prev_num_map; ++k )
-						for( int s = -m/2; s < (m+1)/2; ++s )
-							for( int t = -n/2; t < (n+1)/2; ++t ){
+					for( k = 0; k < prev_num_map; ++k )
+						for( s = -m/2; s < (m+1)/2; ++s )
+							for( t = -n/2; t < (n+1)/2; ++t ){
 								int nx = x + s, ny = y + t;
 								if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
 								val += prev_activate_func(U[k][nx+prev_ldu*ny][j]);
@@ -124,14 +127,17 @@ std::vector<Convolutional::Mat> Convolutional::calc_delta ( const std::vector<Ma
 	const int X_ = ldu, Y_ = num_unit/ldu;
 	std::vector<Mat> tmp(prev_num_map), nx_delta(prev_num_map);
 
-	for( int i = 0; i < prev_num_map; ++i ){
+	int i, j, k, x, y, s, t;
+#pragma omp parallel for default(none) \
+	private(i,j,k,s,t,y,x) shared(Y, X, tmp, delta, U)
+	for( i = 0; i < prev_num_map; ++i ){
 		tmp[i] = Mat(prev_num_unit, U[0].n);
-		for( int j = 0; j < num_map; ++j ){
-			for( int k = 0; k < U[0].n; ++k )
-				for( int x = 0; x < X; ++x )
-					for( int y = 0; y < Y; ++ y ){
-						for( int s = -m/2; s < (m+1)/2; ++s )
-							for( int t = -n/2; t < (n+1)/2; ++t ){
+		for( j = 0; j < num_map; ++j ){
+			for( k = 0; k < U[0].n; ++k )
+				for( x = 0; x < X; ++x )
+					for( y = 0; y < Y; ++ y ){
+						for( s = -m/2; s < (m+1)/2; ++s )
+							for( t = -n/2; t < (n+1)/2; ++t ){
 								int nx = (x - s),
 									ny = (y - t);
 								if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
@@ -142,6 +148,8 @@ std::vector<Convolutional::Mat> Convolutional::calc_delta ( const std::vector<Ma
 		}
 	}
 
+#pragma omp parallel for default(none) \
+	private(i,j,k) shared(nx_delta, tmp, U)
 	for( int i = 0; i < prev_num_map; ++i ){
 		nx_delta[i] = Mat(U[i].m, U[i].n);
 		for( int j = 0; j < U[i].m; ++j )
@@ -171,16 +179,19 @@ std::vector<Convolutional::Mat> Convolutional::apply ( const std::vector<Mat>& U
 	const int Y = prev_num_unit/prev_ldu, X = prev_ldu;
 	std::vector<Mat> ret(num_map);
 
-	for( int i = 0; i < num_map; ++i ){
+	int i,j,k,y,x,s,t;
+#pragma omp parallel for default(none) \
+	private(i,j,k,y,x,s,t) shared(Y, X, ret, U)
+	for( i = 0; i < num_map; ++i ){
 		ret[i] = Mat(num_unit, U[0].n);
-		for( int j = 0; j < prev_num_map; ++j ){
-			for( int k = 0; k < U[0].n; ++k ){
-				for( int y = 0; y < Y; y += stlide )
-					for( int x = 0; x < X; x += stlide ){
+		for( j = 0; j < prev_num_map; ++j ){
+			for( k = 0; k < U[0].n; ++k ){
+				for( y = 0; y < Y; y += stlide )
+					for( x = 0; x < X; x += stlide ){
 						double val = 0.0;
 
-						for( int s = -m/2; s < (m+1)/2; ++s )
-							for( int t = -n/2; t < (n+1)/2; ++t ){
+						for( s = -m/2; s < (m+1)/2; ++s )
+							for( t = -n/2; t < (n+1)/2; ++t ){
 								int nx = x + s, ny = y + t;
 								if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
 								val += W[i][j][s+m/2][t+n/2]*U[j][nx + ny*prev_ldu][k];
@@ -192,9 +203,11 @@ std::vector<Convolutional::Mat> Convolutional::apply ( const std::vector<Mat>& U
 		}
 	}
 
-	for( int i = 0; i < num_map; ++i )
-		for( int j = 0; j < ret[i].m; ++j )
-			for( int k = 0; k < ret[i].n; ++k )
+#pragma omp parallel for default(none) \
+	private(i,j,k) shared(ret, use_func)
+	for( i = 0; i < num_map; ++i )
+		for( j = 0; j < ret[i].m; ++j )
+			for( k = 0; k < ret[i].n; ++k )
 				ret[i][j][k] = (use_func ? activate_func(ret[i][j][k]) : ret[i][j][k]);
 
 	return ret;

@@ -65,16 +65,19 @@ std::vector<Pooling::Mat> Pooling::calc_delta ( const std::vector<Mat>& U, const
 	const int Y = prev_num_unit/prev_ldu, X = prev_ldu;
 	std::vector<Mat> nx_delta(prev_num_map);
 
-	for( int i = 0; i < prev_num_map; ++i ){
+	int i, j, x, y, s, t;
+#pragma omp parallel for default(none) \
+	private(i,j,s,t,y,x) shared(Y, X, nx_delta, delta, U)
+	for( i = 0; i < prev_num_map; ++i ){
 		nx_delta[i] = Mat(U[i].m, U[i].n);
-		for( int j = 0; j < U[i].n; ++j )
-			for( int x = 0; x < X; x += stlide )
-				for( int y = 0; y < Y; y += stlide ){
+		for( j = 0; j < U[i].n; ++j )
+			for( x = 0; x < X; x += stlide )
+				for( y = 0; y < Y; y += stlide ){
 					int idx1 = x/stlide + y/stlide*ldu, idx2 = x+y*prev_ldu;
 					double val = U[i][x+y*prev_ldu][j];
 					
-					for( int s = 0; s < m; ++s )
-						for( int t = 0; t < n; ++t ){
+					for( s = 0; s < m; ++s )
+						for( t = 0; t < n; ++t ){
 							int nx = x + s, ny = y + t;
 							if( nx < 0 || nx >= X|| ny < 0 || ny >= Y ) continue;
 							nx = (x + s)/stlide; ny = (y + t)/stlide;
@@ -103,15 +106,18 @@ std::vector<Pooling::Mat> Pooling::apply ( const std::vector<Mat>& U, bool use_f
 	const int Y = prev_num_unit/prev_ldu, X = prev_ldu;
 	std::vector<Mat> ret(num_map);
 
-	for( int i = 0; i < num_map; ++i ){
+	int i,j,k,y,x,s,t;
+#pragma omp parallel for default(none) \
+	private(i,j,y,x,s,t) shared(Y, X, ret, U)
+	for( i = 0; i < num_map; ++i ){
 		ret[i] = Mat(num_unit, U[0].n);
-		for( int j = 0; j < U[0].n; ++j ){
-			for( int y = 0; y < Y; y += stlide )
-				for( int x = 0; x < X; x += stlide ){
+		for( j = 0; j < U[0].n; ++j ){
+			for( y = 0; y < Y; y += stlide )
+				for( x = 0; x < X; x += stlide ){
 					double val = U[i][x+prev_ldu*y][j];
 
-					for( int s = 0; s < m; ++s )
-						for( int t = 0; t < n; ++t ){
+					for( s = 0; s < m; ++s )
+						for( t = 0; t < n; ++t ){
 							int nx = x+s, ny = y+t;
 							if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
 							val = std::max(val, U[i][nx + ny*prev_ldu][j]);
@@ -121,6 +127,8 @@ std::vector<Pooling::Mat> Pooling::apply ( const std::vector<Mat>& U, bool use_f
 		}
 	}
 	
+#pragma omp parallel for default(none) \
+	private(i,j,k) shared(ret, use_func)
 	for( int i = 0; i < num_map; ++i )
 		for( int j = 0; j < ret[i].m; ++j )
 			for( int k = 0; k < ret[i].n; ++k )
