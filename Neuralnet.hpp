@@ -359,8 +359,7 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 				if( W.size() == 0 )
 					printf(" Layer %d   ------------- | ------------- | ------------- |\n", i);
 				else
-					printf(" Layer %d   %13.6E | %13.6E | %13.6E |\n", i, ave_weight, min_weight, ma\
-						   x_weight);
+					printf(" Layer %d   %13.6E | %13.6E | %13.6E |\n", i, ave_weight, min_weight, max_weight);
 			}
 			puts("");
 			each_func(*this);
