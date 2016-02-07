@@ -27,6 +27,7 @@ private:
 	std::uniform_real_distribution<double> d_rand;
 
 	std::vector<std::vector<std::vector<Mat>>> calc_gradient (const std::vector<std::vector<Mat>>& U, const std::vector<Mat>& d);
+	void check_gradient ( int cnt, const std::vector<std::vector<Vec>>& x, const std::vector<std::vector<Vec>>& y, const std::vector<std::vector<std::vector<Mat>>>& nabla_w );
 public:
 	Neuralnet();
 
@@ -37,13 +38,13 @@ public:
 	void add_layer( const std::shared_ptr<Layer>& layer );
 
 	void learning ( const std::vector<std::vector<Vec>>& x, const std::vector<std::vector<Vec>>& y,
-					const int MAX_ITER = 1000 );
+					const int MAX_ITER = 1000, const std::function<void(const Neuralnet&)>& each_func = [](const Neuralnet& nn) -> void {} );
 
-	std::vector<Mat> apply ( const std::vector<Mat>& X );
-	std::vector<std::vector<Vec>> apply ( const std::vector<std::vector<Vec>>& x );
+	std::vector<Mat> apply ( const std::vector<Mat>& X ) const;
+	std::vector<std::vector<Vec>> apply ( const std::vector<std::vector<Vec>>& x ) const;
 
 	void set_W ( const std::string& filename );
-	void output_W ( const std::string& filename );
+	void output_W ( const std::string& filename ) const;
 };
 
 //////////////////// PRIVATE FUNCTION ////////////////////
@@ -72,6 +73,50 @@ std::vector<std::vector<std::vector<Neuralnet::Mat>>> Neuralnet::calc_gradient (
 	}
 
 	return nabla_w;
+}
+
+void Neuralnet::check_gradient ( int cnt, const std::vector<std::vector<Vec>>& x, const std::vector<std::vector<Vec>>& y, const std::vector<std::vector<std::vector<Mat>>>& nabla_w )
+{
+	int num_layer = this->layer.size();
+
+	// Calculate gradient numerically for confirmation of computing
+	for( int i = 0; i < num_layer; ++i ){
+		printf("\tlayer %d\n", i);
+		auto W = layer[i]->get_W();
+		std::vector<std::vector<Vec>> X(BATCH_SIZE);
+		for( int j = 0; j < BATCH_SIZE; ++j ) X[j] = x[cnt+j];
+		for( int j = 0; j < std::min(2, (int)W.size()); ++j ){ // num_map
+			for( int k = 0; k < std::min(2, (int)W[j].size()); ++k ){ // prev_num_map
+				for( int l = 0; l < std::min(10, (int)W[j][k].m); ++l ){
+					for( int m = 0; m < std::min(10, (int)W[j][k].n); ++m ){
+						auto tmp = 1.0E-6*(std::abs(W[j][k][l][m]) < 1.0E-6 ? 1.0 : std::abs(W[j][k][l][m]));;
+
+						W[j][k][l][m] += tmp;
+						layer[i]->set_W(W);
+						double E1 = 0.0;
+						auto tmp1 = apply(X);
+						for( int n = 0; n < tmp1[0].size(); ++n )
+							for( int o = 0; o < BATCH_SIZE; ++o ){
+								E1 += (Mat::transpose(Mat(tmp1[o][n]) - Mat(y[cnt+o][n]))*
+									   (Mat(tmp1[o][n]) - Mat(y[cnt+o][n])))[0][0];
+							}
+						W[j][k][l][m] -= tmp;
+						layer[i]->set_W(W);
+						double E2 = 0.0;
+						auto tmp2 = apply(X);
+						for( int n = 0; n < tmp2[0].size(); ++n )
+							for( int o = 0; o < BATCH_SIZE; ++o )
+								E2 += (Mat::transpose(Mat(tmp2[o][n]) - Mat(y[cnt+o][n]))*
+									   (Mat(tmp2[o][n]) - Mat(y[cnt+o][n])))[0][0];
+
+						printf("\t%3d, %3d, %3d, %3d : ( %.10E, %.10E = %.10E)\n", j, k, l, m, 0.5*(E1 - E2)/tmp/BATCH_SIZE, nabla_w[i][j][k][l][m], (std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE - nabla_w[i][j][k][l][m]))/std::abs(0.5*(E1 - E2)/tmp));
+						// nabla_w[i][j][k][l] = 0.5*(E1 - E2)/tmp;
+					}
+				}
+			}
+		}
+		puts("");
+	}
 }
 
 //////////////////// PUBLIC FUNCTION ////////////////////
@@ -114,7 +159,7 @@ void Neuralnet::add_layer( const std::shared_ptr<Layer>& layer )
 	this->layer[this->layer.size()-1]->init(m);
 }
 
-void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::vector<std::vector<Vec>>& y, const int MAX_ITER )
+void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::vector<std::vector<Vec>>& y, const int MAX_ITER, const std::function<void(const Neuralnet&)>& each_func )
 {
 	const int num_layer = layer.size();
 
@@ -182,44 +227,7 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 				for( int k = 0; k < nabla_w[i][j].size(); ++k )
 					nabla_w[i][j][k] = 1.0/BATCH_SIZE * nabla_w[i][j][k];
 		
-		// Calculate gradient numerically for confirmation of computing
-		// for( int i = 0; i < num_layer; ++i ){
-		// 	printf("\tlayer %d\n", i);
-		// 	auto W = layer[i]->get_W();
-		// 	std::vector<std::vector<Vec>> X(BATCH_SIZE);
-		// 	for( int j = 0; j < BATCH_SIZE; ++j ) X[j] = x[cnt+j];
-		// 	for( int j = 0; j < std::min(2, (int)W.size()); ++j ){ // num_map
-		// 		for( int k = 0; k < std::min(2, (int)W[j].size()); ++k ){ // prev_num_map
-		// 			for( int l = 0; l < std::min(10, (int)W[j][k].m); ++l ){
-		// 				for( int m = 0; m < std::min(10, (int)W[j][k].n); ++m ){
-		// 					auto tmp = 1.0E-6*(std::abs(W[j][k][l][m]) < 1.0E-6 ? 1.0 : std::abs(W[j][k][l][m]));;
-
-		// 					W[j][k][l][m] += tmp;
-		// 					layer[i]->set_W(W);
-		// 					double E1 = 0.0;
-		// 					auto tmp1 = apply(X);
-		// 					for( int n = 0; n < tmp1[0].size(); ++n )
-		// 						for( int o = 0; o < BATCH_SIZE; ++o ){
-		// 							E1 += (Mat::transpose(Mat(tmp1[o][n]) - Mat(y[cnt+o][n]))*
-		// 								   (Mat(tmp1[o][n]) - Mat(y[cnt+o][n])))[0][0];
-		// 						}
-		// 					W[j][k][l][m] -= tmp;
-		// 					layer[i]->set_W(W);
-		// 					double E2 = 0.0;
-		// 					auto tmp2 = apply(X);
-		// 					for( int n = 0; n < tmp2[0].size(); ++n )
-		// 						for( int o = 0; o < BATCH_SIZE; ++o )
-		// 							E2 += (Mat::transpose(Mat(tmp2[o][n]) - Mat(y[cnt+o][n]))*
-		// 								   (Mat(tmp2[o][n]) - Mat(y[cnt+o][n])))[0][0];
-
-		// 					printf("\t%3d, %3d, %3d, %3d : ( %.10E, %.10E = %.10E)\n", j, k, l, m, 0.5*(E1 - E2)/tmp/BATCH_SIZE, nabla_w[i][j][k][l][m], (std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE - nabla_w[i][j][k][l][m]))/std::abs(0.5*(E1 - E2)/tmp));
-		// 					// nabla_w[i][j][k][l] = 0.5*(E1 - E2)/tmp;
-		// 				}
-		// 			}
-		// 		}
-		// 	}
-		// 	puts("");
-		// }
+		//check_gradient(cnt, x, y, nabla_w);
 		cnt += BATCH_SIZE;
 		if( cnt >= x.size() ){
 			shuffle( idx.begin(), idx.end(), m );
@@ -325,44 +333,45 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 				else
 					printf(" Layer %d   %13.6E | %13.6E | %13.6E |\n", i, ave_gradient, min_gradient, max_gradient);
 			}
-           printf("Weight   :    Average    |      Min      |      Max      |\n");
-		   for( int i = 0; i < num_layer; ++i ){
-			   double ave_weight = 0.0;
-			   double max_weight = -1.0E100;
-			   double min_weight = 1.0E100;
+			printf("Weight   :    Average    |      Min      |      Max      |\n");
+			for( int i = 0; i < num_layer; ++i ){
+				double ave_weight = 0.0;
+				double max_weight = -1.0E100;
+				double min_weight = 1.0E100;
 
-			   int num = 0;
-			   auto W = layer[i]->get_W();
-			   for( int j = 0; j < W.size(); ++j ){
-				   for( int k = 0; k < W[j].size(); ++k ){
-					   for( int l = 0; l < W[j][k].m; ++l )
-						   for( int m = 0; m < W[j][k].n; ++m ){
-							   auto tmp = std::abs(W[j][k][k][m]);
+				int num = 0;
+				auto W = layer[i]->get_W();
+				for( int j = 0; j < W.size(); ++j ){
+					for( int k = 0; k < W[j].size(); ++k ){
+						for( int l = 0; l < W[j][k].m; ++l )
+							for( int m = 0; m < W[j][k].n; ++m ){
+								auto tmp = std::abs(W[j][k][k][m]);
 
-							   ave_weight += tmp;
-							   max_weight = std::max(max_weight, tmp);
-							   min_weight = std::min(min_weight, tmp);
-						   }
-					   num += W[j][k].m*W[j][k].n;
-				   }
-			   }
-			   ave_weight /= num;
+								ave_weight += tmp;
+								max_weight = std::max(max_weight, tmp);
+								min_weight = std::min(min_weight, tmp);
+							}
+						num += W[j][k].m*W[j][k].n;
+					}
+				}
+				ave_weight /= num;
 
-			   if( W.size() == 0 )
-				   printf(" Layer %d   ------------- | ------------- | ------------- |\n", i);
-			   else
-				   printf(" Layer %d   %13.6E | %13.6E | %13.6E |\n", i, ave_weight, min_weight, ma\
-						  x_weight);
-		   }
+				if( W.size() == 0 )
+					printf(" Layer %d   ------------- | ------------- | ------------- |\n", i);
+				else
+					printf(" Layer %d   %13.6E | %13.6E | %13.6E |\n", i, ave_weight, min_weight, ma\
+						   x_weight);
+			}
 			puts("");
+			each_func(*this);
 			fflush(stdout);
 
-			output_W("autoenc_W.dat");
+			output_W("W.dat");
 		}
 	}
 }
 
-std::vector<Neuralnet::Mat> Neuralnet::apply ( const std::vector<Mat>& X )
+std::vector<Neuralnet::Mat> Neuralnet::apply ( const std::vector<Mat>& X ) const
 {
 	const int num_layer = layer.size();
 	std::vector<Mat> U(X.size());
@@ -383,7 +392,7 @@ std::vector<Neuralnet::Mat> Neuralnet::apply ( const std::vector<Mat>& X )
 	return ret;
 }
 
-std::vector<std::vector<Neuralnet::Vec>> Neuralnet::apply ( const std::vector<std::vector<Vec>>& x )
+std::vector<std::vector<Neuralnet::Vec>> Neuralnet::apply ( const std::vector<std::vector<Vec>>& x ) const
 {
 	std::vector<Mat> u(x[0].size());
 	for( int i = 0; i < x[0].size(); ++i ) u[i] = Mat(x[0][0].size(), x.size());
@@ -412,7 +421,7 @@ void Neuralnet::set_W ( const std::string& filename )
 	}
 }
 
-void Neuralnet::output_W ( const std::string& filename )
+void Neuralnet::output_W ( const std::string& filename ) const
 {
 	for( int i = 0; i < layer.size(); ++i ){
 		layer[i]->output_W("layer_" + std::to_string(i) + "_" + filename);
