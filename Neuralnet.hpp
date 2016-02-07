@@ -325,6 +325,35 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 				else
 					printf(" Layer %d   %13.6E | %13.6E | %13.6E |\n", i, ave_gradient, min_gradient, max_gradient);
 			}
+           printf("Weight   :    Average    |      Min      |      Max      |\n");
+		   for( int i = 0; i < num_layer; ++i ){
+			   double ave_weight = 0.0;
+			   double max_weight = -1.0E100;
+			   double min_weight = 1.0E100;
+
+			   int num = 0;
+			   auto W = layer[i]->get_W();
+			   for( int j = 0; j < W.size(); ++j ){
+				   for( int k = 0; k < W[j].size(); ++k ){
+					   for( int l = 0; l < W[j][k].m; ++l )
+						   for( int m = 0; m < W[j][k].n; ++m ){
+							   auto tmp = std::abs(W[j][k][k][m]);
+
+							   ave_weight += tmp;
+							   max_weight = std::max(max_weight, tmp);
+							   min_weight = std::min(min_weight, tmp);
+						   }
+					   num += W[j][k].m*W[j][k].n;
+				   }
+			   }
+			   ave_weight /= num;
+
+			   if( W.size() == 0 )
+				   printf(" Layer %d   ------------- | ------------- | ------------- |\n", i);
+			   else
+				   printf(" Layer %d   %13.6E | %13.6E | %13.6E |\n", i, ave_weight, min_weight, ma\
+						  x_weight);
+		   }
 			puts("");
 			fflush(stdout);
 
