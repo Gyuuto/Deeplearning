@@ -374,18 +374,14 @@ std::vector<Neuralnet::Mat> Neuralnet::apply ( const std::vector<Mat>& X ) const
 {
 	const int num_layer = layer.size();
 	std::vector<Mat> U(X.size());
-	for( int i = 0; i < X.size(); ++i ) U[i] = Mat(X[i].m, X[i].n);
-
-	for( int i = 0; i < X.size(); ++i )
-		for( int j = 0; j < X[i].n; ++j )
-			for( int k = 0; k < X[i].m; ++k ) U[i][k][j] = X[i][k][j];
+	for( int i = 0; i < X.size(); ++i ) U[i] = X[i];
 	
 	for( int i = 0; i < num_layer; ++i ){
 		U = layer[i]->apply(U);
 	}
 
-	std::vector<Mat> ret(X.size());
-	for( int i = 0; i < X.size(); ++i ){
+	std::vector<Mat> ret(U.size());
+	for( int i = 0; i < U.size(); ++i ){
 		ret[i] = Mat::zeros(U[i].m, U[i].n);
 		for( int j = 0; j < U[i].m; ++j )
 			for( int k = 0; k < U[i].n; ++k )
