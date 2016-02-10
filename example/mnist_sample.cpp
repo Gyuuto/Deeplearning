@@ -84,8 +84,8 @@ int main()
 	vector<int> test_lab;
 	vector<vector<vector<double>>> test_x;
 	const int M = 1000;
-	ifstream test_image("test-images-idx3-ubyte", ios_base::binary);
-	ifstream test_label("test-labels-idx1-ubyte", ios_base::binary);
+	ifstream test_image("t10k-images-idx3-ubyte", ios_base::binary);
+	ifstream test_label("t10k-labels-idx1-ubyte", ios_base::binary);
 	test_image.seekg(4*4, ios_base::beg);
 	test_label.seekg(4*2, ios_base::beg);
 	for( int i = 0; i < M; ++i ){
@@ -139,13 +139,17 @@ int main()
 			}
 			if( idx == test_lab[i] ) ++ans_num;
 		}
-		printf("Test   data answer rate : %.2f%%\n", (double)ans_num/N*100.0);
+		printf("Test  data answer rate : %.2f%%\n", (double)ans_num/M*100.0);
 	};
 	
 	// set supervised data.
 	vector<vector<vector<double>>> d(N, vector<vector<double>>(1, vector<double>(10, 0.0)));
 	for( int i = 0; i < N; ++i ) d[i][0][train_lab[i]] = 1.0;
 
+	// set a hyper parameter.
+	net.set_EPS(1.0E-3);
+	net.set_LAMBDA(0.0);
+	net.set_BATCHSIZE(50);
 	// learning the neuralnet in 10 EPOCH and output error defined above in each epoch.
-    net.learning(train_x, d, N*10, check_error);
+    net.learning(train_x, d, N/50*10, check_error);
 }

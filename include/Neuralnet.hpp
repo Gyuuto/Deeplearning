@@ -121,7 +121,7 @@ void Neuralnet::check_gradient ( int cnt, const std::vector<std::vector<Vec>>& x
 
 //////////////////// PUBLIC FUNCTION ////////////////////
 Neuralnet::Neuralnet()
-	:EPS(1.0E-1), LAMBDA(1.0E-5), BATCH_SIZE(1)
+	:EPS(1.0E-3), LAMBDA(1.0E-5), BATCH_SIZE(1)
 {
 	m = std::mt19937(time(NULL));
 }

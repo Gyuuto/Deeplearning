@@ -1,4 +1,5 @@
 #include <iostream>
+#include <functional>
 #include <memory>
 #include <cmath>
 
@@ -33,8 +34,12 @@ int main()
 		y[i] = {{cos(x[i][0][0])}};
 	}
 	
+	// set a hyper parameter.
+	net.set_EPS(1.0E-3);
+	net.set_LAMBDA(0.0);
+	net.set_BATCHSIZE(10);
 	// learning the neuralnet in 10 EPOCH.
-    net.learning(x, y, 100*10);
+    net.learning(x, y, 100/10*10);
 	
 	// check approximated function by neuralnet.
 	vector<vector<vector<double>>> input = {{{0.8}}};
