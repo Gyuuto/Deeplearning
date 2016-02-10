@@ -17,9 +17,9 @@ private:
 	Mat mask;
 public:
 	KDropoutFullyConnected ( int prev_num_map, int prev_num_unit, int num_map, int num_unit,
-							int K, 
-							const std::function<double(double)>& f,
-							const std::function<double(double)>& d_f );
+							 int K, 
+							 const std::function<double(double)>& f,
+							 const std::function<double(double)>& d_f );
 
 	void init( std::mt19937& m );
 	
