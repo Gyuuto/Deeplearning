@@ -60,7 +60,7 @@ void SparseFullyConnected::init ( std::mt19937& m )
 			W[i][j] = Mat(num_unit, 1+prev_num_unit);
 			for( int k = 0; k < W[i][j].m; ++k )
 				for( int l = 0; l < W[i][j].n; ++l )
-					W[i][j][k][l] = d_rand(m);
+					W[i][j](k,l) = d_rand(m);
 		}
 	}
 }
@@ -79,19 +79,19 @@ std::vector<std::vector<SparseFullyConnected::Mat>> SparseFullyConnected::calc_g
 		for( int j = 0; j < V[i].m; ++j ){
 			double tmp_rho = 0.0;
 			for( int k = 0; k < V[i].n; ++k )
-				tmp_rho += activate_func(V[i][j][k]);
-			rho[j][i] = R_LAMBDA*rho[j][i] + (1.0-R_LAMBDA)*tmp_rho/V[i].n;
+				tmp_rho += activate_func(V[i](j,k));
+			rho(j,i) = R_LAMBDA*rho(j,i) + (1.0-R_LAMBDA)*tmp_rho/V[i].n;
 		}
 	}
 
 	for( int i = 0; i < num_map; ++i )
 		for( int j = 0; j < prev_num_map; ++j )
 			for( int k = 0; k < nabla[i][j].m; ++k ){
-				double KL = (1.0-RHO)/(1.0-rho[k][i]) - RHO/rho[k][i];
+				double KL = (1.0-RHO)/(1.0-rho(k,i)) - RHO/rho(k,i);
 				for( int l = 0; l < nabla[i][j].n; ++l )
 					for( int m = 0; m < delta[i].n; ++m )
-						nabla[i][j][k][l] += (delta[i][k][m] + BETA*KL)*(
-							l == 0 ? 1.0 : prev_activate_func(U[j][l-1][m])
+						nabla[i][j](k,l) += (delta[i](k,m) + BETA*KL)*(
+							l == 0 ? 1.0 : prev_activate_func(U[j](l-1,m))
 							);
 			}
 	
@@ -113,9 +113,9 @@ std::vector<SparseFullyConnected::Mat> SparseFullyConnected::calc_delta ( const 
 	for( int i = 0; i < num_map; ++i )
 		for( int j = 0; j < prev_num_map; ++j )
 			for( int k = 0; k < tmp[i].m-1; ++k ){
-				double KL = (1.0-RHO)/(1.0-rho[k][i]) - RHO/rho[k][i];
+				double KL = (1.0-RHO)/(1.0-rho(k,i)) - RHO/rho(k,i);
 				for( int l = 0; l < tmp[i].n; ++l )
-					nx_delta[j][k][l] += (tmp[j][k+1][l] + BETA*KL)*prev_activate_diff_func(U[j][k][l]);
+					nx_delta[j](k,l) += (tmp[j](k+1,l) + BETA*KL)*prev_activate_diff_func(U[j](k,l));
 			}
 	
 	return nx_delta;
@@ -135,9 +135,9 @@ std::vector<SparseFullyConnected::Mat> SparseFullyConnected::apply ( const std::
 	for( int i = 0; i < prev_num_map; ++i ){
 		V[i] = Mat(U[i].m+1, U[i].n);
 		for( int j = 0; j < U[i].n; ++j ){
-			V[i][0][j] = 1.0;
+			V[i](0,j) = 1.0;
 			for( int k = 0; k < U[i].m; ++k )
-				V[i][k+1][j] = U[i][k][j];
+				V[i](k+1,j) = U[i](k,j);
 		}
 	}
 
@@ -150,7 +150,7 @@ std::vector<SparseFullyConnected::Mat> SparseFullyConnected::apply ( const std::
 	for( int i = 0; i < num_map; ++i )
 		for( int j = 0; j < ret[i].m; ++j )
 			for( int k = 0; k < ret[i].n; ++k )
-				ret[i][j][k] = (use_func ? activate_func(ret[i][j][k]) : ret[i][j][k]);
+				ret[i](j,k) = (use_func ? activate_func(ret[i](j,k)) : ret[i](j,k));
 	
 	return ret;
 }
@@ -164,7 +164,7 @@ std::vector<std::vector<SparseFullyConnected::Vec>> SparseFullyConnected::apply 
 	for( int i = 0; i < prev_num_map; ++i )
 		for( int j = 0; j < u[i][0].size(); ++j )
 			for( int k = 0; k < u.size(); ++k )
-				tmp[i][j][k] = u[k][i][j];
+				tmp[i](j,k) = u[k][i][j];
 
 	auto U = apply(tmp, use_func);
 	std::vector<std::vector<Vec>> ret(U[0].n);
@@ -172,7 +172,7 @@ std::vector<std::vector<SparseFullyConnected::Vec>> SparseFullyConnected::apply 
 		ret[i] = std::vector<Vec>(U.size(), Vec(U[0].m));
 		for( int j = 0; j < U.size(); ++j )
 			for( int k = 0; k < U[0].m; ++k )
-				ret[i][j][k] = U[j][k][i];
+				ret[i][j][k] = U[j](k,i);
 	}
 
 	return ret;
@@ -188,7 +188,7 @@ void SparseFullyConnected::set_W ( const std::string& filename )
 			ifs.read((char*)&W[i][j].n, sizeof(W[i][j].n));
 			for( int k = 0; k < W[i][j].m; ++k )
 				for( int l = 0; l < W[i][j].n; ++l )
-					ifs.read((char*)&W[i][j][k][l], sizeof(W[i][j][k][l]));
+					ifs.read((char*)&W[i][j](k,l), sizeof(W[i][j](k,l)));
 		}
 }
 
@@ -202,7 +202,7 @@ void SparseFullyConnected::output_W ( const std::string& filename )
 			ofs.write((char*)&W[i][j].n, sizeof(W[i][j].n));
 			for( int k = 0; k < W[i][j].m; ++k )
 				for( int l = 0; l < W[i][j].n; ++l )
-					ofs.write((char*)&W[i][j][k][l], sizeof(W[i][j][k][l]));
+					ofs.write((char*)&W[i][j](k,l), sizeof(W[i][j](k,l)));
 		}
 }
 

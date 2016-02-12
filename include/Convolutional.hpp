@@ -69,7 +69,7 @@ void Convolutional::init ( std::mt19937& m )
 			W[i][j] = Mat(this->m, this->n);
 			for( int k = 0; k < W[i][j].m; ++k )
 				for( int l = 0; l < W[i][j].m; ++l )
-					W[i][j][k][l] = d_rand(m);
+					W[i][j](k,l) = d_rand(m);
 		}				
 	}
 }
@@ -98,9 +98,9 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 								int nx = x + s, ny = y + t;
 								if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
 								
-								nabla[i][j][s+m/2][t+n/2] +=
-									delta[i][x/stlide+ldu*(y/stlide)][k]*
-									prev_activate_func(U[j][nx+prev_ldu*ny][k]);
+								nabla[i][j](s+m/2,t+n/2) +=
+									delta[i](x/stlide+ldu*(y/stlide),k)*
+									prev_activate_func(U[j](nx+prev_ldu*ny,k));
 							}
 		
 		for( j = 0; j < delta[i].n; ++j )
@@ -112,9 +112,9 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 							for( t = -n/2; t < (n+1)/2; ++t ){
 								int nx = x + s, ny = y + t;
 								if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
-								val += prev_activate_func(U[k][nx+prev_ldu*ny][j]);
+								val += prev_activate_func(U[k](nx+prev_ldu*ny,j));
 							}
-					d_bias[i] += delta[i][x/stlide+ldu*(y/stlide)][j] * val;
+					d_bias[i] += delta[i](x/stlide+ldu*(y/stlide),j) * val;
 				}
 	}
 
@@ -142,7 +142,7 @@ std::vector<Convolutional::Mat> Convolutional::calc_delta ( const std::vector<Ma
 									ny = (y - t);
 								if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
 								nx /= stlide; ny /= stlide;
-								tmp[i][x+ldu*y][k] += W[j][i][s+m/2][t+n/2]*delta[j][nx+ldu*ny][k];
+								tmp[i](x+ldu*y,k) += W[j][i](s+m/2,t+n/2)*delta[j](nx+ldu*ny,k);
 							}
 					}
 		}
@@ -154,7 +154,7 @@ std::vector<Convolutional::Mat> Convolutional::calc_delta ( const std::vector<Ma
 		nx_delta[i] = Mat(U[i].m, U[i].n);
 		for( int j = 0; j < U[i].m; ++j )
 			for( int k = 0; k < U[i].n; ++k )
-				nx_delta[i][j][k] += tmp[i][j][k]*prev_activate_diff_func(U[i][j][k]);
+				nx_delta[i](j,k) += tmp[i](j,k)*prev_activate_diff_func(U[i](j,k));
 	}
 	
 	return nx_delta;
@@ -194,10 +194,10 @@ std::vector<Convolutional::Mat> Convolutional::apply ( const std::vector<Mat>& U
 							for( t = -n/2; t < (n+1)/2; ++t ){
 								int nx = x + s, ny = y + t;
 								if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
-								val += W[i][j][s+m/2][t+n/2]*U[j][nx + ny*prev_ldu][k];
+								val += W[i][j](s+m/2,t+n/2)*U[j](nx + ny*prev_ldu,k);
 							}
 
-						ret[i][y/stlide*ldu + x/stlide][k] += val + bias[i];
+						ret[i](y/stlide*ldu + x/stlide,k) += val + bias[i];
 					}
 			}
 		}
@@ -208,7 +208,7 @@ std::vector<Convolutional::Mat> Convolutional::apply ( const std::vector<Mat>& U
 	for( i = 0; i < num_map; ++i )
 		for( j = 0; j < ret[i].m; ++j )
 			for( k = 0; k < ret[i].n; ++k )
-				ret[i][j][k] = (use_func ? activate_func(ret[i][j][k]) : ret[i][j][k]);
+				ret[i](j,k) = (use_func ? activate_func(ret[i](j,k)) : ret[i](j,k));
 
 	return ret;
 }
@@ -222,7 +222,7 @@ std::vector<std::vector<Convolutional::Vec>> Convolutional::apply ( const std::v
 	for( int i = 0; i < prev_num_map; ++i )
 		for( int j = 0; j < u[i][0].size(); ++j )
 			for( int k = 0; k < u.size(); ++k )
-				tmp[i][j][k] = u[k][i][j];
+				tmp[i](j,k) = u[k][i][j];
 	
 	auto U = apply(tmp, use_func);
 	std::vector<std::vector<Vec>> ret(U[0].n);
@@ -230,7 +230,7 @@ std::vector<std::vector<Convolutional::Vec>> Convolutional::apply ( const std::v
 		ret[i] = std::vector<Vec>(U.size(), Vec(U[0].m));
 		for( int j = 0; j < U.size(); ++j )
 			for( int k = 0; k < U[0].m; ++k )
-				ret[i][j][k] = U[j][k][i];
+				ret[i][j][k] = U[j](k,i);
 	}
 
 	return ret;
@@ -246,7 +246,7 @@ void Convolutional::set_W ( const std::string& filename )
 			ifs.read((char*)&W[i][j].n, sizeof(W[i][j].n));
 			for( int k = 0; k < W[i][j].m; ++k )
 				for( int l = 0; l < W[i][j].n; ++l )
-					ifs.read((char*)&W[i][j][k][l], sizeof(W[i][j][k][l]));
+					ifs.read((char*)&W[i][j](k,l), sizeof(W[i][j](k,l)));
 		}
 }
 
@@ -260,7 +260,7 @@ void Convolutional::output_W ( const std::string& filename )
 			ofs.write((char*)&W[i][j].n, sizeof(W[i][j].n));
 			for( int k = 0; k < W[i][j].m; ++k )
 				for( int l = 0; l < W[i][j].n; ++l )
-					ofs.write((char*)&W[i][j][k][l], sizeof(W[i][j][k][l]));
+					ofs.write((char*)&W[i][j](k,l), sizeof(W[i][j](k,l)));
 		}	
 }
 

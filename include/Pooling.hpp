@@ -74,7 +74,7 @@ std::vector<Pooling::Mat> Pooling::calc_delta ( const std::vector<Mat>& U, const
 			for( x = 0; x < X; x += stlide )
 				for( y = 0; y < Y; y += stlide ){
 					int idx1 = x/stlide + y/stlide*ldu, idx2 = x+y*prev_ldu;
-					double val = U[i][x+y*prev_ldu][j];
+					double val = U[i](x+y*prev_ldu,j);
 					
 					for( s = 0; s < m; ++s )
 						for( t = 0; t < n; ++t ){
@@ -82,14 +82,14 @@ std::vector<Pooling::Mat> Pooling::calc_delta ( const std::vector<Mat>& U, const
 							if( nx < 0 || nx >= X|| ny < 0 || ny >= Y ) continue;
 							nx = (x + s)/stlide; ny = (y + t)/stlide;
 
-							if( val < U[i][(x+s)+(y+t)*prev_ldu][j] ){
+							if( val < U[i]((x+s)+(y+t)*prev_ldu,j) ){
 								idx1 = nx+ny*ldu;
 								idx2 = (x+s)+(y+t)*prev_ldu;
-								val = U[i][idx2][j];
+								val = U[i](idx2,j);
 							}
 						}
-					nx_delta[i][idx2][j] = delta[i][idx1][j] *
-						prev_activate_diff_func(U[i][idx2][j]);
+					nx_delta[i](idx2,j) = delta[i](idx1,j) *
+						prev_activate_diff_func(U[i](idx2,j));
 				}
 	}
 	
@@ -114,15 +114,15 @@ std::vector<Pooling::Mat> Pooling::apply ( const std::vector<Mat>& U, bool use_f
 		for( j = 0; j < U[0].n; ++j ){
 			for( y = 0; y < Y; y += stlide )
 				for( x = 0; x < X; x += stlide ){
-					double val = U[i][x+prev_ldu*y][j];
+					double val = U[i](x+prev_ldu*y,j);
 
 					for( s = 0; s < m; ++s )
 						for( t = 0; t < n; ++t ){
 							int nx = x+s, ny = y+t;
 							if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
-							val = std::max(val, U[i][nx + ny*prev_ldu][j]);
+							val = std::max(val, U[i](nx + ny*prev_ldu,j));
 						}
-					ret[i][x/stlide + (y/stlide)*ldu][j] = val;
+					ret[i](x/stlide + (y/stlide)*ldu,j) = val;
 				}
 		}
 	}
@@ -132,7 +132,7 @@ std::vector<Pooling::Mat> Pooling::apply ( const std::vector<Mat>& U, bool use_f
 	for( int i = 0; i < num_map; ++i )
 		for( int j = 0; j < ret[i].m; ++j )
 			for( int k = 0; k < ret[i].n; ++k )
-				ret[i][j][k] = (use_func ? activate_func(ret[i][j][k]) : ret[i][j][k]);
+				ret[i](j,k) = (use_func ? activate_func(ret[i](j,k)) : ret[i](j,k));
 
 	return ret;
 }
@@ -146,7 +146,7 @@ std::vector<std::vector<Pooling::Vec>> Pooling::apply ( const std::vector<std::v
 	for( int i = 0; i < prev_num_map; ++i )
 		for( int j = 0; j < u[i][0].size(); ++j )
 			for( int k = 0; k < u.size(); ++k )
-				tmp[i][j][k] = u[k][i][j];
+				tmp[i](j,k) = u[k][i][j];
 	
 	auto U = apply(tmp, use_func);
 	std::vector<std::vector<Vec>> ret(U[0].n);
@@ -154,7 +154,7 @@ std::vector<std::vector<Pooling::Vec>> Pooling::apply ( const std::vector<std::v
 		ret[i] = std::vector<Vec>(U.size(), Vec(U[0].m));
 		for( int j = 0; j < U.size(); ++j )
 			for( int k = 0; k < U[0].m; ++k )
-				ret[i][j][k] = U[j][k][i];
+				ret[i][j][k] = U[j](k,i);
 	}
 
 

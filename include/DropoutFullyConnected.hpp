@@ -63,14 +63,14 @@ void DropoutFullyConnected::init ( std::mt19937& m )
 			W[i][j] = Mat(num_unit, 1+prev_num_unit);
 			for( int k = 0; k < W[i][j].m; ++k )
 				for( int l = 0; l < W[i][j].n; ++l )
-					W[i][j][k][l] = d_rand(m);
+					W[i][j](k,l) = d_rand(m);
 		}
 	}
 
 	mask = Mat(prev_num_unit, prev_num_map);
 	for( int i = 0; i < prev_num_unit; ++i )
 		for( int j = 0; j < prev_num_map; ++j )
-			mask[i][j] = this->d_rand(mt) < dropout_p ? 0 : 1;
+			mask(i,j) = this->d_rand(mt) < dropout_p ? 0 : 1;
 }
 
 std::vector<std::vector<DropoutFullyConnected::Mat>> DropoutFullyConnected::calc_gradient ( const std::vector<Mat>& U, const std::vector<Mat>& delta )
@@ -87,8 +87,8 @@ std::vector<std::vector<DropoutFullyConnected::Mat>> DropoutFullyConnected::calc
 			for( int k = 0; k < nabla[i][j].m; ++k )
 				for( int l = 0; l < nabla[i][j].n; ++l )
 					for( int m = 0; m < delta[i].n; ++m )
-						nabla[i][j][k][l] += delta[i][k][m]*(
-							l == 0 ? 1.0 : prev_activate_func(U[j][l-1][m])
+						nabla[i][j](k,l) += delta[i](k,m)*(
+							l == 0 ? 1.0 : prev_activate_func(U[j](l-1,m))
 							);
 
 	return nabla;
@@ -110,7 +110,7 @@ std::vector<DropoutFullyConnected::Mat> DropoutFullyConnected::calc_delta ( cons
 	for( int i = 0; i < prev_num_map; ++i )
 		for( int j = 0; j < tmp[i].m-1; ++j )
 			for( int k = 0; k < tmp[i].n; ++k )
-				nx_delta[i][j][k] += mask[j][i]*tmp[i][j+1][k]*prev_activate_diff_func(U[i][j][k]);
+				nx_delta[i](j,k) += mask(j,i)*tmp[i](j+1,k)*prev_activate_diff_func(U[i](j,k));
 	
 	return nx_delta;
 }
@@ -121,7 +121,7 @@ void DropoutFullyConnected::update_W ( const std::vector<std::vector<Mat>>& dW )
 		for( int j = 0; j < prev_num_map; ++j )
 			W[i][j] = W[i][j] + dW[i][j];
 		for( int j = 0; j < num_unit; ++j )
-			mask[j][i] = d_rand(mt) < dropout_p ? 0 : 1;
+			mask(j,i) = d_rand(mt) < dropout_p ? 0 : 1;
 	}
 }
 
@@ -132,9 +132,9 @@ std::vector<DropoutFullyConnected::Mat> DropoutFullyConnected::apply ( const std
 	for( int i = 0; i < prev_num_map; ++i ){
 		V[i] = Mat(U[i].m+1, U[i].n);
 		for( int j = 0; j < U[i].n; ++j ){
-			V[i][0][j] = 1.0;
+			V[i](0,j) = 1.0;
 			for( int k = 0; k < U[i].m; ++k )
-				V[i][k+1][j] = U[i][k][j]*mask[k][i];
+				V[i](k+1,j) = U[i](k,j)*mask(k,i);
 		}
 	}
 
@@ -148,7 +148,7 @@ std::vector<DropoutFullyConnected::Mat> DropoutFullyConnected::apply ( const std
 	for( int i = 0; i < num_map; ++i )
 		for( int j = 0; j < ret[i].m; ++j )
 			for( int k = 0; k < ret[i].n; ++k )
-				ret[i][j][k] = (use_func ? activate_func(ret[i][j][k]) : ret[i][j][k]);
+				ret[i](j,k) = (use_func ? activate_func(ret[i](j,k)) : ret[i](j,k));
 	
 	return ret;
 }
@@ -162,7 +162,7 @@ std::vector<std::vector<DropoutFullyConnected::Vec>> DropoutFullyConnected::appl
 	for( int i = 0; i < prev_num_map; ++i )
 		for( int j = 0; j < u[i][0].size(); ++j )
 			for( int k = 0; k < u.size(); ++k )
-				tmp[i][j][k] = u[k][i][j];
+				tmp[i](j,k) = u[k][i][j];
 	
 	auto U = apply(tmp, use_func);
 	std::vector<std::vector<Vec>> ret(U[0].n);
@@ -170,7 +170,7 @@ std::vector<std::vector<DropoutFullyConnected::Vec>> DropoutFullyConnected::appl
 		ret[i] = std::vector<Vec>(U.size(), Vec(U[0].m));
 		for( int j = 0; j < U.size(); ++j )
 			for( int k = 0; k < U[0].m; ++k )
-				ret[i][j][k] = U[j][k][i];
+				ret[i][j][k] = U[j](k,i);
 	}
 
 	return ret;
@@ -186,7 +186,7 @@ void DropoutFullyConnected::set_W ( const std::string& filename )
 			ifs.read((char*)&W[i][j].n, sizeof(W[i][j].n));
 			for( int k = 0; k < W[i][j].m; ++k )
 				for( int l = 0; l < W[i][j].n; ++l )
-					ifs.read((char*)&W[i][j][k][l], sizeof(W[i][j][k][l]));
+					ifs.read((char*)&W[i][j](k,l), sizeof(W[i][j](k,l)));
 		}
 }
 
@@ -200,7 +200,7 @@ void DropoutFullyConnected::output_W ( const std::string& filename )
 			ofs.write((char*)&W[i][j].n, sizeof(W[i][j].n));
 			for( int k = 0; k < W[i][j].m; ++k )
 				for( int l = 0; l < W[i][j].n; ++l )
-					ofs.write((char*)&W[i][j][k][l], sizeof(W[i][j][k][l]));
+					ofs.write((char*)&W[i][j](k,l), sizeof(W[i][j](k,l)));
 		}
 }
 

@@ -63,14 +63,14 @@ void KDropoutFullyConnected::init ( std::mt19937& m )
 			W[i][j] = Mat(num_unit, 1+prev_num_unit);
 			for( int k = 0; k < W[i][j].m; ++k )
 				for( int l = 0; l < W[i][j].n; ++l )
-					W[i][j][k][l] = d_rand(m);
+					W[i][j](k,l) = d_rand(m);
 		}
 	}
 
 	mask = Mat(prev_num_unit, prev_num_map);
 	for( int i = 0; i < prev_num_unit; ++i )
 		for( int j = 0; j < prev_num_map; ++j )
-			mask[i][j] = 1;
+			mask(i,j) = 1;
 }
 
 std::vector<std::vector<KDropoutFullyConnected::Mat>> KDropoutFullyConnected::calc_gradient ( const std::vector<Mat>& U, const std::vector<Mat>& delta )
@@ -87,8 +87,8 @@ std::vector<std::vector<KDropoutFullyConnected::Mat>> KDropoutFullyConnected::ca
 			for( int k = 0; k < nabla[i][j].m; ++k )
 				for( int l = 0; l < nabla[i][j].n; ++l )
 					for( int m = 0; m < delta[i].n; ++m )
-						nabla[i][j][k][l] += delta[i][k][m]*(
-							l == 0 ? 1.0 : mask[l-1][j]*prev_activate_func(U[j][l-1][m])
+						nabla[i][j](k,l) += delta[i](k,m)*(
+							l == 0 ? 1.0 : mask(l-1,j)*prev_activate_func(U[j](l-1,m))
 							);
 
 	return nabla;
@@ -110,7 +110,7 @@ std::vector<KDropoutFullyConnected::Mat> KDropoutFullyConnected::calc_delta ( co
 	for( int i = 0; i < prev_num_map; ++i )
 		for( int j = 0; j < tmp[i].m-1; ++j )
 			for( int k = 0; k < tmp[i].n; ++k )
-				nx_delta[i][j][k] += mask[j][i]*tmp[i][j+1][k]*prev_activate_diff_func(U[i][j][k]);
+				nx_delta[i](j,k) += mask(j,i)*tmp[i](j+1,k)*prev_activate_diff_func(U[i](j,k));
 	
 	return nx_delta;
 }
@@ -134,7 +134,7 @@ std::vector<KDropoutFullyConnected::Mat> KDropoutFullyConnected::apply ( const s
 
 		for( int j = 0; j < U[i].m; ++j ){
 			for( int k = 0; k < U[i].n; ++k ){
-				val[j] += U[i][j][k];
+				val[j] += U[i](j,k);
 			}
 			val[j] /= U[i].n;
 		}
@@ -143,17 +143,17 @@ std::vector<KDropoutFullyConnected::Mat> KDropoutFullyConnected::apply ( const s
 				return val[id1] > val[id2];
 			});
 
-		for( int j = 0; j < K; ++j ) mask[idx[j]][i] = 1.0;
-		for( int j = K; j < U[i].m; ++j ) mask[idx[j]][i] = 0.0;
+		for( int j = 0; j < K; ++j ) mask(idx[j],i) = 1.0;
+		for( int j = K; j < U[i].m; ++j ) mask(idx[j],i) = 0.0;
 	}
 
 	for( int i = 0; i < prev_num_map; ++i ){
 		V[i] = Mat(U[i].m+1, U[i].n);
 
-		for( int j = 0; j < U[i].n; ++j ) V[i][0][j] = 1.0;
+		for( int j = 0; j < U[i].n; ++j ) V[i](0,j) = 1.0;
 		for( int j = 0; j < U[i].m; ++j ){
 			for( int k = 0; k < U[i].n; ++k ){
-				V[i][j+1][k] = U[i][j][k]*mask[j][i];
+				V[i](j+1,k) = U[i](j,k)*mask(j,i);
 			}
 		}
 	}
@@ -165,10 +165,11 @@ std::vector<KDropoutFullyConnected::Mat> KDropoutFullyConnected::apply ( const s
 		}
 	}
 
-	for( int i = 0; i < num_map; ++i )
+	for( int i = 0; i < num_map; ++i ){
 		for( int j = 0; j < ret[i].m; ++j )
 			for( int k = 0; k < ret[i].n; ++k )
-				ret[i][j][k] = (use_func ? activate_func(ret[i][j][k]) : ret[i][j][k]);
+				ret[i](j,k) = (use_func ? activate_func(ret[i](j,k)) : ret[i](j,k));
+	}
 	
 	return ret;
 }
@@ -182,7 +183,7 @@ std::vector<std::vector<KDropoutFullyConnected::Vec>> KDropoutFullyConnected::ap
 	for( int i = 0; i < prev_num_map; ++i )
 		for( int j = 0; j < u[i][0].size(); ++j )
 			for( int k = 0; k < u.size(); ++k )
-				tmp[i][j][k] = u[k][i][j];
+				tmp[i](j,k) = u[k][i][j];
 	
 	auto U = apply(tmp, use_func);
 	std::vector<std::vector<Vec>> ret(U[0].n);
@@ -190,7 +191,7 @@ std::vector<std::vector<KDropoutFullyConnected::Vec>> KDropoutFullyConnected::ap
 		ret[i] = std::vector<Vec>(U.size(), Vec(U[0].m));
 		for( int j = 0; j < U.size(); ++j )
 			for( int k = 0; k < U[0].m; ++k )
-				ret[i][j][k] = U[j][k][i];
+				ret[i][j][k] = U[j](k,i);
 	}
 
 	return ret;
@@ -206,7 +207,7 @@ void KDropoutFullyConnected::set_W ( const std::string& filename )
 			ifs.read((char*)&W[i][j].n, sizeof(W[i][j].n));
 			for( int k = 0; k < W[i][j].m; ++k )
 				for( int l = 0; l < W[i][j].n; ++l )
-					ifs.read((char*)&W[i][j][k][l], sizeof(W[i][j][k][l]));
+					ifs.read((char*)&W[i][j](k,l), sizeof(W[i][j](k,l)));
 		}
 }
 
@@ -220,7 +221,7 @@ void KDropoutFullyConnected::output_W ( const std::string& filename )
 			ofs.write((char*)&W[i][j].n, sizeof(W[i][j].n));
 			for( int k = 0; k < W[i][j].m; ++k )
 				for( int l = 0; l < W[i][j].n; ++l )
-					ofs.write((char*)&W[i][j][k][l], sizeof(W[i][j][k][l]));
+					ofs.write((char*)&W[i][j](k,l), sizeof(W[i][j](k,l)));
 		}
 }
 
