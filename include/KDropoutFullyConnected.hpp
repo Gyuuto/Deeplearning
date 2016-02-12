@@ -88,7 +88,7 @@ std::vector<std::vector<KDropoutFullyConnected::Mat>> KDropoutFullyConnected::ca
 				for( int l = 0; l < nabla[i][j].n; ++l )
 					for( int m = 0; m < delta[i].n; ++m )
 						nabla[i][j][k][l] += delta[i][k][m]*(
-							l == 0 ? 1.0 : prev_activate_func(U[j][l-1][m])
+							l == 0 ? 1.0 : mask[l-1][j]*prev_activate_func(U[j][l-1][m])
 							);
 
 	return nabla;
