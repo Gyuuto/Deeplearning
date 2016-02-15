@@ -116,8 +116,6 @@ std::vector<Pooling::Mat> Pooling::apply ( const std::vector<Mat>& U, bool use_f
 	std::vector<Mat> new_S(num_map, Mat(num_unit, U[0].n));
 	std::vector<Mat> ret(num_map);
 
-	puts("kita");
-	fflush(stdout);
 	int i,j,k,y,x,s,t;
 #pragma omp parallel for default(none) \
 	private(i,j,y,x,s,t) shared(new_S, Y, X, ret, U)
@@ -144,7 +142,6 @@ std::vector<Pooling::Mat> Pooling::apply ( const std::vector<Mat>& U, bool use_f
 		}
 	}
 
-	puts("kita");
 	S = new_S;
 	
 #pragma omp parallel for default(none) \
