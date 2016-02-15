@@ -87,8 +87,8 @@ void Neuralnet::check_gradient ( int cnt, const std::vector<std::vector<Vec>>& x
 		for( int j = 0; j < BATCH_SIZE; ++j ) X[j] = x[cnt+j];
 		for( int j = 0; j < std::min(2, (int)W.size()); ++j ){ // num_map
 			for( int k = 0; k < std::min(2, (int)W[j].size()); ++k ){ // prev_num_map
-				for( int l = 0; l < std::min(10, (int)W[j][k].m); ++l ){
-					for( int m = 0; m < std::min(10, (int)W[j][k].n); ++m ){
+				for( int l = 0; l < std::min(5, (int)W[j][k].m); ++l ){
+					for( int m = 0; m < std::min(5, (int)W[j][k].n); ++m ){
 						auto tmp = 1.0E-6*(std::abs(W[j][k](l,m)) < 1.0E-3 ? 1.0 : std::abs(W[j][k](l,m)));;
 
 						W[j][k](l,m) += tmp;
@@ -365,6 +365,8 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 			output_W("W.dat");
 		}
 	}
+
+	for( int i = 0; i < num_layer; ++i ) layer[i]->finalize();
 }
 
 std::vector<Neuralnet::Mat> Neuralnet::apply ( const std::vector<Mat>& X ) const

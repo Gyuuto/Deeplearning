@@ -22,6 +22,7 @@ public:
 							 const std::function<double(double)>& d_f );
 
 	void init( std::mt19937& m );
+	void finalize();
 	
 	std::vector<std::vector<Mat>> calc_gradient ( const std::vector<Mat>& U, const std::vector<Mat>& delta );
 	std::vector<Mat> calc_delta ( const std::vector<Mat>& U, const std::vector<Mat>& delta );
@@ -71,6 +72,11 @@ void KDropoutFullyConnected::init ( std::mt19937& m )
 	for( int i = 0; i < prev_num_unit; ++i )
 		for( int j = 0; j < prev_num_map; ++j )
 			mask(i,j) = 1;
+}
+
+void KDropoutFullyConnected::finalize ()
+{
+	
 }
 
 std::vector<std::vector<KDropoutFullyConnected::Mat>> KDropoutFullyConnected::calc_gradient ( const std::vector<Mat>& U, const std::vector<Mat>& delta )

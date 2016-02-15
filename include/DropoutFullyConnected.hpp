@@ -11,6 +11,7 @@ class DropoutFullyConnected : public Layer
 {
 private:
 	double dropout_p;
+	bool islearning;
 
 	std::mt19937 mt;
 	std::uniform_real_distribution<double> d_rand;
@@ -22,6 +23,7 @@ public:
 							const std::function<double(double)>& d_f );
 
 	void init( std::mt19937& m );
+	void finalize();
 	
 	std::vector<std::vector<Mat>> calc_gradient ( const std::vector<Mat>& U, const std::vector<Mat>& delta );
 	std::vector<Mat> calc_delta ( const std::vector<Mat>& U, const std::vector<Mat>& delta );
@@ -67,10 +69,16 @@ void DropoutFullyConnected::init ( std::mt19937& m )
 		}
 	}
 
+	islearning = true;
 	mask = Mat(prev_num_unit, prev_num_map);
 	for( int i = 0; i < prev_num_unit; ++i )
 		for( int j = 0; j < prev_num_map; ++j )
 			mask(i,j) = this->d_rand(mt) < dropout_p ? 0 : 1;
+}
+
+void DropoutFullyConnected::finalize ()
+{
+	islearning = false;
 }
 
 std::vector<std::vector<DropoutFullyConnected::Mat>> DropoutFullyConnected::calc_gradient ( const std::vector<Mat>& U, const std::vector<Mat>& delta )
@@ -88,7 +96,7 @@ std::vector<std::vector<DropoutFullyConnected::Mat>> DropoutFullyConnected::calc
 				for( int l = 0; l < nabla[i][j].n; ++l )
 					for( int m = 0; m < delta[i].n; ++m )
 						nabla[i][j](k,l) += delta[i](k,m)*(
-							l == 0 ? 1.0 : prev_activate_func(U[j](l-1,m))
+							l == 0 ? 1.0 : mask(l-1,j)*prev_activate_func(U[j](l-1,m))
 							);
 
 	return nabla;
@@ -117,12 +125,13 @@ std::vector<DropoutFullyConnected::Mat> DropoutFullyConnected::calc_delta ( cons
 
 void DropoutFullyConnected::update_W ( const std::vector<std::vector<Mat>>& dW )
 {
-	for( int i = 0; i < num_map; ++i ){
+	for( int i = 0; i < num_map; ++i )
 		for( int j = 0; j < prev_num_map; ++j )
 			W[i][j] = W[i][j] + dW[i][j];
-		for( int j = 0; j < num_unit; ++j )
+	for( int i = 0; i < prev_num_map; ++i )
+		for( int j = 0; j < prev_num_unit; ++j )
 			mask(j,i) = d_rand(mt) < dropout_p ? 0 : 1;
-	}
+
 }
 
 std::vector<DropoutFullyConnected::Mat> DropoutFullyConnected::apply ( const std::vector<Mat>& U, bool use_func )
@@ -134,7 +143,7 @@ std::vector<DropoutFullyConnected::Mat> DropoutFullyConnected::apply ( const std
 		for( int j = 0; j < U[i].n; ++j ){
 			V[i](0,j) = 1.0;
 			for( int k = 0; k < U[i].m; ++k )
-				V[i](k+1,j) = U[i](k,j)*mask(k,i);
+				V[i](k+1,j) = U[i](k,j)*(use_func ? dropout_p : mask(k,i));
 		}
 	}
 

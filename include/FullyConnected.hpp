@@ -17,6 +17,7 @@ public:
 					 const std::function<double(double)>& d_f );
 
 	void init( std::mt19937& m );
+	void finalize();
 	
 	std::vector<std::vector<Mat>> calc_gradient ( const std::vector<Mat>& U, const std::vector<Mat>& delta );
 	std::vector<Mat> calc_delta ( const std::vector<Mat>& U, const std::vector<Mat>& delta );
@@ -55,6 +56,11 @@ void FullyConnected::init ( std::mt19937& m )
 					W[i][j](k, l) = d_rand(m);
 		}
 	}
+}
+
+void FullyConnected::finalize ()
+{
+	
 }
 
 std::vector<std::vector<FullyConnected::Mat>> FullyConnected::calc_gradient ( const std::vector<Mat>& U, const std::vector<Mat>& delta )
