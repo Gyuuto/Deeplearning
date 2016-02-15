@@ -22,6 +22,7 @@ public:
 				   std::function<double(double)> activate_diff_func );
 
 	void init ( std::mt19937& m );
+	void finalize();
 	
 	std::vector<std::vector<Mat>> calc_gradient ( const std::vector<Mat>& U, const std::vector<Mat>& delta );
 	std::vector<Mat> calc_delta ( const std::vector<Mat>& U, const std::vector<Mat>& delta );
@@ -29,6 +30,8 @@ public:
 
 	std::vector<Mat> apply ( const std::vector<Mat>& U, bool use_func = true );
 	std::vector<std::vector<Vec>> apply ( const std::vector<std::vector<Vec>>& u, bool use_func = true );
+	std::vector<Mat> deconvolution ( const std::vector<Mat>& U );
+	std::vector<std::vector<Vec>> deconvolution ( const std::vector<std::vector<Vec>>& u );
 
 	void set_W ( const std::string& filename );
 	void output_W ( const std::string& filename );
@@ -74,6 +77,11 @@ void Convolutional::init ( std::mt19937& m )
 	}
 }
 	
+void Convolutional::finalize ()
+{
+	
+}
+
 std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( const std::vector<Mat>& U, const std::vector<Mat>& delta )
 {
 	std::vector<std::vector<Mat>> nabla(num_map);
@@ -197,11 +205,19 @@ std::vector<Convolutional::Mat> Convolutional::apply ( const std::vector<Mat>& U
 								val += W[i][j](s+m/2,t+n/2)*U[j](nx + ny*prev_ldu,k);
 							}
 
-						ret[i](y/stlide*ldu + x/stlide,k) += val + bias[i];
+						ret[i](y/stlide*ldu + x/stlide,k) += val;
 					}
 			}
 		}
 	}
+
+#pragma omp parallel for default(none) \
+	private(i,j,k) shared(ret)
+	for( i = 0; i < num_map; ++i )
+		for( j = 0; j < ret[i].m; ++j )
+			for( k = 0; k < ret[i].n; ++k )
+				ret[i](j,k) += bias[i];
+
 
 #pragma omp parallel for default(none) \
 	private(i,j,k) shared(ret, use_func)
@@ -217,10 +233,10 @@ std::vector<std::vector<Convolutional::Vec>> Convolutional::apply ( const std::v
 {
 	std::vector<Mat> tmp(prev_num_map);
 	for( int i = 0; i < prev_num_map; ++i )
-		tmp[i] = Mat(u[i][0].size(), u.size());
+		tmp[i] = Mat(u[0][0].size(), u.size());
 
 	for( int i = 0; i < prev_num_map; ++i )
-		for( int j = 0; j < u[i][0].size(); ++j )
+		for( int j = 0; j < u[0][0].size(); ++j )
 			for( int k = 0; k < u.size(); ++k )
 				tmp[i](j,k) = u[k][i][j];
 	
@@ -236,6 +252,58 @@ std::vector<std::vector<Convolutional::Vec>> Convolutional::apply ( const std::v
 	return ret;
 }
 
+std::vector<Convolutional::Mat> Convolutional::deconvolution ( const std::vector<Mat>& U )
+{
+	const int Y = prev_num_unit/prev_ldu, X = prev_ldu;
+	std::vector<Mat> ret(prev_num_map);
+
+	int i, j, k, x, y, s, t;
+#pragma omp parallel for default(none) \
+	private(i,j,k,s,t,y,x) shared(Y, X, ret, U)
+	for( i = 0; i < prev_num_map; ++i ){
+		ret[i] = Mat(prev_num_unit, U[0].n);
+		for( j = 0; j < num_map; ++j ){
+			for( k = 0; k < U[0].n; ++k )
+				for( x = 0; x < X; ++x )
+					for( y = 0; y < Y; ++ y ){
+						for( s = -m/2; s < (m+1)/2; ++s )
+							for( t = -n/2; t < (n+1)/2; ++t ){
+								int nx = (x - s),
+									ny = (y - t);
+								if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
+								nx /= stlide; ny /= stlide;
+								ret[i](x+prev_ldu*y,k) += W[j][i](s+m/2,t+n/2)*(U[j](nx+ldu*ny,k) - bias[j]);
+							}
+					}
+		}
+	}
+
+	return ret;
+}
+
+std::vector<std::vector<Convolutional::Vec>> Convolutional::deconvolution ( const std::vector<std::vector<Vec>>& u )
+{
+	std::vector<Mat> tmp(num_map);
+	for( int i = 0; i < num_map; ++i )
+		tmp[i] = Mat(u[0][0].size(), u.size());
+
+	for( int i = 0; i < num_map; ++i )
+		for( int j = 0; j < u[0][0].size(); ++j )
+			for( int k = 0; k < u.size(); ++k )
+				tmp[i](j,k) = u[k][i][j];
+	
+	auto U = deconvolution(tmp);
+	std::vector<std::vector<Vec>> ret(U[0].n);
+	for( int i = 0; i < U[0].n; ++i ){
+		ret[i] = std::vector<Vec>(U.size(), Vec(U[0].m));
+		for( int j = 0; j < U.size(); ++j )
+			for( int k = 0; k < U[0].m; ++k )
+				ret[i][j][k] = U[j](k,i);
+	}
+
+	return ret;	
+}
+
 void Convolutional::set_W ( const std::string& filename )
 {
 	std::ifstream ifs(filename, std::ios::binary);
@@ -245,8 +313,9 @@ void Convolutional::set_W ( const std::string& filename )
 			ifs.read((char*)&W[i][j].m, sizeof(W[i][j].m));
 			ifs.read((char*)&W[i][j].n, sizeof(W[i][j].n));
 			for( int k = 0; k < W[i][j].m; ++k )
-				for( int l = 0; l < W[i][j].n; ++l )
+				for( int l = 0; l < W[i][j].n; ++l ){
 					ifs.read((char*)&W[i][j](k,l), sizeof(W[i][j](k,l)));
+				}
 		}
 }
 
