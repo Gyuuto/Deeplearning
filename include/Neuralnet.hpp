@@ -38,7 +38,9 @@ public:
 	void add_layer( const std::shared_ptr<Layer>& layer );
 
 	void learning ( const std::vector<std::vector<Vec>>& x, const std::vector<std::vector<Vec>>& y,
-					const int MAX_ITER = 1000, const std::function<void(const Neuralnet&)>& each_func = [](const Neuralnet& nn) -> void {} );
+					const int MAX_ITER = 1000,
+					const std::function<void(const Neuralnet&, const std::vector<Mat>&, const std::vector<Mat>&)>& each_func
+					= [](const Neuralnet& nn, const std::vector<Mat>& x, const std::vector<Mat>& d) -> void {} );
 
 	std::vector<Mat> apply ( const std::vector<Mat>& X ) const;
 	std::vector<std::vector<Vec>> apply ( const std::vector<std::vector<Vec>>& x ) const;
@@ -159,7 +161,8 @@ void Neuralnet::add_layer( const std::shared_ptr<Layer>& layer )
 	this->layer[this->layer.size()-1]->init(m);
 }
 
-void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::vector<std::vector<Vec>>& y, const int MAX_ITER, const std::function<void(const Neuralnet&)>& each_func )
+void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::vector<std::vector<Vec>>& y,
+						   const int MAX_ITER, const std::function<void(const Neuralnet&, const std::vector<Mat>&, const std::vector<Mat>&)>& each_func )
 {
 	const int num_layer = layer.size();
 
@@ -359,7 +362,7 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 					printf(" Layer %d   %13.6E | %13.6E | %13.6E |\n", i, ave_weight, min_weight, max_weight);
 			}
 			puts("");
-			each_func(*this);
+			each_func(*this, U[0], D);
 			fflush(stdout);
 
 			output_W("W.dat");

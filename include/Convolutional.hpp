@@ -62,7 +62,7 @@ Convolutional::Convolutional( int prev_num_map, int prev_num_unit, int prev_ldu,
 void Convolutional::init ( std::mt19937& m )
 {
 	const double r = sqrt(6.0/(num_unit + prev_num_unit));
-	std::uniform_real_distribution<double> d_rand(-r, r);
+	std::normal_distribution<double> d_rand(0.0, 1.0E-1);
 
 	bias = Vec(num_map, 0.0); d_bias = Vec(num_map, 0.0);
 	this->r = Vec(num_map, 0.0); v = Vec(num_map, 0.0);
