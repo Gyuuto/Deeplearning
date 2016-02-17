@@ -272,7 +272,7 @@ std::vector<Convolutional::Mat> Convolutional::deconvolution ( const std::vector
 									ny = (y - t);
 								if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
 								nx /= stlide; ny /= stlide;
-								ret[i](x+prev_ldu*y,k) += W[j][i](s+m/2,t+n/2)*(U[j](nx+ldu*ny,k) - bias[j]);
+								ret[i](x+prev_ldu*y,k) += W[j][i](s+m/2,t+n/2)*(activate_func(U[j](nx+ldu*ny,k)) - bias[j]);
 							}
 					}
 		}
