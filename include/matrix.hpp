@@ -86,6 +86,21 @@ struct Matrix
 		return ret;
 	}
 
+	static Matrix<T> hadamard ( const Matrix<T>& m1, const Matrix<T>& m2 )
+	{
+		int m = m1.m, n = m1.n;
+
+		int i, j;
+		Matrix<T> ret(m, n);
+#pragma omp parallel for default(none) \
+	private(i,j) shared(m,n,m1,m2,ret)
+		for( i = 0; i < m; ++i )
+			for( j = 0; j < n; ++j )
+				ret(i,j) = m1(i,j)*m2(i,j);
+
+		return ret;
+	}
+	
 	static double norm_fro ( const Matrix<T>& mat )
 	{
 		int m = mat.m, n = mat.n;
@@ -116,6 +131,85 @@ struct Matrix
 #endif
 	}
 
+	Matrix<T>& operator += ( const Matrix<T>& m1 )
+	{
+		int m = m1.m, n = m1.n;
+#ifdef USE_EIGEN
+		this->v += m1.v;
+#else
+		int i, j;
+#pragma omp parallel for default(none) \
+	private(i,j) shared(m,n,m1)
+		for( i = 0; i < m; ++i )
+			for( j = 0; j < n; ++j )
+				*this(i,j) += m1(i,j);
+#endif
+
+		return *this;
+	}
+
+	Matrix<T>& operator -= ( const Matrix<T>& m1 )
+	{
+		int m = m1.m, n = m1.n;
+#ifdef USE_EIGEN
+		this->v -= m1.v;
+#else
+		int i, j;
+#pragma omp parallel for default(none) \
+	private(i,j) shared(m,n,m1)
+		for( i = 0; i < m; ++i )
+			for( j = 0; j < n; ++j )
+				*this(i,j) -= m1(i,j);
+#endif
+
+		return *this;
+	}
+
+	Matrix<T>& operator *= ( const Matrix<T>& m1 )
+	{
+#ifdef USE_EIGEN
+		this->v *= m1.v;
+#else
+		*this = *this*m1;
+#endif
+
+		return *this;
+	}
+
+	Matrix<T>& operator *= ( const T& c )
+	{
+		int m = m1.m, n = m1.n;
+#ifdef USE_EIGEN
+		this->v *= c;
+#else
+		int i, j;
+#pragma omp parallel for default(none) \
+	private(i,j) shared(m,n,m1)
+		for( i = 0; i < m; ++i )
+			for( j = 0; j < n; ++j )
+				*this(i,j) *= c;
+#endif
+
+		return *this;
+	}
+	
+	Matrix<T>& operator /= ( const T& c )
+	{
+		int m = m1.m, n = m1.n;
+#ifdef USE_EIGEN
+		this->v /= c;
+#else
+		int i, j;
+#pragma omp parallel for default(none) \
+	private(i,j) shared(m,n,m1)
+		for( i = 0; i < m; ++i )
+			for( j = 0; j < n; ++j )
+				*this(i,j) /= c;
+#endif
+
+		return *this;
+	}
+
 	friend Matrix<T> operator + ( const Matrix<T>& m1, const Matrix<T>& m2 )
 	{
 		int m = m1.m, n = m1.n;
@@ -125,7 +219,6 @@ struct Matrix
 		ret.v = m1.v + m2.v;
 #else
 		int i, j;
-
 #pragma omp parallel for default(none) \
 	private(i,j) shared(m,n,m1,m2,ret)
 		for( i = 0; i < m; ++i )
@@ -144,7 +237,6 @@ struct Matrix
 		ret.v = m1.v - m2.v;
 #else
 		int i, j;
-		
 #pragma omp parallel for default(none)			\
 	private(i,j) shared(m,n,m1,m2,ret)
 		for( i = 0; i < m; ++i )
@@ -165,7 +257,6 @@ struct Matrix
 #else
 		int i, j, k;
 		double sum;
-
 #pragma omp parallel for default(none) \
 	private(i,j,k,sum) shared(m,n,l,m1,m2,ret)
 		for( i = 0; i < m; ++i )
@@ -180,7 +271,7 @@ struct Matrix
 		return ret;
 	}
 
-	friend Matrix<T> operator * ( const double& c, const Matrix<T>& m1 )
+	friend Matrix<T> operator * ( const T& c, const Matrix<T>& m1 )
 	{
 		int m = m1.m, n = m1.n;
 		Matrix<T> ret(m, n);
@@ -198,6 +289,16 @@ struct Matrix
 		
 #endif
 		return ret;
+	}
+
+	friend Matrix<T> operator * ( const Matrix<T>& m1, const T& c )
+	{
+		return c*m1;
+	}
+	 
+	friend Matrix<T> operator / ( const Matrix<T>& m1, const T& c )
+	{
+		return (1.0/c)*m1;
 	}
 
 	friend std::ostream& operator << ( std::ostream& os, const Matrix<T>& A )
