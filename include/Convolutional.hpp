@@ -18,8 +18,8 @@ public:
 	Convolutional( int prev_num_map, int prev_num_unit, int prev_ldu,
 				   int num_map, int num_unit, int ldu,
 				   int m, int n, int stlide, 
-				   std::function<double(double)> activate_func, 
-				   std::function<double(double)> activate_diff_func );
+				   const std::function<double(double)>& activate_func, 
+				   const std::function<double(double)>& activate_diff_func );
 
 	void init ( std::mt19937& m );
 	void finalize();
@@ -40,8 +40,8 @@ public:
 Convolutional::Convolutional( int prev_num_map, int prev_num_unit, int prev_ldu,
 							  int num_map, int num_unit, int ldu,
 							  int m, int n, int stlide, 
-							  std::function<double(double)> activate_func, 
-							  std::function<double(double)> activate_diff_func )
+							  const std::function<double(double)>& activate_func, 
+							  const std::function<double(double)>& activate_diff_func )
 {
 	this->prev_num_map = prev_num_map;
 	this->prev_num_unit = prev_num_unit;
