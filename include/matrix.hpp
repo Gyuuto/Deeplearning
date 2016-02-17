@@ -178,7 +178,6 @@ struct Matrix
 
 	Matrix<T>& operator *= ( const T& c )
 	{
-		int m = m1.m, n = m1.n;
 #ifdef USE_EIGEN
 		this->v *= c;
 #else
@@ -195,7 +194,6 @@ struct Matrix
 	
 	Matrix<T>& operator /= ( const T& c )
 	{
-		int m = m1.m, n = m1.n;
 #ifdef USE_EIGEN
 		this->v /= c;
 #else

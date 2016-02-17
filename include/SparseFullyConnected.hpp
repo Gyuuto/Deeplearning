@@ -15,8 +15,7 @@ private:
 public:
 	SparseFullyConnected ( int prev_num_map, int prev_num_unit,
 						   int num_mp, int num_unit, double RHO, double BETA,
-						   const std::function<double(double)>& f,
-						   const std::function<double(double)>& d_f );
+						   const std::shared_ptr<Function>& f );
 
 	void init( std::mt19937& m );
 	void finalize();
@@ -35,8 +34,7 @@ public:
 SparseFullyConnected::SparseFullyConnected( int prev_num_map, int prev_num_unit,
 											int num_map, int num_unit,
 											double RHO, double BETA,
-											const std::function<double(double)>& f,
-											const std::function<double(double)>& d_f )
+											const std::shared_ptr<Function>& f )
 {
 	this->prev_num_map = prev_num_map;
 	this->prev_num_unit = prev_num_unit;
@@ -45,8 +43,7 @@ SparseFullyConnected::SparseFullyConnected( int prev_num_map, int prev_num_unit,
 	this->RHO = RHO;
 	this->BETA = BETA;
 
-	activate_func = f;
-	activate_diff_func = d_f;
+	func = f;
 }
 
 void SparseFullyConnected::init ( std::mt19937& m )
@@ -82,32 +79,44 @@ std::vector<std::vector<SparseFullyConnected::Mat>> SparseFullyConnected::calc_g
 
 	auto V = apply(U);
 	for( int i = 0; i < V.size(); ++i ){
+		auto V_ = (*func)(V[i], false);
 		for( int j = 0; j < V[i].m; ++j ){
 			double tmp_rho = 0.0;
 			for( int k = 0; k < V[i].n; ++k )
-				tmp_rho += activate_func(V[i](j,k));
+				tmp_rho += V_(j,k);
 			rho(j,i) = R_LAMBDA*rho(j,i) + (1.0-R_LAMBDA)*tmp_rho/V[i].n;
 		}
 	}
 
 	for( int i = 0; i < num_map; ++i )
-		for( int j = 0; j < prev_num_map; ++j )
-			for( int k = 0; k < nabla[i][j].m; ++k ){
-				double KL = (1.0-RHO)/(1.0-rho(k,i)) - RHO/rho(k,i);
-				for( int l = 0; l < nabla[i][j].n; ++l )
-					for( int m = 0; m < delta[i].n; ++m )
-						nabla[i][j](k,l) += (delta[i](k,m) + BETA*KL)*(
-							l == 0 ? 1.0 : prev_activate_func(U[j](l-1,m))
-							);
+		for( int j = 0; j < prev_num_map; ++j ){
+			Mat V(U[j].m+1, U[j].n), U_ = (*prev_func)(U[j], false);
+			for( int k = 0; k < U[j].n; ++k ){
+				V(0,k) = 1.0;
+				for( int l = 0; l < U[j].m; ++l ) V(l+1,k) = U_(l, k);
 			}
+			auto delta_ = delta[i];
+			for( int k = 0; k < delta[i].m; ++k ){
+				double KL = (1.0-RHO)/(1.0-rho(k,i)) - RHO/rho(k,i);
+				for( int l = 0; l < delta[i].n; ++l ) delta_(k,l) += BETA*KL;
+			}
+					
+			nabla[i][j] = delta_*Mat::transpose(V);
+		}
 	
 	return nabla;
 }
 
 std::vector<SparseFullyConnected::Mat> SparseFullyConnected::calc_delta ( const std::vector<Mat>& U, const std::vector<Mat>& delta )
 {
-	std::vector<Mat> tmp(prev_num_map), nx_delta(prev_num_map);
-
+	std::vector<Mat> tmp(prev_num_map), nx_delta(prev_num_map), delta_(num_map);
+	for( int i = 0; i < num_map; ++i ){
+		delta_[i] = delta[i];
+		for( int j = 0; j < delta_[i].m; ++j )
+			for( int k = 0; k < delta_[i].n; ++k )
+				delta_[i](j,k) += BETA*((1.0-RHO)/(1.0-rho(j,i)) - RHO/rho(j,i));
+	}
+	
 	for( int i = 0; i < prev_num_map; ++i ){
 		tmp[i] = Mat(W[0][0].n, delta[0].n);
 		for( int j = 0; j < num_map; ++j )
@@ -116,13 +125,15 @@ std::vector<SparseFullyConnected::Mat> SparseFullyConnected::calc_delta ( const 
 	for( int i = 0; i < prev_num_map; ++i )
 		nx_delta[i] = Mat(tmp[0].m-1, tmp[0].n);
 
-	for( int i = 0; i < num_map; ++i )
-		for( int j = 0; j < prev_num_map; ++j )
-			for( int k = 0; k < tmp[i].m-1; ++k ){
-				double KL = (1.0-RHO)/(1.0-rho(k,i)) - RHO/rho(k,i);
-				for( int l = 0; l < tmp[i].n; ++l )
-					nx_delta[j](k,l) += (tmp[j](k+1,l) + BETA*KL)*prev_activate_diff_func(U[j](k,l));
-			}
+	for( int i = 0; i < prev_num_map; ++i ){
+		int j, k;
+		Mat V(tmp[i].m-1, tmp[i].n), U_ = (*prev_func)(U[i], true);
+		for( int j = 0; j < tmp[i].m-1; ++j )
+			for( int k = 0; k < tmp[i].n; ++k )
+				V(j,k) = tmp[i](j+1,k);
+
+		nx_delta[i] = Mat::hadamard(V, U_);
+	}
 	
 	return nx_delta;
 }
@@ -153,10 +164,9 @@ std::vector<SparseFullyConnected::Mat> SparseFullyConnected::apply ( const std::
 			ret[i] = ret[i] + W[i][j]*V[j];
 	}
 
-	for( int i = 0; i < num_map; ++i )
-		for( int j = 0; j < ret[i].m; ++j )
-			for( int k = 0; k < ret[i].n; ++k )
-				ret[i](j,k) = (use_func ? activate_func(ret[i](j,k)) : ret[i](j,k));
+	if( use_func )
+		for( int i = 0; i < num_map; ++i )
+			ret[i] = (*func)(ret[i], false);
 	
 	return ret;
 }

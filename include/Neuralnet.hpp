@@ -9,7 +9,10 @@
 #include <memory>
 #include <random>
 
+#include <chrono>
+
 #include "Layer.hpp"
+#include "Function.hpp"
 #include "matrix.hpp"
 
 class Neuralnet
@@ -21,6 +24,7 @@ private:
 	int BATCH_SIZE;
 	double EPS, LAMBDA;
 
+	std::shared_ptr<LossFunction> loss;
 	std::vector<std::shared_ptr<Layer>> layer;
 	
 	std::mt19937 m;
@@ -29,7 +33,7 @@ private:
 	std::vector<std::vector<std::vector<Mat>>> calc_gradient (const std::vector<std::vector<Mat>>& U, const std::vector<Mat>& d);
 	void check_gradient ( int cnt, const std::vector<std::vector<Vec>>& x, const std::vector<std::vector<Vec>>& y, const std::vector<std::vector<std::vector<Mat>>>& nabla_w );
 public:
-	Neuralnet();
+	Neuralnet( const std::shared_ptr<LossFunction>& loss );
 
 	void set_EPS ( const double& EPS );
 	void set_LAMBDA ( const double& LAMBDA );
@@ -57,23 +61,19 @@ std::vector<std::vector<std::vector<Neuralnet::Mat>>> Neuralnet::calc_gradient (
 	
 	std::vector<Mat> delta(d.size());
 	for( int i = 0; i < d.size(); ++i ) delta[i] = Mat(d[i].m, d[i].n);
-	for( int i = 0; i < d.size(); ++i )
-		for( int j = 0; j < d[i].m; ++j )
-			for( int k = 0; k < d[i].n; ++k ){
-				std::function<double(double)> f, d_f;
-				tie(f, d_f) = layer[num_layer-1]->get_function();
 
-				delta[i](j,k) = (f(U[num_layer][i](j,k)) - d[i](j,k)) *
-					d_f(U[num_layer][i](j,k));
-			}
+	std::shared_ptr<Function> f = layer[num_layer-1]->get_function();
+	for( int i = 0; i < d.size(); ++i )
+		delta[i] = Mat::hadamard((*loss)((*f)(U[num_layer][i], false), d[i], true),
+								 (*f)(U[num_layer][i], true));
 
 	std::vector<std::vector<std::vector<Mat>>> nabla_w(num_layer);
 	for( int i = num_layer-1; i >= 0; --i ){
 		nabla_w[i] = layer[i]->calc_gradient(U[i], delta);
 		if( i == 0 ) continue;
+
 		delta = layer[i]->calc_delta(U[i], delta);
 	}
-
 	return nabla_w;
 }
 
@@ -122,8 +122,8 @@ void Neuralnet::check_gradient ( int cnt, const std::vector<std::vector<Vec>>& x
 }
 
 //////////////////// PUBLIC FUNCTION ////////////////////
-Neuralnet::Neuralnet()
-	:EPS(1.0E-3), LAMBDA(1.0E-5), BATCH_SIZE(1)
+Neuralnet::Neuralnet( const std::shared_ptr<LossFunction>& loss )
+	:EPS(1.0E-3), LAMBDA(1.0E-5), BATCH_SIZE(1), loss(loss)
 {
 	m = std::mt19937(time(NULL));
 }
@@ -145,19 +145,16 @@ void Neuralnet::set_BATCHSIZE ( const int& BATCH_SIZE )
 
 void Neuralnet::add_layer( const std::shared_ptr<Layer>& layer )
 {
-	std::function<double(double)> f, d_f;
+	std::shared_ptr<Function> f;
 	if( this->layer.size() == 0 ){
-		f = []( const double& x ) -> double {
-			return x;
-		};
-		d_f = f;
+		f = std::shared_ptr<Function>(new Identity);
 	}
 	else{
-		tie(f, d_f) = this->layer[this->layer.size()-1]->get_function();
+		f = this->layer[this->layer.size()-1]->get_function();
 	}
 	
 	this->layer.emplace_back( layer );
-	this->layer[this->layer.size()-1]->set_prev_function(f, d_f);
+	this->layer[this->layer.size()-1]->set_prev_function(f);
 	this->layer[this->layer.size()-1]->init(m);
 }
 
@@ -185,9 +182,11 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 			}
 		}
 	}
+
 	for( int n = 0; n <= MAX_ITER; ++n ){
 		std::vector<Mat> D;
 		std::vector<std::vector<Mat>> U(num_layer+1);
+
 		for( int i = 0; i < x[0].size(); ++i ){
 			U[0].emplace_back(x[0][i].size(), BATCH_SIZE);
 			for( int j = 0; j < BATCH_SIZE; ++j )
@@ -205,12 +204,10 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 		for( int i = 0; i < num_layer; ++i ) {
 			auto V = U[i];
 			if( i != 0 ){
-				std::function<double(double)> f, d_f;
-				tie(f, d_f) = layer[i-1]->get_function();
+				std::shared_ptr<Function> f = layer[i-1]->get_function();
+
 				for( int j = 0; j < V.size(); ++j )
-					for( int k = 0; k < V[j].m; ++k )
-						for( int l = 0; l < V[j].n; ++l )
-							V[j](k,l) = f(V[j](k,l));
+					V[j] = (*f)(V[j], false);
 			}
 			auto tmp = layer[i]->apply(V, false);
 			
@@ -221,7 +218,7 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 		}
 
 		auto nabla_w = calc_gradient(U, D);
-		
+
 		for( int i = 0; i < nabla_w.size(); ++i )
 			for( int j = 0; j < nabla_w[i].size(); ++j )
 				for( int k = 0; k < nabla_w[i][j].size(); ++k )

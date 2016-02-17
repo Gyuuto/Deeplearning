@@ -3,8 +3,6 @@
 
 #include "Layer.hpp"
 
-#include <functional>
-
 class Convolutional : public Layer
 {
 private:
@@ -18,8 +16,7 @@ public:
 	Convolutional( int prev_num_map, int prev_num_unit, int prev_ldu,
 				   int num_map, int num_unit, int ldu,
 				   int m, int n, int stlide, 
-				   std::function<double(double)> activate_func, 
-				   std::function<double(double)> activate_diff_func );
+				   const std::shared_ptr<Function>& f );
 
 	void init ( std::mt19937& m );
 	void finalize();
@@ -40,8 +37,7 @@ public:
 Convolutional::Convolutional( int prev_num_map, int prev_num_unit, int prev_ldu,
 							  int num_map, int num_unit, int ldu,
 							  int m, int n, int stlide, 
-							  std::function<double(double)> activate_func, 
-							  std::function<double(double)> activate_diff_func )
+							  const std::shared_ptr<Function>& f )
 {
 	this->prev_num_map = prev_num_map;
 	this->prev_num_unit = prev_num_unit;
@@ -53,8 +49,7 @@ Convolutional::Convolutional( int prev_num_map, int prev_num_unit, int prev_ldu,
 
 	this->m = m; this->n = n; this->stlide = stlide;
 
-	this->activate_func = activate_func;
-	this->activate_diff_func = activate_diff_func;
+	func = f;
 
 	beta_ = 1.0; gamma_ = 1.0;
 }
@@ -85,19 +80,22 @@ void Convolutional::finalize ()
 std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( const std::vector<Mat>& U, const std::vector<Mat>& delta )
 {
 	std::vector<std::vector<Mat>> nabla(num_map);
+	std::vector<Mat> U_(prev_num_map);
 	for( int i = 0; i < num_map; ++i ){
 		nabla[i] = std::vector<Mat>(prev_num_map);
 		d_bias[i] = 0.0;
 		for( int j = 0; j < prev_num_map; ++j )
 			nabla[i][j] = Mat(W[i][j].m, W[i][j].n);
 	}
+	for( int i = 0; i < prev_num_map; ++i )
+		U_[i] = (*prev_func)(U[i], false);
 
 	const int Y = prev_num_unit/prev_ldu, X = prev_ldu;
-	int i, j, k, s, t, y, x;
-#pragma omp parallel for default(none) \
-	private(i,j,k,s,t,y,x) shared(Y, X, delta, nabla, U)
-	for( i = 0; i < num_map; ++i ){
-		for( j = 0; j < prev_num_map; ++j )
+	int j, k, s, t, y, x;
+	for( int i = 0; i < num_map; ++i ){
+		for( j = 0; j < prev_num_map; ++j ){
+#pragma omp parallel for default(none)						\
+	private(k,s,t,y,x) shared(Y, X, delta, nabla, U_)
 			for( k = 0; k < delta[i].n; ++k )
 				for( s = -m/2; s < (m+1)/2; ++s )
 					for( t = -n/2; t < (n+1)/2; ++t )
@@ -108,9 +106,12 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 								
 								nabla[i][j](s+m/2,t+n/2) +=
 									delta[i](x/stlide+ldu*(y/stlide),k)*
-									prev_activate_func(U[j](nx+prev_ldu*ny,k));
+									U_[j](nx+prev_ldu*ny,k);
 							}
+		}
 		
+#pragma omp parallel for default(none)						\
+	private(j,k,s,t,y,x) shared(Y, X, d_bias, delta, U_)
 		for( j = 0; j < delta[i].n; ++j )
 			for( y = 0; y < Y; y += stlide )
 				for( x = 0; x < X; x += stlide ){
@@ -120,7 +121,7 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 							for( t = -n/2; t < (n+1)/2; ++t ){
 								int nx = x + s, ny = y + t;
 								if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
-								val += prev_activate_func(U[k](nx+prev_ldu*ny,j));
+								val += U_[k](nx+prev_ldu*ny,j);
 							}
 					d_bias[i] += delta[i](x/stlide+ldu*(y/stlide),j) * val;
 				}
@@ -158,12 +159,8 @@ std::vector<Convolutional::Mat> Convolutional::calc_delta ( const std::vector<Ma
 
 #pragma omp parallel for default(none) \
 	private(i,j,k) shared(nx_delta, tmp, U)
-	for( int i = 0; i < prev_num_map; ++i ){
-		nx_delta[i] = Mat(U[i].m, U[i].n);
-		for( int j = 0; j < U[i].m; ++j )
-			for( int k = 0; k < U[i].n; ++k )
-				nx_delta[i](j,k) += tmp[i](j,k)*prev_activate_diff_func(U[i](j,k));
-	}
+	for( int i = 0; i < prev_num_map; ++i )
+		nx_delta[i] = Mat::hadamard(tmp[i], (*prev_func)(U[i], true));
 	
 	return nx_delta;
 }
@@ -219,12 +216,9 @@ std::vector<Convolutional::Mat> Convolutional::apply ( const std::vector<Mat>& U
 				ret[i](j,k) += bias[i];
 
 
-#pragma omp parallel for default(none) \
-	private(i,j,k) shared(ret, use_func)
-	for( i = 0; i < num_map; ++i )
-		for( j = 0; j < ret[i].m; ++j )
-			for( k = 0; k < ret[i].n; ++k )
-				ret[i](j,k) = (use_func ? activate_func(ret[i](j,k)) : ret[i](j,k));
+	if( use_func )
+		for( i = 0; i < num_map; ++i )
+			ret[i] = (*func)(ret[i], false);
 
 	return ret;
 }
@@ -263,6 +257,7 @@ std::vector<Convolutional::Mat> Convolutional::deconvolution ( const std::vector
 	for( i = 0; i < prev_num_map; ++i ){
 		ret[i] = Mat(prev_num_unit, U[0].n);
 		for( j = 0; j < num_map; ++j ){
+			auto U_ = (*func)(U[j], false);
 			for( k = 0; k < U[0].n; ++k )
 				for( x = 0; x < X; ++x )
 					for( y = 0; y < Y; ++ y ){
@@ -272,7 +267,7 @@ std::vector<Convolutional::Mat> Convolutional::deconvolution ( const std::vector
 									ny = (y - t);
 								if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
 								nx /= stlide; ny /= stlide;
-								ret[i](x+prev_ldu*y,k) += W[j][i](s+m/2,t+n/2)*(activate_func(U[j](nx+ldu*ny,k)) - bias[j]);
+								ret[i](x+prev_ldu*y,k) += W[j][i](s+m/2,t+n/2)*(U_(nx+ldu*ny,k) - bias[j]);
 							}
 					}
 		}

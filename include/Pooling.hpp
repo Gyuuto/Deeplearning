@@ -15,9 +15,8 @@ public:
 	Pooling( int prev_num_map, int prev_num_unit, int prev_ldu,
 			 int num_map, int num_unit, int ldu,
 			 int m, int n, int stlide, 
-			 std::function<double(double)> activate_func, 
-			 std::function<double(double)> activate_diff_func );
-
+			 const std::shared_ptr<Function>& f );
+	
 	void init ( std::mt19937& m );
 	void finalize();
 
@@ -37,8 +36,7 @@ public:
 Pooling::Pooling( int prev_num_map, int prev_num_unit, int prev_ldu,
 				  int num_map, int num_unit, int ldu,
 				  int m, int n, int stlide, 
-				  std::function<double(double)> activate_func, 
-				  std::function<double(double)> activate_diff_func )
+				  const std::shared_ptr<Function>& f )
 {
 	this->prev_num_map = prev_num_map;
 	this->prev_num_unit = prev_num_unit;
@@ -50,8 +48,7 @@ Pooling::Pooling( int prev_num_map, int prev_num_unit, int prev_ldu,
 
 	this->m = m; this->n = n; this->stlide = stlide;
 
-	this->activate_func = activate_func;
-	this->activate_diff_func = activate_diff_func;
+	func = f;
 }
 
 void Pooling::init ( std::mt19937& m )
@@ -78,6 +75,7 @@ std::vector<Pooling::Mat> Pooling::calc_delta ( const std::vector<Mat>& U, const
 #pragma omp parallel for default(none) \
 	private(i,j,s,t,y,x) shared(Y, X, nx_delta, delta, U)
 	for( i = 0; i < prev_num_map; ++i ){
+		auto U_ = (*prev_func)(U[i], true);
 		nx_delta[i] = Mat(U[i].m, U[i].n);
 		for( j = 0; j < U[i].n; ++j )
 			for( x = 0; x < X; x += stlide )
@@ -97,8 +95,7 @@ std::vector<Pooling::Mat> Pooling::calc_delta ( const std::vector<Mat>& U, const
 								val = U[i](idx2,j);
 							}
 						}
-					nx_delta[i](idx2,j) = delta[i](idx1,j) *
-						prev_activate_diff_func(U[i](idx2,j));
+					nx_delta[i](idx2,j) = delta[i](idx1,j) * U_(idx2,j);
 				}
 	}
 	
@@ -144,12 +141,9 @@ std::vector<Pooling::Mat> Pooling::apply ( const std::vector<Mat>& U, bool use_f
 
 	S = new_S;
 	
-#pragma omp parallel for default(none) \
-	private(i,j,k) shared(ret, use_func)
-	for( int i = 0; i < num_map; ++i )
-		for( int j = 0; j < ret[i].m; ++j )
-			for( int k = 0; k < ret[i].n; ++k )
-				ret[i](j,k) = (use_func ? activate_func(ret[i](j,k)) : ret[i](j,k));
+	if( use_func )
+		for( int i = 0; i < num_map; ++i )
+			ret[i] = (*func)(ret[i], false);
 
 	return ret;
 }
