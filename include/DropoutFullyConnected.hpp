@@ -90,11 +90,11 @@ std::vector<std::vector<DropoutFullyConnected::Mat>> DropoutFullyConnected::calc
 			nabla[i][j] = Mat(W[i][j].m, W[i][j].n);
 	}
 
-	int i, j, k, l, m;
+	for( int i = 0; i < num_map; ++i )
+		for( int j = 0; j < prev_num_map; ++j ){
+			int k, l, m;
 #pragma omp parallel for default(none)			\
 	private(i,j,k,l,m) shared(nabla, delta, U)	
-	for( i = 0; i < num_map; ++i )
-		for( j = 0; j < prev_num_map; ++j )
 			for( k = 0; k < nabla[i][j].m; ++k )
 				for( l = 0; l < nabla[i][j].n; ++l ){
 					double sum = 0.0;
@@ -104,6 +104,7 @@ std::vector<std::vector<DropoutFullyConnected::Mat>> DropoutFullyConnected::calc
 							);
 					nabla[i][j](k,l) = sum;
 				}
+		}
 
 	return nabla;
 }
@@ -124,12 +125,14 @@ std::vector<DropoutFullyConnected::Mat> DropoutFullyConnected::calc_delta ( cons
 	for( int i = 0; i < prev_num_map; ++i )
 		nx_delta[i] = Mat(tmp[0].m-1, tmp[0].n);
 
+	for( int i = 0; i < prev_num_map; ++i ){
+		int j, k;
 #pragma omp parallel for default(none) \
 	private(i,j,k) shared(nx_delta, tmp, U)
-	for( i = 0; i < prev_num_map; ++i )
 		for( j = 0; j < tmp[i].m-1; ++j )
 			for( k = 0; k < tmp[i].n; ++k )
 				nx_delta[i](j,k) += mask(j,i)*tmp[i](j+1,k)*prev_activate_diff_func(U[i](j,k));
+	}
 	
 	return nx_delta;
 }
