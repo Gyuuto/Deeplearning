@@ -123,7 +123,7 @@ std::vector<KDropoutFullyConnected::Mat> KDropoutFullyConnected::calc_delta ( co
 		nx_delta[i] = Mat(tmp[0].m-1, tmp[0].n);
 
 #pragma omp parallel for default(none) \
-	private(i,j,k) shared(tmp, U)
+	private(i,j,k) shared(nx_delta, tmp, U)
 	for( i = 0; i < prev_num_map; ++i )
 		for( j = 0; j < tmp[i].m-1; ++j )
 			for( k = 0; k < tmp[i].n; ++k )
