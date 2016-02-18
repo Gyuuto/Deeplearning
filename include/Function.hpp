@@ -153,7 +153,7 @@ public:
 };
 
 // Loss function
-class SQER : public LossFunction
+class Square : public LossFunction
 {
 public:
 	inline Matrix<double> operator() ( const Matrix<double>& x, const Matrix<double>& d, const bool& isdiff ){
@@ -174,18 +174,18 @@ public:
 			int i, j;
 #pragma omp parallel for default(none) reduction(+:y_)	\
 	private(i,j), shared(x, d, y)
-			for( i = 0; i < y.m; ++i )
-				for( j = 0; j < y.n; ++j ){
+			for( i = 0; i < x.m; ++i )
+				for( j = 0; j < x.n; ++j ){
 					double tmp = x(i,j) - d(i,j);
 					y_ += tmp*tmp;
 				}
 			y(0,0) = y_;
-			return 0.5*y;
+			return y;
 		}
 	}
 };
 
-class CEER : public LossFunction
+class CrossEntropy : public LossFunction
 {
 public:
 	inline Matrix<double> operator() ( const Matrix<double>& x, const Matrix<double>& d, const bool& isdiff ){

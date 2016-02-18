@@ -97,7 +97,7 @@ void Neuralnet::check_gradient ( int cnt, const std::vector<std::vector<Vec>>& x
 			for( int k = 0; k < std::min(2, (int)W[j].size()); ++k ){ // prev_num_map
 				for( int l = 0; l < std::min(5, (int)W[j][k].m); ++l ){
 					for( int m = 0; m < std::min(5, (int)W[j][k].n); ++m ){
-						auto tmp = 1.0E-8;//*(std::abs(W[j][k](l,m)) < 1.0E-3 ? 1.0 : std::abs(W[j][k](l,m)));;
+						auto tmp = 1.0E-6*(std::abs(W[j][k](l,m)) < 1.0E-3 ? 1.0 : std::abs(W[j][k](l,m)));;
 
 						W[j][k](l,m) += tmp;
 						layer[i]->set_W(W);

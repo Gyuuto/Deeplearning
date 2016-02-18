@@ -80,21 +80,21 @@ void Convolutional::finalize ()
 std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( const std::vector<Mat>& U, const std::vector<Mat>& delta )
 {
 	std::vector<std::vector<Mat>> nabla(num_map);
-	std::vector<Mat> U_(prev_num_map);
 	for( int i = 0; i < num_map; ++i ){
 		nabla[i] = std::vector<Mat>(prev_num_map);
 		d_bias[i] = 0.0;
 		for( int j = 0; j < prev_num_map; ++j )
 			nabla[i][j] = Mat(W[i][j].m, W[i][j].n);
 	}
+	std::vector<Mat> U_(prev_num_map);
 	for( int i = 0; i < prev_num_map; ++i )
 		U_[i] = (*prev_func)(U[i], false);
 
 	const int Y = prev_num_unit/prev_ldu, X = prev_ldu;
-	int j, k, s, t, y, x;
-	for( int i = 0; i < num_map; ++i ){
+	int i, j, k, s, t, y, x;
+	for( i = 0; i < num_map; ++i ){
 		for( j = 0; j < prev_num_map; ++j ){
-#pragma omp parallel for default(none)						\
+#pragma omp parallel for default(none) \
 	private(i,j,k,s,t,y,x) shared(Y, X, delta, nabla, U_)
 			for( k = 0; k < delta[i].n; ++k )
 				for( s = -m/2; s < (m+1)/2; ++s )
@@ -103,14 +103,14 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 							for( x = 0; x < X; x += stlide ){
 								int nx = x + s, ny = y + t;
 								if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
-								
+#pragma omp atomic
 								nabla[i][j](s+m/2,t+n/2) +=
 									delta[i](x/stlide+ldu*(y/stlide),k)*
 									U_[j](nx+prev_ldu*ny,k);
 							}
 		}
 		
-#pragma omp parallel for default(none)						\
+#pragma omp parallel for default(none)	\
 	private(i,j,k,s,t,y,x) shared(Y, X, delta, U_)
 		for( j = 0; j < delta[i].n; ++j )
 			for( y = 0; y < Y; y += stlide )
@@ -123,7 +123,7 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 								if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
 								val += U_[k](nx+prev_ldu*ny,j);
 							}
-					d_bias[i] += delta[i](x/stlide+ldu*(y/stlide),j) * val;
+					d_bias[i] = delta[i](x/stlide+ldu*(y/stlide),j) * val;
 				}
 	}
 
