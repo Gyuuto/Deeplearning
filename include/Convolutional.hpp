@@ -95,7 +95,7 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 	for( int i = 0; i < num_map; ++i ){
 		for( j = 0; j < prev_num_map; ++j ){
 #pragma omp parallel for default(none)						\
-	private(k,s,t,y,x) shared(Y, X, delta, nabla, U_)
+	private(i,j,k,s,t,y,x) shared(Y, X, delta, nabla, U_)
 			for( k = 0; k < delta[i].n; ++k )
 				for( s = -m/2; s < (m+1)/2; ++s )
 					for( t = -n/2; t < (n+1)/2; ++t )
@@ -111,7 +111,7 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 		}
 		
 #pragma omp parallel for default(none)						\
-	private(j,k,s,t,y,x) shared(Y, X, d_bias, delta, U_)
+	private(i,j,k,s,t,y,x) shared(Y, X, delta, U_)
 		for( j = 0; j < delta[i].n; ++j )
 			for( y = 0; y < Y; y += stlide )
 				for( x = 0; x < X; x += stlide ){

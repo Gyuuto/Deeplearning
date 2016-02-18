@@ -126,37 +126,38 @@ class Softmax : public Function
 public:
 	inline Matrix<double> operator() ( const Matrix<double>& x, const bool& isdiff ){
 		if( isdiff ){
-			auto y = (*this)(x, false);
-		
+			auto y_ = (*this)(x, false);
+			Matrix<double> y(x.m, x.n);
+			
 			int i, j;
 #pragma omp parallel for default(none)			\
-	private(i, j), shared(y)
+	private(i, j), shared(y, y_)
 			for( i = 0; i < y.m; ++i )
 				for( j = 0; j < y.n; ++j )
-					y(i,j) = y(i,j)*(1.0 - y(i,j));
+					y(i,j) = y_(i,j)*(1.0 - y_(i,j));
+			
 			return y;
 		}
 		else{
-			Matrix<double> sum(1, x.n);
+			Matrix<double> sum(1, x.n), max_val(1, x.n);
 			
 			for( int i = 0; i < x.n; ++i ){
-				int j;
-				double sum_ = 0.0;
-#pragma omp parallel for default(none) reduction(+, sum_)	\
-	private(i, j), shared(x, sum)
-				for( j = 0; j < x.m; ++j )
-					sum_ += std::exp(x(j,i));
-
-				sum(1,i) = sum_;
+				sum(0,i) = 0.0;
+				max_val(0,i) = x(0,i);
+				for( int j = 0; j < x.m; ++j )
+					max_val(0,i) = std::max(max_val(0,i), x(j,i));
+				for( int j = 0; j < x.m; ++j )
+					sum(0,i) += std::exp(x(j,i) - max_val(0,i));
 			}
-
-			auto y = x;
+			
+			Matrix<double> y(x.m, x.n);
 			int i, j;
 #pragma omp parallel for default(none)			\
-	private(i, j), shared(y, sum)
+	private(i, j), shared(x, y, sum, max_val)
 			for( i = 0; i < y.m; ++i )
 				for( j = 0; j < y.n; ++j )
-					y(i,j) = std::exp(y(i,j)) / sum(1,j);
+					y(i,j) = std::exp(x(i,j) - max_val(0,j)) / sum(0,j);
+			
 			return y;
 		}
 	}
@@ -182,7 +183,7 @@ public:
 			double y_ = 0.0;
 
 			int i, j;
-#pragma omp parallel for default(none) reduction(+,y_)	\
+#pragma omp parallel for default(none) reduction(+:y_)	\
 	private(i,j), shared(y)
 			for( i = 0; i < y.m; ++i )
 				for( j = 0; j < y.n; ++j ){
@@ -200,26 +201,38 @@ class CEER : public LossFunction
 public:
 	inline Matrix<double> operator() ( const Matrix<double>& x, const Matrix<double>& d, const bool& isdiff ){
 		if( isdiff ){
+			Matrix<double> sum(1, x.n);
 			auto y = x;
-
 			int i, j;
-#pragma omp parallel for default(none)			\
-	private(i,j), shared(y)
-			for( i = 0; i < y.n; ++i )
-				y(i,j) = d(i,j)*1.0/y(i,j);
-		
-			return -1.0*y;
+
+			for( i = 0; i < x.n; ++i ){
+				double sum_ = 0.0;
+#pragma omp parallel for default(none) reduction(+:sum_)	\
+	private(i, j), shared(x, d)
+				for( j = 0; j < x.m; ++j )
+					sum_ += -d(j,i)/x(j,i);
+				
+				sum(0,i) = sum_;
+			}
+
+#pragma omp parallel for default(none)	\
+	private(i, j), shared(y, x, d)
+			for( i = 0; i < x.m; ++i )
+				for( j = 0; j < x.n; ++j )
+					y(i,j) = -d(i,j)/x(i,j);
+
+			return y;
 		}
 		else{
 			double y_ = 0.0;
 			Matrix<double> y(1,1);
 
 			int i, j;
-#pragma omp parallel for default(none) reduction(+,y_)	\
+#pragma omp parallel for default(none) reduction(+:y_)	\
 	private(i,j), shared(y)
-			for( i = 0; i < y.m; ++i )
-				for( j = 0; j < y.n; ++j )
-					y_ += d(i,j)*std::log(y(i,j));
+			for( i = 0; i < x.m; ++i )
+				for( j = 0; j < x.n; ++j )
+					y_ += d(i,j)*std::log(x(i,j));
 
 			y(0,0) = -y_;
 			return y;

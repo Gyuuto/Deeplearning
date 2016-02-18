@@ -183,9 +183,9 @@ struct Matrix
 #else
 		int i, j;
 #pragma omp parallel for default(none) \
-	private(i,j) shared(m,n,m1)
-		for( i = 0; i < m; ++i )
-			for( j = 0; j < n; ++j )
+	private(i,j) shared(c)
+		for( i = 0; i < this->m; ++i )
+			for( j = 0; j < this->n; ++j )
 				*this(i,j) *= c;
 #endif
 
@@ -199,9 +199,9 @@ struct Matrix
 #else
 		int i, j;
 #pragma omp parallel for default(none) \
-	private(i,j) shared(m,n,m1)
-		for( i = 0; i < m; ++i )
-			for( j = 0; j < n; ++j )
+	private(i,j) shared(c)
+		for( i = 0; i < this->m; ++i )
+			for( j = 0; j < this->n; ++j )
 				*this(i,j) /= c;
 #endif
 

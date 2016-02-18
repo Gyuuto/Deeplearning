@@ -9,8 +9,6 @@
 #include <memory>
 #include <random>
 
-#include <chrono>
-
 #include "Layer.hpp"
 #include "Function.hpp"
 #include "matrix.hpp"
@@ -20,6 +18,10 @@ class Neuralnet
 private:
 	typedef Matrix<double> Mat;
 	typedef std::vector<double> Vec;
+
+	const double adam_beta = 0.9, adam_gamma = 0.999, adam_eps = 1.0E-8;
+	std::vector<std::vector<std::vector<Mat>>> adam_v, adam_r;
+	double adam_beta_ = 1.0, adam_gamma_ = 1.0;
 
 	int BATCH_SIZE;
 	double EPS, LAMBDA;
@@ -49,6 +51,10 @@ public:
 	std::vector<Mat> apply ( const std::vector<Mat>& X ) const;
 	std::vector<std::vector<Vec>> apply ( const std::vector<std::vector<Vec>>& x ) const;
 
+	void print_cost ( const std::vector<Mat>& x, const std::vector<Mat>& y );
+	void print_weight ();
+	void print_gradient ();
+
 	void set_W ( const std::string& filename );
 	void output_W ( const std::string& filename ) const;
 };
@@ -70,8 +76,8 @@ std::vector<std::vector<std::vector<Neuralnet::Mat>>> Neuralnet::calc_gradient (
 	std::vector<std::vector<std::vector<Mat>>> nabla_w(num_layer);
 	for( int i = num_layer-1; i >= 0; --i ){
 		nabla_w[i] = layer[i]->calc_gradient(U[i], delta);
+		
 		if( i == 0 ) continue;
-
 		delta = layer[i]->calc_delta(U[i], delta);
 	}
 	return nabla_w;
@@ -91,7 +97,7 @@ void Neuralnet::check_gradient ( int cnt, const std::vector<std::vector<Vec>>& x
 			for( int k = 0; k < std::min(2, (int)W[j].size()); ++k ){ // prev_num_map
 				for( int l = 0; l < std::min(5, (int)W[j][k].m); ++l ){
 					for( int m = 0; m < std::min(5, (int)W[j][k].n); ++m ){
-						auto tmp = 1.0E-6*(std::abs(W[j][k](l,m)) < 1.0E-3 ? 1.0 : std::abs(W[j][k](l,m)));;
+						auto tmp = 1.0E-8;//*(std::abs(W[j][k](l,m)) < 1.0E-3 ? 1.0 : std::abs(W[j][k](l,m)));;
 
 						W[j][k](l,m) += tmp;
 						layer[i]->set_W(W);
@@ -111,7 +117,7 @@ void Neuralnet::check_gradient ( int cnt, const std::vector<std::vector<Vec>>& x
 								E2 += (Mat::transpose(Mat(tmp2[o][n]) - Mat(y[cnt+o][n]))*
 									   (Mat(tmp2[o][n]) - Mat(y[cnt+o][n])))(0,0);
 
-						printf("\t%3d, %3d, %3d, %3d : ( %.10E, %.10E = %.10E)\n", j, k, l, m, 0.5*(E1 - E2)/tmp/BATCH_SIZE, nabla_w[i][j][k](l,m), (std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE - nabla_w[i][j][k](l,m)))/std::abs(0.5*(E1 - E2)/tmp));
+						printf("\t%3d, %3d, %3d, %3d : ( %.10E, %.10E = %.10E )\n", j, k, l, m, 0.5*(E1 - E2)/tmp/BATCH_SIZE, nabla_w[i][j][k](l,m), (std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE - nabla_w[i][j][k](l,m)))/std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE));
 						// nabla_w[i][j][k][l] = 0.5*(E1 - E2)/tmp;
 					}
 				}
@@ -154,8 +160,21 @@ void Neuralnet::add_layer( const std::shared_ptr<Layer>& layer )
 	}
 	
 	this->layer.emplace_back( layer );
-	this->layer[this->layer.size()-1]->set_prev_function(f);
-	this->layer[this->layer.size()-1]->init(m);
+
+	int idx = this->layer.size()-1;
+	this->layer[idx]->set_prev_function(f);
+	this->layer[idx]->init(m);
+
+	auto w = layer->get_W();
+
+	adam_v.push_back(std::vector<std::vector<Mat>>(w.size()));
+	adam_r.push_back(std::vector<std::vector<Mat>>(w.size()));
+	for( int j = 0; j < w.size(); ++j ){
+		for( int k = 0; k < w[j].size(); ++k ){
+			adam_v[idx][j].emplace_back(w[j][k].m, w[j][k].n);
+			adam_r[idx][j].emplace_back(w[j][k].m, w[j][k].n);
+		}
+	}
 }
 
 void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::vector<std::vector<Vec>>& y,
@@ -167,22 +186,6 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 	iota(idx.begin(), idx.end(), 0);
 
 	int cnt = 0;
-	std::vector<std::vector<std::vector<Mat>>> adam_v(num_layer), adam_r(num_layer);
-	const double adam_beta = 0.9, adam_gamma = 0.999, adam_eps = 1.0E-8;
-	double adam_beta_ = 1.0, adam_gamma_ = 1.0;
-	for( int i = 0; i < num_layer; ++i ){
-		auto w_i = layer[i]->get_W();
-
-		adam_v[i] = std::vector<std::vector<Mat>>(w_i.size());
-		adam_r[i] = std::vector<std::vector<Mat>>(w_i.size());
-		for( int j = 0; j < w_i.size(); ++j ){
-			for( int k = 0; k < w_i[j].size(); ++k ){
-				adam_v[i][j].emplace_back(w_i[j][k].m, w_i[j][k].n);
-				adam_r[i][j].emplace_back(w_i[j][k].m, w_i[j][k].n);
-			}
-		}
-	}
-
 	for( int n = 0; n <= MAX_ITER; ++n ){
 		std::vector<Mat> D;
 		std::vector<std::vector<Mat>> U(num_layer+1);
@@ -193,7 +196,7 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 				for( int k = 0; k < x[idx[cnt+j]][i].size(); ++k )
 					U[0][i](k,j) = x[idx[cnt+j]][i][k];
 		}
-
+		
 		for( int i = 0; i < y[0].size(); ++i ){
 			D.emplace_back(y[0][i].size(), BATCH_SIZE);
 			for( int j = 0; j < D[i].m; ++j )
@@ -205,7 +208,7 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 			auto V = U[i];
 			if( i != 0 ){
 				std::shared_ptr<Function> f = layer[i-1]->get_function();
-
+				
 				for( int j = 0; j < V.size(); ++j )
 					V[j] = (*f)(V[j], false);
 			}
@@ -271,97 +274,8 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 
 		if( n%(x.size()/BATCH_SIZE) == 0 ){
 			printf("%lu Epoch : \n", n/(x.size()/BATCH_SIZE));
-			
-			double error[3] = { 0.0 }, min_err = 1.0E100, max_err = 0.0;
-			auto v = apply(x);
-			for( int i = 0; i < x.size(); ++i ){
-				double sum = 0.0;
-				for( int j = 0; j < v[i].size(); ++j )
-					for( int k = 0; k < v[i][j].size(); ++k )
-						sum += (v[i][j][k] - y[i][j][k])*(v[i][j][k] - y[i][j][k]);
-				min_err = std::min(min_err, sum);
-				max_err = std::max(max_err, sum);
-				error[0] += sum;
-			}
-			error[0] /= x.size();
-
-			for( int i = 0; i < num_layer; ++i ){
-				auto W = layer[i]->get_W();
-				for( int j = 0; j < W.size(); ++j )
-					for( int k = 0; k < W[j].size(); ++k )
-						for( int l = 0; l < W[j][k].m; ++l )
-							for( int m = 1; m < W[j][k].n; ++m )
-								error[2] += W[j][k](l,m)*W[j][k](l,m);
-			}
-			error[2] *= LAMBDA;
-			
-			printf("Error    :    Average    |      Min      |      Max      |\n");
-			printf("           %13.6E | %13.6E | %13.6E |\n", error[0], min_err, max_err);
-			printf("           Sum of errors | Squared error |L2 norm regul. |\n");
-			printf("           %13.6E = %13.6E + %13.6E\n",
-				   error[0]+error[1]+error[2], error[0], error[2]);
-			printf("Gradient :    Average    |      Min      |      Max      |\n");
-			for( int i = 0; i < num_layer; ++i ){
-				double ave_gradient = 0.0;
-				double max_gradient = -1.0E100;
-				double min_gradient = 1.0E100;
-
-				int num = 0;
-				auto W = layer[i]->get_W();
-				for( int j = 0; j < W.size(); ++j ){
-					for( int k = 0; k < W[j].size(); ++k ){
-						for( int l = 0; l < W[j][k].m; ++l )
-							for( int m = 0; m < W[j][k].n; ++m ){
-								auto v_hat = adam_v[i][j][k](l,m)/(1.0 - adam_beta_);
-								auto r_hat = adam_r[i][j][k](l,m)/(1.0 - adam_gamma_);
-								auto tmp = std::abs(-EPS*v_hat/(sqrt(r_hat) + adam_eps));
-						
-								ave_gradient += tmp;
-								max_gradient = std::max(max_gradient, tmp);
-								min_gradient = std::min(min_gradient, tmp);
-							}
-						num += W[j][k].m*W[j][k].n;
-					}
-				}
-				ave_gradient /= num;
-
-				if( W.size() == 0 )
-					printf(" Layer %d   ------------- | ------------- | ------------- |\n", i);
-				else
-					printf(" Layer %d   %13.6E | %13.6E | %13.6E |\n", i, ave_gradient, min_gradient, max_gradient);
-			}
-			printf("Weight   :    Average    |      Min      |      Max      |\n");
-			for( int i = 0; i < num_layer; ++i ){
-				double ave_weight = 0.0;
-				double max_weight = -1.0E100;
-				double min_weight = 1.0E100;
-
-				int num = 0;
-				auto W = layer[i]->get_W();
-				for( int j = 0; j < W.size(); ++j ){
-					for( int k = 0; k < W[j].size(); ++k ){
-						for( int l = 0; l < W[j][k].m; ++l )
-							for( int m = 0; m < W[j][k].n; ++m ){
-								auto tmp = std::abs(W[j][k](k,m));
-
-								ave_weight += tmp;
-								max_weight = std::max(max_weight, tmp);
-								min_weight = std::min(min_weight, tmp);
-							}
-						num += W[j][k].m*W[j][k].n;
-					}
-				}
-				ave_weight /= num;
-
-				if( W.size() == 0 )
-					printf(" Layer %d   ------------- | ------------- | ------------- |\n", i);
-				else
-					printf(" Layer %d   %13.6E | %13.6E | %13.6E |\n", i, ave_weight, min_weight, max_weight);
-			}
-			puts("");
 			each_func(*this, U[0], D);
 			fflush(stdout);
-
 			output_W("W.dat");
 		}
 	}
@@ -423,6 +337,102 @@ void Neuralnet::output_W ( const std::string& filename ) const
 {
 	for( int i = 0; i < layer.size(); ++i ){
 		layer[i]->output_W("layer_" + std::to_string(i) + "_" + filename);
+	}
+}
+
+void Neuralnet::print_cost ( const std::vector<Mat>& x, const std::vector<Mat>& y )
+{
+	double error[3] = { 0.0 }, min_err = 1.0E100, max_err = 0.0;
+	auto v = apply(x);
+	for( int i = 0; i < x.size(); ++i ){
+		double sum = (*loss)(x[i], y[i], false)(0,0);
+		
+		min_err = std::min(min_err, sum);
+		max_err = std::max(max_err, sum);
+		error[0] += sum;
+	}
+	error[0] /= x.size();
+
+	for( int i = 0; i < layer.size(); ++i ){
+		auto W = layer[i]->get_W();
+		for( int j = 0; j < W.size(); ++j )
+			for( int k = 0; k < W[j].size(); ++k )
+				for( int l = 0; l < W[j][k].m; ++l )
+					for( int m = 1; m < W[j][k].n; ++m )
+						error[2] += W[j][k](l,m)*W[j][k](l,m);
+	}
+	error[2] *= LAMBDA;
+
+	printf("Cost     :    Average    |      Min      |      Max      |\n");
+	printf("           %13.6E | %13.6E | %13.6E |\n", error[0], min_err, max_err);
+	printf("           Sum of costs  |   The cost    |L2 norm regul. |\n");
+	printf("           %13.6E = %13.6E + %13.6E\n",
+		   error[0]+error[1]+error[2], error[0], error[2]);
+}
+
+void Neuralnet::print_weight ()
+{
+	printf("Gradient :    Average    |      Min      |      Max      |\n");
+	for( int i = 0; i < layer.size(); ++i ){
+		double ave_gradient = 0.0;
+		double max_gradient = -1.0E100;
+		double min_gradient = 1.0E100;
+
+		int num = 0;
+		auto W = layer[i]->get_W();
+		for( int j = 0; j < W.size(); ++j ){
+			for( int k = 0; k < W[j].size(); ++k ){
+				for( int l = 0; l < W[j][k].m; ++l )
+					for( int m = 0; m < W[j][k].n; ++m ){
+						auto v_hat = adam_v[i][j][k](l,m)/(1.0 - adam_beta_);
+						auto r_hat = adam_r[i][j][k](l,m)/(1.0 - adam_gamma_);
+						auto tmp = std::abs(-EPS*v_hat/(sqrt(r_hat) + adam_eps));
+						
+						ave_gradient += tmp;
+						max_gradient = std::max(max_gradient, tmp);
+						min_gradient = std::min(min_gradient, tmp);
+					}
+				num += W[j][k].m*W[j][k].n;
+			}
+		}
+		ave_gradient /= num;
+
+		if( W.size() == 0 )
+			printf(" Layer %d   ------------- | ------------- | ------------- |\n", i);
+		else
+			printf(" Layer %d   %13.6E | %13.6E | %13.6E |\n", i, ave_gradient, min_gradient, max_gradient);
+	}
+}
+
+void Neuralnet::print_gradient ()
+{
+	printf("Weight   :    Average    |      Min      |      Max      |\n");
+	for( int i = 0; i < layer.size(); ++i ){
+		double ave_weight = 0.0;
+		double max_weight = -1.0E100;
+		double min_weight = 1.0E100;
+
+		int num = 0;
+		auto W = layer[i]->get_W();
+		for( int j = 0; j < W.size(); ++j ){
+			for( int k = 0; k < W[j].size(); ++k ){
+				for( int l = 0; l < W[j][k].m; ++l )
+					for( int m = 0; m < W[j][k].n; ++m ){
+						auto tmp = std::abs(W[j][k](k,m));
+
+						ave_weight += tmp;
+						max_weight = std::max(max_weight, tmp);
+						min_weight = std::min(min_weight, tmp);
+					}
+				num += W[j][k].m*W[j][k].n;
+			}
+		}
+		ave_weight /= num;
+
+		if( W.size() == 0 )
+			printf(" Layer %d   ------------- | ------------- | ------------- |\n", i);
+		else
+			printf(" Layer %d   %13.6E | %13.6E | %13.6E |\n", i, ave_weight, min_weight, max_weight);
 	}
 }
 
