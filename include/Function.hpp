@@ -172,7 +172,7 @@ public:
 			auto y = x;
 			int i, j;
 #pragma omp parallel for default(none)			\
-	private(i,j), shared(y)
+	private(i,j), shared(y, d)
 			for( i = 0; i < y.m; ++i )
 				for( j = 0; j < y.n; ++j )
 					y(i,j) -= d(i,j);
@@ -184,7 +184,7 @@ public:
 
 			int i, j;
 #pragma omp parallel for default(none) reduction(+:y_)	\
-	private(i,j), shared(y)
+	private(i,j), shared(x, d, y)
 			for( i = 0; i < y.m; ++i )
 				for( j = 0; j < y.n; ++j ){
 					double tmp = x(i,j) - d(i,j);
@@ -229,7 +229,7 @@ public:
 
 			int i, j;
 #pragma omp parallel for default(none) reduction(+:y_)	\
-	private(i,j), shared(y)
+	private(i,j), shared(d, x)
 			for( i = 0; i < x.m; ++i )
 				for( j = 0; j < x.n; ++j )
 					y_ += d(i,j)*std::log(x(i,j));
