@@ -105,8 +105,7 @@ void Neuralnet::check_gradient ( int cnt, const std::vector<std::vector<Vec>>& x
 						auto tmp1 = apply(X);
 						for( int n = 0; n < tmp1[0].size(); ++n )
 							for( int o = 0; o < BATCH_SIZE; ++o ){
-								E1 += (Mat::transpose(Mat(tmp1[o][n]) - Mat(y[cnt+o][n]))*
-									   (Mat(tmp1[o][n]) - Mat(y[cnt+o][n])))(0,0);
+								E1 += (*loss)(Mat(tmp1[o][n]), Mat(y[cnt+o][n]), false)(0,0);
 							}
 						W[j][k](l,m) -= tmp;
 						layer[i]->set_W(W);
@@ -114,11 +113,9 @@ void Neuralnet::check_gradient ( int cnt, const std::vector<std::vector<Vec>>& x
 						auto tmp2 = apply(X);
 						for( int n = 0; n < tmp2[0].size(); ++n )
 							for( int o = 0; o < BATCH_SIZE; ++o )
-								E2 += (Mat::transpose(Mat(tmp2[o][n]) - Mat(y[cnt+o][n]))*
-									   (Mat(tmp2[o][n]) - Mat(y[cnt+o][n])))(0,0);
+								E2 += (*loss)(Mat(tmp2[o][n]), Mat(y[cnt+o][n]), false)(0,0);
 
 						printf("\t%3d, %3d, %3d, %3d : ( %.10E, %.10E = %.10E )\n", j, k, l, m, 0.5*(E1 - E2)/tmp/BATCH_SIZE, nabla_w[i][j][k](l,m), (std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE - nabla_w[i][j][k](l,m)))/std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE));
-						// nabla_w[i][j][k][l] = 0.5*(E1 - E2)/tmp;
 					}
 				}
 			}
@@ -152,12 +149,10 @@ void Neuralnet::set_BATCHSIZE ( const int& BATCH_SIZE )
 void Neuralnet::add_layer( const std::shared_ptr<Layer>& layer )
 {
 	std::shared_ptr<Function> f;
-	if( this->layer.size() == 0 ){
+	if( this->layer.size() == 0 )
 		f = std::shared_ptr<Function>(new Identity);
-	}
-	else{
+	else
 		f = this->layer[this->layer.size()-1]->get_function();
-	}
 	
 	this->layer.emplace_back( layer );
 
@@ -345,7 +340,7 @@ void Neuralnet::print_cost ( const std::vector<Mat>& x, const std::vector<Mat>& 
 	double error[3] = { 0.0 }, min_err = 1.0E100, max_err = 0.0;
 	auto v = apply(x);
 	for( int i = 0; i < x.size(); ++i ){
-		double sum = (*loss)(x[i], y[i], false)(0,0);
+		double sum = (*loss)(v[i], y[i], false)(0,0);
 		
 		min_err = std::min(min_err, sum);
 		max_err = std::max(max_err, sum);

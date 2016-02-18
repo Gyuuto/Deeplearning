@@ -15,7 +15,6 @@ public:
 class LossFunction
 {
 public:
-	// for normal apply
 	virtual inline Matrix<double> operator() ( const Matrix<double>& x, const Matrix<double>& d, const bool& isdiff ) = 0;
 };
 
@@ -126,17 +125,7 @@ class Softmax : public Function
 public:
 	inline Matrix<double> operator() ( const Matrix<double>& x, const bool& isdiff ){
 		if( isdiff ){
-			auto y_ = (*this)(x, false);
-			Matrix<double> y(x.m, x.n);
-			
-			int i, j;
-#pragma omp parallel for default(none)			\
-	private(i, j), shared(y, y_)
-			for( i = 0; i < y.m; ++i )
-				for( j = 0; j < y.n; ++j )
-					y(i,j) = y_(i,j)*(1.0 - y_(i,j));
-			
-			return y;
+			return Matrix<double>::ones(x.m, x.n);
 		}
 		else{
 			Matrix<double> sum(1, x.n), max_val(1, x.n);
@@ -201,25 +190,14 @@ class CEER : public LossFunction
 public:
 	inline Matrix<double> operator() ( const Matrix<double>& x, const Matrix<double>& d, const bool& isdiff ){
 		if( isdiff ){
-			Matrix<double> sum(1, x.n);
-			auto y = x;
+			Matrix<double> y(x.m, x.n);
 			int i, j;
-
-			for( i = 0; i < x.n; ++i ){
-				double sum_ = 0.0;
-#pragma omp parallel for default(none) reduction(+:sum_)	\
-	private(i, j), shared(x, d)
-				for( j = 0; j < x.m; ++j )
-					sum_ += -d(j,i)/x(j,i);
-				
-				sum(0,i) = sum_;
-			}
 
 #pragma omp parallel for default(none)	\
 	private(i, j), shared(y, x, d)
 			for( i = 0; i < x.m; ++i )
 				for( j = 0; j < x.n; ++j )
-					y(i,j) = -d(i,j)/x(i,j);
+					y(i,j) = x(i,j) - d(i,j);
 
 			return y;
 		}
@@ -232,10 +210,10 @@ public:
 	private(i,j), shared(d, x)
 			for( i = 0; i < x.m; ++i )
 				for( j = 0; j < x.n; ++j )
-					y_ += d(i,j)*std::log(x(i,j));
+					y_ -= d(i,j)*std::log(x(i,j));
 
-			y(0,0) = -y_;
-			return y;
+			y(0,0) = y_;
+			return 2.0*y;
 		}
 	}
 };
