@@ -156,8 +156,8 @@ std::vector<KDropoutFullyConnected::Mat> KDropoutFullyConnected::apply ( const s
 				return val[id1] > val[id2];
 			});
 
-		for( int j = 0; j < num_unit*K; ++j ) mask(idx[j],i) = 1.0;
-		for( int j = num_unit*K; j < U[i].m; ++j ) mask(idx[j],i) = 0.0;
+		for( int j = 0; j < prev_num_unit*K; ++j ) mask(idx[j],i) = 1.0;
+		for( int j = prev_num_unit*K; j < U[i].m; ++j ) mask(idx[j],i) = 0.0;
 	}
 
 	for( int i = 0; i < prev_num_map; ++i ){

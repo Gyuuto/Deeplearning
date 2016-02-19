@@ -365,13 +365,20 @@ void Neuralnet::print_cost ( const std::vector<Mat>& x, const std::vector<Mat>& 
 	double error[3] = { 0.0 }, min_err = 1.0E100, max_err = 0.0;
 	auto v = apply(x);
 	for( int i = 0; i < x.size(); ++i ){
-		double sum = (*loss)(v[i], y[i], false)(0,0);
+		for( int j = 0; j < x[i].n; ++j ){
+			Mat v_(v[i].m, 1), y_(y[i].m, 1);
+			for( int k = 0; k < v[i].m; ++k ){
+				v_(k,0) = v[i](k,j);
+				y_(k,0) = y[i](k,j);
+			}
+			double sum = (*loss)(v_, y_, false)(0,0);
 		
-		min_err = std::min(min_err, sum);
-		max_err = std::max(max_err, sum);
-		error[0] += sum;
+			min_err = std::min(min_err, sum);
+			max_err = std::max(max_err, sum);
+			error[0] += sum;
+		}
 	}
-	error[0] /= x.size();
+	error[0] /= x[0].n;
 
 	for( int i = 0; i < layer.size(); ++i ){
 		auto W = layer[i]->get_W();
