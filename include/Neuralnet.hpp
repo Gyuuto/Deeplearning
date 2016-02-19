@@ -51,9 +51,9 @@ public:
 	std::vector<Mat> apply ( const std::vector<Mat>& X ) const;
 	std::vector<std::vector<Vec>> apply ( const std::vector<std::vector<Vec>>& x ) const;
 
-	void print_cost ( const std::vector<Mat>& x, const std::vector<Mat>& y );
-	void print_weight ();
-	void print_gradient ();
+	void print_cost ( const std::vector<Mat>& x, const std::vector<Mat>& y ) const;
+	void print_weight () const;
+	void print_gradient () const;
 
 	void set_W ( const std::string& filename );
 	void output_W ( const std::string& filename ) const;
@@ -335,18 +335,25 @@ void Neuralnet::output_W ( const std::string& filename ) const
 	}
 }
 
-void Neuralnet::print_cost ( const std::vector<Mat>& x, const std::vector<Mat>& y )
+void Neuralnet::print_cost ( const std::vector<Mat>& x, const std::vector<Mat>& y ) const
 {
 	double error[3] = { 0.0 }, min_err = 1.0E100, max_err = 0.0;
 	auto v = apply(x);
 	for( int i = 0; i < x.size(); ++i ){
-		double sum = (*loss)(v[i], y[i], false)(0,0);
+		for( int j = 0; j < x[i].n; ++j ){
+			Mat v_(v[i].m, 1), y_(y[i].m, 1);
+			for( int k = 0; k < v[i].m; ++k ){
+				v_(k,0) = v[i](k,j);
+				y_(k,0) = y[i](k,j);
+			}
+			double sum = (*loss)(v_, y_, false)(0,0);
 		
-		min_err = std::min(min_err, sum);
-		max_err = std::max(max_err, sum);
-		error[0] += sum;
+			min_err = std::min(min_err, sum);
+			max_err = std::max(max_err, sum);
+			error[0] += sum;
+		}
 	}
-	error[0] /= x.size();
+	error[0] /= x[0].n;
 
 	for( int i = 0; i < layer.size(); ++i ){
 		auto W = layer[i]->get_W();
@@ -365,7 +372,7 @@ void Neuralnet::print_cost ( const std::vector<Mat>& x, const std::vector<Mat>& 
 		   error[0]+error[1]+error[2], error[0], error[2]);
 }
 
-void Neuralnet::print_weight ()
+void Neuralnet::print_weight () const
 {
 	printf("Gradient :    Average    |      Min      |      Max      |\n");
 	for( int i = 0; i < layer.size(); ++i ){
@@ -399,7 +406,7 @@ void Neuralnet::print_weight ()
 	}
 }
 
-void Neuralnet::print_gradient ()
+void Neuralnet::print_gradient () const
 {
 	printf("Weight   :    Average    |      Min      |      Max      |\n");
 	for( int i = 0; i < layer.size(); ++i ){
