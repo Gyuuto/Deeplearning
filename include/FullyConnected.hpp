@@ -48,9 +48,11 @@ void FullyConnected::init ( std::mt19937& m )
 		W.emplace_back(prev_num_map);
 		for( int j = 0; j < prev_num_map; ++j ){
 			W[i][j] = Mat(num_unit, 1+prev_num_unit);
-			for( int k = 0; k < W[i][j].m; ++k )
-				for( int l = 0; l < W[i][j].n; ++l )
+			for( int k = 0; k < W[i][j].m; ++k ){
+				W[i][j](k, 0) = 0;
+				for( int l = 1; l < W[i][j].n; ++l )
 					W[i][j](k, l) = d_rand(m);
+			}
 		}
 	}
 }
@@ -136,7 +138,7 @@ std::vector<FullyConnected::Mat> FullyConnected::apply ( const std::vector<Mat>&
 		for( int j = 0; j < prev_num_map; ++j )
 			ret[i] = ret[i] + W[i][j]*V[j];
 	}
-
+	
 	if( use_func )
 		for( int i = 0; i < num_map; ++i )
 			ret[i] = (*func)(ret[i], false);

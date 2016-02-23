@@ -18,6 +18,19 @@ public:
 	virtual inline Matrix<double> operator() ( const Matrix<double>& x, const Matrix<double>& d, const bool& isdiff ) = 0;
 };
 
+class Identity : public Function
+{
+public:
+	inline Matrix<double> operator() ( const Matrix<double>& x, const bool& isdiff ){
+		if( isdiff ){
+			return Matrix<double>::ones(x.m, x.n);
+		}
+		else{
+			return x;
+		}
+	}
+};
+
 class ReLU : public Function
 {
 public:
@@ -43,19 +56,6 @@ public:
 		}
 
 		return y;
-	}
-};
- 
-class Identity : public Function
-{
-public:
-	inline Matrix<double> operator() ( const Matrix<double>& x, const bool& isdiff ){
-		if( isdiff ){
-			return Matrix<double>::ones(x.m, x.n);
-		}
-		else{
-			return x;
-		}
 	}
 };
 
@@ -120,6 +120,151 @@ public:
 	}
 };
 
+class Softsign : public Function
+{
+	inline Matrix<double> operator() ( const Matrix<double>& x, const bool& isdiff ){
+		auto y = x;
+
+		if( isdiff ){
+			int i, j;
+#pragma omp parallel for default(none)			\
+	private(i,j) shared(y)
+			for( i = 0; i < y.m; ++i )
+				for( j = 0; j < y.n; ++j ){
+					double tmp = 1.0 + std::abs(y(i,j));
+					double y_diff = 0.0;
+					if( y(i,j) > 1.0E-10 ) y_diff = 1.0;
+					else if( y(i,j) < -1.0E-10 ) y_diff = -1.0;
+					y(i,j) = (tmp - y(i,j)*y_diff)/(tmp*tmp);
+				}
+		}
+		else{
+			int i, j;
+#pragma omp parallel for default(none) \
+	private(i,j) shared(y)
+			for( i = 0; i < y.m; ++i )
+				for( j = 0; j < y.n; ++j )
+					y(i,j) = y(i,j) / (1.0 + std::abs(y(i,j)));
+		}
+			
+		return y;
+	}	
+};
+  
+class Softplus : public Function
+{
+	inline Matrix<double> operator() ( const Matrix<double>& x, const bool& isdiff ){
+		auto y = x;
+
+		if( isdiff ){
+			int i, j;
+#pragma omp parallel for default(none)			\
+	private(i,j) shared(y)
+			for( i = 0; i < y.m; ++i )
+				for( j = 0; j < y.n; ++j ){
+					double tmp = std::exp(y(i,j));
+					y(i,j) = tmp / (1.0 + tmp);
+				}
+		}
+		else{
+			int i, j;
+#pragma omp parallel for default(none) \
+	private(i,j) shared(y)
+			for( i = 0; i < y.m; ++i )
+				for( j = 0; j < y.n; ++j )
+					y(i,j) = std::log(1.0 + std::exp(y(i,j)));
+		}
+			
+		return y;
+	}	
+};
+
+template<int n>
+class Polynomial : public Function
+{
+	inline Matrix<double> operator() ( const Matrix<double>& x, const bool& isdiff ){
+		auto y = x;
+
+		if( isdiff ){
+			int i, j;
+#pragma omp parallel for default(none)			\
+	private(i,j) shared(y)
+			for( i = 0; i < y.m; ++i )
+				for( j = 0; j < y.n; ++j ){
+					y(i,j) = n*std::pow(y(i,j), n-1);
+				}
+		}
+		else{
+			int i, j;
+#pragma omp parallel for default(none) \
+	private(i,j) shared(y)
+			for( i = 0; i < y.m; ++i )
+				for( j = 0; j < y.n; ++j )
+					y(i,j) = std::pow(y(i,j), n);
+		}
+			
+		return y;
+	}	
+};
+
+template<int n>
+class TruncatedPower : public Function
+{
+	inline Matrix<double> operator() ( const Matrix<double>& x, const bool& isdiff ){
+		auto y = x;
+
+		if( isdiff ){
+			int i, j;
+#pragma omp parallel for default(none)			\
+	private(i,j) shared(y)
+			for( i = 0; i < y.m; ++i )
+				for( j = 0; j < y.n; ++j ){
+					y(i,j) = (y(i,j) < 0.0 ? 0.0 : n*std::pow(y(i,j), n-1));
+				}
+		}
+		else{
+			int i, j;
+#pragma omp parallel for default(none) \
+	private(i,j) shared(y)
+			for( i = 0; i < y.m; ++i )
+				for( j = 0; j < y.n; ++j )
+					y(i,j) = (y(i,j) < 0.0 ? 0.0 : std::pow(y(i,j), n));
+		}
+			
+		return y;
+	}	
+};
+
+class Abs : public Function
+{
+	inline Matrix<double> operator() ( const Matrix<double>& x, const bool& isdiff ){
+		auto y = x;
+
+		if( isdiff ){
+			int i, j;
+#pragma omp parallel for default(none)			\
+	private(i,j) shared(y)
+			for( i = 0; i < y.m; ++i )
+				for( j = 0; j < y.n; ++j ){
+					double y_diff = 0.0;
+					if( y(i,j) > 1.0E-10 ) y_diff = 1.0;
+					else if( y(i,j) < -1.0E-10 ) y_diff = -1.0;
+					y(i,j) = y_diff;
+				}
+		}
+		else{
+			int i, j;
+#pragma omp parallel for default(none) \
+	private(i,j) shared(y)
+			for( i = 0; i < y.m; ++i )
+				for( j = 0; j < y.n; ++j )
+					y(i,j) = std::abs(y(i,j));
+		}
+			
+		return y;
+	}	
+};
+
 class Softmax : public Function
 {
 public:
@@ -152,7 +297,9 @@ public:
 	}
 };
 
-// Loss function
+///////////////////////////////////////////////////////
+//////////////////// Loss function ////////////////////
+///////////////////////////////////////////////////////
 class Square : public LossFunction
 {
 public:

@@ -34,12 +34,12 @@ public:
 
 	// virtual std::map<std::string, double> get_error () = 0;
 	
-	std::vector<std::vector<Mat>> get_W ();
-	std::shared_ptr<Function> get_function ();
+	virtual std::vector<std::vector<Mat>> get_W ();
+	virtual std::shared_ptr<Function> get_function ();
 
-	void set_W ( const std::vector<std::vector<Mat>>& W );
-	void set_function ( const std::shared_ptr<Function>& f );
-	void set_prev_function ( const std::shared_ptr<Function>& f );
+	virtual void set_W ( const std::vector<std::vector<Mat>>& W );
+	virtual void set_function ( const std::shared_ptr<Function>& f );
+	virtual void set_prev_function ( const std::shared_ptr<Function>& f );
 	
 	virtual void set_W ( const std::string& filename ) = 0;
 	virtual void output_W ( const std::string& filename ) = 0;
