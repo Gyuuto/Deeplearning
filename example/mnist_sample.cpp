@@ -29,7 +29,7 @@ void normalize ( vector<vector<vector<double>>>& image, vector<vector<double>>& 
     }
 }
 
-int main()
+int main( int argc, char* argv[] )
 {
 	// define mini-batch size.
 	const int BATCH_SIZE = 50;
@@ -43,8 +43,8 @@ int main()
 										  20, 28*28, 28,
 										  5, 5, 1, shared_ptr<Function>(new ReLU)));
 	layers.emplace_back(new Pooling(20, 28*28, 28,
-										  20, 7*7, 7,
-										  4, 4, 4, shared_ptr<Function>(new Identity)));
+									20, 7*7, 7,
+									4, 4, 4, shared_ptr<Function>(new Identity)));
 	layers.emplace_back(new FullyConnected(20, 7*7, 1, 10, shared_ptr<Function>(new Softmax)));
 
 	// this neuralnet has 4 layers, input, convolutional, pooling and FullyConnected.
@@ -105,7 +105,7 @@ int main()
 	// checking error function.
 	string text = "Train data answer rate : ";
 	auto check_error = [&](const Neuralnet& nn, const int iter, const std::vector<Matrix<double>>& x, const std::vector<Matrix<double>>& d ) -> void {
-		if( iter%(N/BATCH_SIZE) != 0 ) return;
+		if( iter%(N/BATCH_SIZE) != 0 || iter == 0 ) return;
 
 		int ans_num = 0;
 		auto Y = nn.apply(x);
@@ -124,20 +124,11 @@ int main()
 
 		printf("%s%.2f%%\n", text.c_str(), (double)ans_num/Y[0].n*100.0);
 	};
-	
+
 	// set supervised data.
 	vector<vector<vector<double>>> d(N, vector<vector<double>>(1, vector<double>(10, 0.0)));
 	for( int i = 0; i < N; ++i ) d[i][0][train_lab[i]] = 1.0;
 
-	// set a hyper parameter.
-	net.set_EPS(1.0E-3);
-	net.set_LAMBDA(0.0);
-	net.set_BATCHSIZE(50);
-	// learning the neuralnet in 10 EPOCH and output error defined above in each epoch.
-    net.learning(train_x, d, N/50*10, check_error);
-
-	// calc answer rate of test data.
-	text = "Test data answer rate : ";
 	vector<Matrix<double>> X(1, Matrix<double>(28*28, M)), Y(1, Matrix<double>(10, M));
 	for( int i = 0; i < M; ++i ){
 		for( int j = 0; j < 28*28; ++j ){
@@ -145,5 +136,15 @@ int main()
 		}
 		Y[0](test_lab[i], i) = 1.0;
 	}
-	check_error(net, 0, X, Y);
+
+	// set a hyper parameter.
+	net.set_EPS(1.0E-3);
+	net.set_LAMBDA(0.0);
+	net.set_BATCHSIZE(BATCH_SIZE);
+	// learning the neuralnet in 10 EPOCH and output error defined above in each epoch.
+	net.learning(train_x, d, N/BATCH_SIZE*10, check_error);
+
+	// calc answer rate of test data.
+	text = "Test data answer rate : ";
+	check_error(net, N/BATCH_SIZE, X, Y);
 }
