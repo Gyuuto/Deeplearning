@@ -6,6 +6,10 @@
 #include <memory>
 #include <random>
 
+#ifdef USE_MPI
+#include <mpi.h>
+#endif
+
 #include "matrix.hpp"
 #include "Function.hpp"
 

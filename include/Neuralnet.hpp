@@ -284,36 +284,6 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 		each_func(*this, n, U[0], D);
 	}
 
-#ifdef USE_MPI
-	for( int i = 0; i < num_layer; ++i ){
-		auto W = layer[i]->get_W();
-		if( W.size() == 0 ) continue;
-
-		int cnt = W.size()*W[0].size()*W[0][0].m*W[0][0].n;
-		std::vector<double> w(cnt);
-
-		int idx = 0;
-		for( int j = 0; j < W.size(); ++j )
-			for( int k = 0; k < W[j].size(); ++k )
-				for( int l = 0; l < W[j][k].m; ++l )
-					for( int m = 0; m < W[j][k].n; ++m ){
-						w[idx] = W[j][k](l,m);
-						++idx;
-					}
-		
-		MPI_Allreduce(MPI_IN_PLACE, &w[0], cnt, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD);
-
-		idx = 0;
-		for( int j = 0; j < W.size(); ++j )
-			for( int k = 0; k < W[j].size(); ++k )
-				for( int l = 0; l < W[j][k].m; ++l )
-					for( int m = 0; m < W[j][k].n; ++m ){
-						W[j][k](l,m) = w[idx]/nprocs;
-						++idx;
-					}
-		layer[i]->set_W(W);
-	}
-#endif
 	for( int i = 0; i < num_layer; ++i ) layer[i]->finalize();
 }
 
