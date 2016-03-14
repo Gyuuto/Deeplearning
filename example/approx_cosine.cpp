@@ -6,22 +6,17 @@
 #include "../include/Neuralnet.hpp"
 #include "../include/Layer.hpp"
 #include "../include/FullyConnected.hpp"
+#include "../include/Function.hpp"
 
 using namespace std;
 
 int main()
 {
-	// define some function and differential
-	auto ReLU = [](double x) -> double { return max(0.0, x); };
-	auto dReLU = [](double x) -> double { return (x <= 0.0 ? 0.0 : 1.0); };
-	auto idf = [](double x) -> double { return x; };
-	auto didf = [](double x) -> double { return 1.0; };
-
-	Neuralnet net;
+	Neuralnet net(shared_ptr<LossFunction>(new Square));
 	vector<shared_ptr<Layer>> layers;
 	// define layers
-	layers.emplace_back(new FullyConnected(1, 1, 1, 100, ReLU, dReLU));
-	layers.emplace_back(new FullyConnected(1, 100, 1, 1, idf, didf));
+	layers.emplace_back(new FullyConnected(1, 1, 1, 100, shared_ptr<Function>(new ReLU)));
+	layers.emplace_back(new FullyConnected(1, 100, 1, 1, shared_ptr<Function>(new Identity)));
 
 	// this neuralnet has 3 layer, input, hidden and output.
 	net.add_layer(layers[0]);
