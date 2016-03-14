@@ -311,6 +311,7 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 						W[j][k](l,m) = w[idx]/nprocs;
 						++idx;
 					}
+		layer[i]->set_W(W);
 	}
 #endif
 	for( int i = 0; i < num_layer; ++i ) layer[i]->finalize();

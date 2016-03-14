@@ -74,7 +74,33 @@ void Convolutional::init ( std::mt19937& m )
 	
 void Convolutional::finalize ()
 {
+#ifdef USE_MPI
+	int nprocs;
+	MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
+	if( W.size() == 0 ) return;
+
+	int cnt = W.size()*W[0].size()*W[0][0].m*W[0][0].n + bias.size();
+	std::vector<double> w(cnt);
+
+	int idx = 0;
+	for( int i = 0; i < W.size(); ++i )
+		for( int j = 0; j < W[i].size(); ++j )
+			for( int k = 0; k < W[i][j].m; ++k )
+				for( int l = 0; l < W[i][j].n; ++l )
+					w[idx++] = W[i][j](k,l);
+
+	for( int i = 0; i < bias.size(); ++i ) w[idx++] = bias[i];
 	
+	MPI_Allreduce(MPI_IN_PLACE, &w[0], cnt, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD);
+
+	idx = 0;
+	for( int i = 0; i < W.size(); ++i )
+		for( int j = 0; j < W[i].size(); ++j )
+			for( int k = 0; k < W[i][j].m; ++k )
+				for( int l = 0; l < W[i][j].n; ++l )
+					W[i][j](k,l) = w[idx++]/nprocs;
+	for( int i = 0; i < bias.size(); ++i ) bias[i] = w[idx++]/nprocs;
+#endif
 }
 
 std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( const std::vector<Mat>& U, const std::vector<Mat>& delta )
