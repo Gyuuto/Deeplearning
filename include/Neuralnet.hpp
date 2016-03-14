@@ -13,6 +13,10 @@
 #include "Function.hpp"
 #include "matrix.hpp"
 
+#ifdef USE_MPI
+#include <mpi.h>
+#endif
+
 class Neuralnet
 {
 private:
@@ -128,7 +132,11 @@ void Neuralnet::check_gradient ( int cnt, const std::vector<int>& idx, const std
 Neuralnet::Neuralnet( const std::shared_ptr<LossFunction>& loss )
 	:EPS(1.0E-3), LAMBDA(1.0E-5), BATCH_SIZE(1), loss(loss)
 {
-	m = std::mt19937(time(NULL));
+	int rank = 0;
+#ifdef USE_MPI
+	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+#endif
+	m = std::mt19937(time(NULL) + rank);
 }
 
 void Neuralnet::set_EPS ( const double& EPS )
@@ -175,10 +183,15 @@ void Neuralnet::add_layer( const std::shared_ptr<Layer>& layer )
 void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::vector<std::vector<Vec>>& y,
 						   const int MAX_ITER, const std::function<void(const Neuralnet&, const int, const std::vector<Mat>&, const std::vector<Mat>&)>& each_func )
 {
+	int nprocs = 1, myrank = 0;
+#ifdef USE_MPI
+	MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
+	MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
+#endif
 	const int num_layer = layer.size();
 
-	std::vector<int> idx(x.size());
-	iota(idx.begin(), idx.end(), 0);
+	std::vector<int> idx(x.size() / nprocs);
+	iota(idx.begin(), idx.end(), x.size()/nprocs*myrank);
 	shuffle( idx.begin(), idx.end(), m );
 
 	int cnt = 0;
@@ -225,9 +238,9 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 		
 		// check_gradient(cnt, idx, x, y, nabla_w);
 		cnt += BATCH_SIZE;
-		if( cnt >= x.size() ){
+		if( cnt >= x.size()/nprocs ){
 			shuffle( idx.begin(), idx.end(), m );
-			cnt %= x.size();
+			cnt = 0;
 		}
 
 		// update W
@@ -271,6 +284,35 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 		each_func(*this, n, U[0], D);
 	}
 
+#ifdef USE_MPI
+	for( int i = 0; i < num_layer; ++i ){
+		auto W = layer[i]->get_W();
+		if( W.size() == 0 ) continue;
+
+		int cnt = W.size()*W[0].size()*W[0][0].m*W[0][0].n;
+		std::vector<double> w(cnt);
+
+		int idx = 0;
+		for( int j = 0; j < W.size(); ++j )
+			for( int k = 0; k < W[j].size(); ++k )
+				for( int l = 0; l < W[j][k].m; ++l )
+					for( int m = 0; m < W[j][k].n; ++m ){
+						w[idx] = W[j][k](l,m);
+						++idx;
+					}
+		
+		MPI_Allreduce(MPI_IN_PLACE, &w[0], cnt, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD);
+
+		idx = 0;
+		for( int j = 0; j < W.size(); ++j )
+			for( int k = 0; k < W[j].size(); ++k )
+				for( int l = 0; l < W[j][k].m; ++l )
+					for( int m = 0; m < W[j][k].n; ++m ){
+						W[j][k](l,m) = w[idx]/nprocs;
+						++idx;
+					}
+	}
+#endif
 	for( int i = 0; i < num_layer; ++i ) layer[i]->finalize();
 }
 
