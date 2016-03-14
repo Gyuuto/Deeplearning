@@ -304,7 +304,7 @@ struct Matrix
 		for( int i = 0; i < A.m; ++i ){
 			for( int j = 0; j < A.n; ++j ){
 				if( j != 0 ) os << " ";
-				os << std::setprecision(3) << std::setw(7) << A(i,j);
+				os << std::scientific << std::setprecision(3) << std::setw(10) << A(i,j);
 			}
 			std::cout << std::endl;
 		}
@@ -316,12 +316,12 @@ template<class T>
 int pivoting ( const Matrix<T>& A, const Matrix<T>& L, const Matrix<T>& U, const int& j )
 {
 	int m = A.m, n = A.n;
-	double max_pivot = -1.0E10;
+	double max_pivot = L(j,0);
 	int idx = j;
 
 	for( int i = j; i < std::min(m, n); ++i ){
 		double sum = 0.0;
-		for( int k = 0; k < n; ++k ) max_pivot = max(max_pivot, L(i,k));
+		for( int k = 0; k < n; ++k ) max_pivot = std::max(max_pivot, L(i,k));
 
 		for( int k = 0; k < i; ++k ) sum += L(i,k)*U(k,j)/max_pivot;
 
@@ -354,7 +354,7 @@ void LU_decomp ( Matrix<T> A, Matrix<T>& L, Matrix<T>& U, Matrix<T>& P )
 		int idx = pivoting(A, L, U, i);
 
 		if( idx != i ){
-			for( int j = 0; j < std::min(m,n); ++j ) swap(A(i,j), A(idx,j));
+			for( int j = 0; j < std::min(m,n); ++j ) std::swap(A(i,j), A(idx,j));
 			P(i,i) = P(idx,idx) = 0.0;
 			P(i,idx) = P(idx,i) = 1.0;
 		}
