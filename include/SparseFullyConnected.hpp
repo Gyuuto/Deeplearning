@@ -29,6 +29,8 @@ public:
 
 	void set_W( const std::string& filename );
 	void output_W ( const std::string& filename );
+
+	void param_mix ();
 };
 
 SparseFullyConnected::SparseFullyConnected( int prev_num_map, int prev_num_unit,
@@ -65,30 +67,6 @@ void SparseFullyConnected::init ( std::mt19937& m )
 
 void SparseFullyConnected::finalize ()
 {
-#ifdef USE_MPI
-	int nprocs;
-	MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
-	if( W.size() == 0 ) return;
-
-	int cnt = W.size()*W[0].size()*W[0][0].m*W[0][0].n;
-	std::vector<double> w(cnt);
-
-	int idx = 0;
-	for( int i = 0; i < W.size(); ++i )
-		for( int j = 0; j < W[i].size(); ++j )
-			for( int k = 0; k < W[i][j].m; ++k )
-				for( int l = 0; l < W[i][j].n; ++l )
-					w[idx++] = W[i][j](k,l);
-		
-	MPI_Allreduce(MPI_IN_PLACE, &w[0], cnt, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD);
-
-	idx = 0;
-	for( int i = 0; i < W.size(); ++i )
-		for( int j = 0; j < W[i].size(); ++j )
-			for( int k = 0; k < W[i][j].m; ++k )
-				for( int l = 0; l < W[i][j].n; ++l )
-					W[i][j](k,l) = w[idx++]/nprocs;
-#endif
 }
 
 std::vector<std::vector<SparseFullyConnected::Mat>> SparseFullyConnected::calc_gradient ( const std::vector<Mat>& U, const std::vector<Mat>& delta )
@@ -244,5 +222,33 @@ void SparseFullyConnected::output_W ( const std::string& filename )
 					ofs.write((char*)&W[i][j](k,l), sizeof(W[i][j](k,l)));
 		}
 }
+
+void SparseFullyConnected::param_mix ()
+{
+#ifdef USE_MPI
+	int nprocs;
+	MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
+	if( W.size() == 0 ) return;
+
+	int cnt = W.size()*W[0].size()*W[0][0].m*W[0][0].n;
+	std::vector<double> w(cnt);
+
+	int idx = 0;
+	for( int i = 0; i < W.size(); ++i )
+		for( int j = 0; j < W[i].size(); ++j )
+			for( int k = 0; k < W[i][j].m; ++k )
+				for( int l = 0; l < W[i][j].n; ++l )
+					w[idx++] = W[i][j](k,l);
+		
+	MPI_Allreduce(MPI_IN_PLACE, &w[0], cnt, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD);
+
+	idx = 0;
+	for( int i = 0; i < W.size(); ++i )
+		for( int j = 0; j < W[i].size(); ++j )
+			for( int k = 0; k < W[i][j].m; ++k )
+				for( int l = 0; l < W[i][j].n; ++l )
+					W[i][j](k,l) = w[idx++]/nprocs;
+#endif
+}	
 
 #endif

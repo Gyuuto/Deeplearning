@@ -47,6 +47,8 @@ public:
 	
 	virtual void set_W ( const std::string& filename ) = 0;
 	virtual void output_W ( const std::string& filename ) = 0;
+
+	virtual void param_mix () = 0;
 };
 
 std::vector<std::vector<Layer::Mat>> Layer::get_W ()

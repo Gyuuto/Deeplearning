@@ -47,10 +47,11 @@ public:
 
 	void add_layer( const std::shared_ptr<Layer>& layer );
 
+	void averaging ();
 	void learning ( const std::vector<std::vector<Vec>>& x, const std::vector<std::vector<Vec>>& y,
 					const int MAX_ITER = 1000,
-					const std::function<void(const Neuralnet&, const int, const std::vector<Mat>&, const std::vector<Mat>&)>& each_func
-					= [](const Neuralnet& nn, const int epoch, const std::vector<Mat>& x, const std::vector<Mat>& d) -> void {} );
+					const std::function<void(Neuralnet&, const int, const std::vector<Mat>&, const std::vector<Mat>&)>& each_func
+					= [](Neuralnet& nn, const int epoch, const std::vector<Mat>& x, const std::vector<Mat>& d) -> void {} );
 
 	std::vector<Mat> apply ( const std::vector<Mat>& X ) const;
 	std::vector<std::vector<Vec>> apply ( const std::vector<std::vector<Vec>>& x ) const;
@@ -180,8 +181,13 @@ void Neuralnet::add_layer( const std::shared_ptr<Layer>& layer )
 	}
 }
 
+void Neuralnet::averaging ()
+{
+	for( int i = 0; i < layer.size(); ++i ) layer[i]->param_mix();
+}
+
 void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::vector<std::vector<Vec>>& y,
-						   const int MAX_ITER, const std::function<void(const Neuralnet&, const int, const std::vector<Mat>&, const std::vector<Mat>&)>& each_func )
+						   const int MAX_ITER, const std::function<void(Neuralnet&, const int, const std::vector<Mat>&, const std::vector<Mat>&)>& each_func )
 {
 	int nprocs = 1, myrank = 0;
 #ifdef USE_MPI

@@ -31,6 +31,8 @@ public:
 
 	void set_W ( const std::string& filename );
 	void output_W ( const std::string& filename );
+
+	void param_mix ();
 };
 
 Pooling::Pooling( int prev_num_map, int prev_num_unit, int prev_ldu,
@@ -226,6 +228,11 @@ void Pooling::set_W ( const std::string& filename )
 void Pooling::output_W ( const std::string& filename )
 {
 	std::ofstream ofs(filename, std::ios::binary);
+}
+
+void Pooling::param_mix ()
+{
+
 }
 
 #endif
