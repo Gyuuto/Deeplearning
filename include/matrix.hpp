@@ -11,7 +11,7 @@
 #include <assert.h>
 
 #ifdef USE_EIGEN
-#include <eigen>
+#include <Eigen>
 #endif
 
 template<class T>
@@ -86,6 +86,21 @@ struct Matrix
 		return ret;
 	}
 
+	static Matrix<T> hadamard ( const Matrix<T>& m1, const Matrix<T>& m2 )
+	{
+		int m = m1.m, n = m1.n;
+
+		int i, j;
+		Matrix<T> ret(m, n);
+#pragma omp parallel for default(none) \
+	private(i,j) shared(m,n,m1,m2,ret)
+		for( i = 0; i < m; ++i )
+			for( j = 0; j < n; ++j )
+				ret(i,j) = m1(i,j)*m2(i,j);
+
+		return ret;
+	}
+	
 	static double norm_fro ( const Matrix<T>& mat )
 	{
 		int m = mat.m, n = mat.n;
@@ -116,6 +131,83 @@ struct Matrix
 #endif
 	}
 
+	Matrix<T>& operator += ( const Matrix<T>& m1 )
+	{
+		int m = m1.m, n = m1.n;
+#ifdef USE_EIGEN
+		this->v += m1.v;
+#else
+		int i, j;
+#pragma omp parallel for default(none) \
+	private(i,j) shared(m,n,m1)
+		for( i = 0; i < m; ++i )
+			for( j = 0; j < n; ++j )
+				*this(i,j) += m1(i,j);
+#endif
+
+		return *this;
+	}
+
+	Matrix<T>& operator -= ( const Matrix<T>& m1 )
+	{
+		int m = m1.m, n = m1.n;
+#ifdef USE_EIGEN
+		this->v -= m1.v;
+#else
+		int i, j;
+#pragma omp parallel for default(none) \
+	private(i,j) shared(m,n,m1)
+		for( i = 0; i < m; ++i )
+			for( j = 0; j < n; ++j )
+				*this(i,j) -= m1(i,j);
+#endif
+
+		return *this;
+	}
+
+	Matrix<T>& operator *= ( const Matrix<T>& m1 )
+	{
+#ifdef USE_EIGEN
+		this->v *= m1.v;
+#else
+		*this = *this*m1;
+#endif
+
+		return *this;
+	}
+
+	Matrix<T>& operator *= ( const T& c )
+	{
+#ifdef USE_EIGEN
+		this->v *= c;
+#else
+		int i, j;
+#pragma omp parallel for default(none) \
+	private(i,j) shared(c)
+		for( i = 0; i < this->m; ++i )
+			for( j = 0; j < this->n; ++j )
+				*this(i,j) *= c;
+#endif
+
+		return *this;
+	}
+	
+	Matrix<T>& operator /= ( const T& c )
+	{
+#ifdef USE_EIGEN
+		this->v /= c;
+#else
+		int i, j;
+#pragma omp parallel for default(none) \
+	private(i,j) shared(c)
+		for( i = 0; i < this->m; ++i )
+			for( j = 0; j < this->n; ++j )
+				*this(i,j) /= c;
+#endif
+
+		return *this;
+	}
+
 	friend Matrix<T> operator + ( const Matrix<T>& m1, const Matrix<T>& m2 )
 	{
 		int m = m1.m, n = m1.n;
@@ -125,7 +217,6 @@ struct Matrix
 		ret.v = m1.v + m2.v;
 #else
 		int i, j;
-
 #pragma omp parallel for default(none) \
 	private(i,j) shared(m,n,m1,m2,ret)
 		for( i = 0; i < m; ++i )
@@ -144,7 +235,6 @@ struct Matrix
 		ret.v = m1.v - m2.v;
 #else
 		int i, j;
-		
 #pragma omp parallel for default(none)			\
 	private(i,j) shared(m,n,m1,m2,ret)
 		for( i = 0; i < m; ++i )
@@ -165,7 +255,6 @@ struct Matrix
 #else
 		int i, j, k;
 		double sum;
-
 #pragma omp parallel for default(none) \
 	private(i,j,k,sum) shared(m,n,l,m1,m2,ret)
 		for( i = 0; i < m; ++i )
@@ -180,7 +269,7 @@ struct Matrix
 		return ret;
 	}
 
-	friend Matrix<T> operator * ( const double& c, const Matrix<T>& m1 )
+	friend Matrix<T> operator * ( const T& c, const Matrix<T>& m1 )
 	{
 		int m = m1.m, n = m1.n;
 		Matrix<T> ret(m, n);
@@ -200,12 +289,22 @@ struct Matrix
 		return ret;
 	}
 
+	friend Matrix<T> operator * ( const Matrix<T>& m1, const T& c )
+	{
+		return c*m1;
+	}
+	 
+	friend Matrix<T> operator / ( const Matrix<T>& m1, const T& c )
+	{
+		return (1.0/c)*m1;
+	}
+
 	friend std::ostream& operator << ( std::ostream& os, const Matrix<T>& A )
 	{
 		for( int i = 0; i < A.m; ++i ){
 			for( int j = 0; j < A.n; ++j ){
 				if( j != 0 ) os << " ";
-				os << std::setprecision(3) << std::setw(7) << A(i,j);
+				os << std::scientific << std::setprecision(3) << std::setw(10) << A(i,j);
 			}
 			std::cout << std::endl;
 		}
@@ -217,12 +316,12 @@ template<class T>
 int pivoting ( const Matrix<T>& A, const Matrix<T>& L, const Matrix<T>& U, const int& j )
 {
 	int m = A.m, n = A.n;
-	double max_pivot = -1.0E10;
+	double max_pivot = L(j,0);
 	int idx = j;
 
 	for( int i = j; i < std::min(m, n); ++i ){
 		double sum = 0.0;
-		for( int k = 0; k < n; ++k ) max_pivot = max(max_pivot, L(i,k));
+		for( int k = 0; k < n; ++k ) max_pivot = std::max(max_pivot, L(i,k));
 
 		for( int k = 0; k < i; ++k ) sum += L(i,k)*U(k,j)/max_pivot;
 
@@ -255,7 +354,7 @@ void LU_decomp ( Matrix<T> A, Matrix<T>& L, Matrix<T>& U, Matrix<T>& P )
 		int idx = pivoting(A, L, U, i);
 
 		if( idx != i ){
-			for( int j = 0; j < std::min(m,n); ++j ) swap(A(i,j), A(idx,j));
+			for( int j = 0; j < std::min(m,n); ++j ) std::swap(A(i,j), A(idx,j));
 			P(i,i) = P(idx,idx) = 0.0;
 			P(i,idx) = P(idx,i) = 1.0;
 		}

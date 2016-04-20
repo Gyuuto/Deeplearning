@@ -10,16 +10,15 @@
 class KDropoutFullyConnected : public Layer
 {
 private:
-	int K;
+	double K;
 
 	std::mt19937 mt;
 	std::uniform_real_distribution<double> d_rand;
 	Mat mask;
 public:
 	KDropoutFullyConnected ( int prev_num_map, int prev_num_unit, int num_map, int num_unit,
-							 int K, 
-							 const std::function<double(double)>& f,
-							 const std::function<double(double)>& d_f );
+							 double K, 
+							 const std::shared_ptr<Function>& f );
 
 	void init( std::mt19937& m );
 	void finalize();
@@ -33,13 +32,14 @@ public:
 
 	void set_W( const std::string& filename );
 	void output_W ( const std::string& filename );
+
+	void param_mix ();
 };
 
 KDropoutFullyConnected::KDropoutFullyConnected( int prev_num_map, int prev_num_unit,
-											  int num_map, int num_unit,
-												int K,
-											  const std::function<double(double)>& f,
-											  const std::function<double(double)>& d_f )
+												int num_map, int num_unit,
+												double K,
+												const std::shared_ptr<Function>& f )
 {
 	this->prev_num_map = prev_num_map;
 	this->prev_num_unit = prev_num_unit;
@@ -50,8 +50,14 @@ KDropoutFullyConnected::KDropoutFullyConnected( int prev_num_map, int prev_num_u
 	mt = std::mt19937(time(NULL));
 	d_rand = std::uniform_real_distribution<double>(0.0, 1.0);
 	
-	activate_func = f;
-	activate_diff_func = d_f;
+	func = f;
+
+	for( int i = 0; i < num_map; ++i ){
+		W.emplace_back(prev_num_map);
+		for( int j = 0; j < prev_num_map; ++j ){
+			W[i][j] = Mat(num_unit, 1+prev_num_unit);
+		}
+	}
 }
 
 void KDropoutFullyConnected::init ( std::mt19937& m )
@@ -59,9 +65,7 @@ void KDropoutFullyConnected::init ( std::mt19937& m )
 	const double r = sqrt(6.0/(num_unit + prev_num_unit));
 	std::uniform_real_distribution<double> d_rand(-r, r);
 	for( int i = 0; i < num_map; ++i ){
-		W.emplace_back(prev_num_map);
 		for( int j = 0; j < prev_num_map; ++j ){
-			W[i][j] = Mat(num_unit, 1+prev_num_unit);
 			for( int k = 0; k < W[i][j].m; ++k )
 				for( int l = 0; l < W[i][j].n; ++l )
 					W[i][j](k,l) = d_rand(m);
@@ -76,7 +80,6 @@ void KDropoutFullyConnected::init ( std::mt19937& m )
 
 void KDropoutFullyConnected::finalize ()
 {
-	
 }
 
 std::vector<std::vector<KDropoutFullyConnected::Mat>> KDropoutFullyConnected::calc_gradient ( const std::vector<Mat>& U, const std::vector<Mat>& delta )
@@ -90,18 +93,13 @@ std::vector<std::vector<KDropoutFullyConnected::Mat>> KDropoutFullyConnected::ca
 
 	for( int i = 0; i < num_map; ++i )
 		for( int j = 0; j < prev_num_map; ++j ){
-			int k, l, m;
-#pragma omp parallel for default(none)			\
-	private(i,j,k,l,m) shared(nabla, delta, U)
-			for( k = 0; k < nabla[i][j].m; ++k )
-				for( l = 0; l < nabla[i][j].n; ++l ){
-					double sum = 0.0;
-					for( m = 0; m < delta[i].n; ++m )
-						sum += delta[i](k,m)*(
-							l == 0 ? 1.0 : mask(l-1,j)*prev_activate_func(U[j](l-1,m))
-							);
-					nabla[i][j](k,l) = sum;
-				}
+			Mat V(U[j].m+1, U[j].n), U_ = (*prev_func)(U[j], false);
+			for( int k = 0; k < U[j].n; ++k ){
+				V(0,k) = 1.0;
+				for( int l = 0; l < U[j].m; ++l ) V(l+1,k) = mask(l,j)*U_(l, k);
+			}
+			
+			nabla[i][j] = delta[i]*Mat::transpose(V);
 		}
 
 	return nabla;
@@ -125,11 +123,12 @@ std::vector<KDropoutFullyConnected::Mat> KDropoutFullyConnected::calc_delta ( co
 
 	for( int i = 0; i < prev_num_map; ++i ){
 		int j, k;
-#pragma omp parallel for default(none) \
-	private(i,j,k) shared(nx_delta, tmp, U)
-		for( j = 0; j < tmp[i].m-1; ++j )
-			for( k = 0; k < tmp[i].n; ++k )
-				nx_delta[i](j,k) += mask(j,i)*tmp[i](j+1,k)*prev_activate_diff_func(U[i](j,k));
+		Mat V(tmp[i].m-1, tmp[i].n), U_ = (*prev_func)(U[i], true);
+		for( int j = 0; j < tmp[i].m-1; ++j )
+			for( int k = 0; k < tmp[i].n; ++k )
+				V(j,k) = mask(j,i)*tmp[i](j+1,k);
+
+		nx_delta[i] = Mat::hadamard(V, U_);
 	}
 	
 	return nx_delta;
@@ -163,8 +162,8 @@ std::vector<KDropoutFullyConnected::Mat> KDropoutFullyConnected::apply ( const s
 				return val[id1] > val[id2];
 			});
 
-		for( int j = 0; j < K; ++j ) mask(idx[j],i) = 1.0;
-		for( int j = K; j < U[i].m; ++j ) mask(idx[j],i) = 0.0;
+		for( int j = 0; j < prev_num_unit*K; ++j ) mask(idx[j],i) = 1.0;
+		for( int j = prev_num_unit*K; j < U[i].m; ++j ) mask(idx[j],i) = 0.0;
 	}
 
 	for( int i = 0; i < prev_num_map; ++i ){
@@ -185,11 +184,9 @@ std::vector<KDropoutFullyConnected::Mat> KDropoutFullyConnected::apply ( const s
 		}
 	}
 
-	for( int i = 0; i < num_map; ++i ){
-		for( int j = 0; j < ret[i].m; ++j )
-			for( int k = 0; k < ret[i].n; ++k )
-				ret[i](j,k) = (use_func ? activate_func(ret[i](j,k)) : ret[i](j,k));
-	}
+	if( use_func )
+		for( int i = 0; i < num_map; ++i )
+			ret[i] = (*func)(ret[i], false);
 	
 	return ret;
 }
@@ -244,5 +241,33 @@ void KDropoutFullyConnected::output_W ( const std::string& filename )
 					ofs.write((char*)&W[i][j](k,l), sizeof(W[i][j](k,l)));
 		}
 }
+
+void KDropoutFullyConnected::param_mix ()
+{
+#ifdef USE_MPI
+	int nprocs;
+	MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
+	if( W.size() == 0 ) return;
+
+	int cnt = W.size()*W[0].size()*W[0][0].m*W[0][0].n;
+	std::vector<double> w(cnt);
+
+	int idx = 0;
+	for( int i = 0; i < W.size(); ++i )
+		for( int j = 0; j < W[i].size(); ++j )
+			for( int k = 0; k < W[i][j].m; ++k )
+				for( int l = 0; l < W[i][j].n; ++l )
+					w[idx++] = W[i][j](k,l);
+		
+	MPI_Allreduce(MPI_IN_PLACE, &w[0], cnt, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD);
+
+	idx = 0;
+	for( int i = 0; i < W.size(); ++i )
+		for( int j = 0; j < W[i].size(); ++j )
+			for( int k = 0; k < W[i][j].m; ++k )
+				for( int l = 0; l < W[i][j].n; ++l )
+					W[i][j](k,l) = w[idx++]/nprocs;
+#endif
+}	
 
 #endif

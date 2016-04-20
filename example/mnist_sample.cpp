@@ -29,24 +29,23 @@ void normalize ( vector<vector<vector<double>>>& image, vector<vector<double>>& 
     }
 }
 
-int main()
+int main( int argc, char* argv[] )
 {
-	// define some function and differential.
-	auto ReLU = [](double x) -> double { return max(0.0, x); };
-	auto dReLU = [](double x) -> double { return (x <= 0.0 ? 0.0 : 1.0); };
-	auto idf = [](double x) -> double { return x; };
-	auto didf = [](double x) -> double { return 1.0; };
+	// define mini-batch size.
+	const int BATCH_SIZE = 50;
 
-    Neuralnet net;
+	// construct neuralnetwork with CrossEntropy.
+    Neuralnet net(shared_ptr<LossFunction>(new CrossEntropy));
 	vector<shared_ptr<Layer>> layers;
+
 	// define layers.
 	layers.emplace_back(new Convolutional(1, 28*28, 28,
 										  20, 28*28, 28,
-										  5, 5, 1, ReLU, dReLU));
+										  5, 5, 1, shared_ptr<Function>(new ReLU)));
 	layers.emplace_back(new Pooling(20, 28*28, 28,
-										  20, 7*7, 7,
-										  4, 4, 4, idf, didf));
-	layers.emplace_back(new FullyConnected(20, 7*7, 1, 10, idf, didf));
+									20, 7*7, 7,
+									4, 4, 4, shared_ptr<Function>(new Identity)));
+	layers.emplace_back(new FullyConnected(20, 7*7, 1, 10, shared_ptr<Function>(new Softmax)));
 
 	// this neuralnet has 4 layers, input, convolutional, pooling and FullyConnected.
 	for( int i = 0; i < layers.size(); ++i ){
@@ -104,52 +103,48 @@ int main()
 	}
 	
 	// checking error function.
-	auto check_error = [&](const Neuralnet& nn) -> void {
+	string text = "Train data answer rate : ";
+	auto check_error = [&](const Neuralnet& nn, const int iter, const std::vector<Matrix<double>>& x, const std::vector<Matrix<double>>& d ) -> void {
+		if( iter%(N/BATCH_SIZE) != 0 || iter == 0 ) return;
+
 		int ans_num = 0;
-		auto Y = nn.apply(train_x);
-		for( int i = 0; i < N; ++i ){
-			vector<double> prob(10, 0.0);
-			int idx;
-			double sum = 0.0, max_num = 0.0;
-			for( int j = 0; j < 10; ++j ) sum += exp(Y[i][0][j]);
+		auto Y = nn.apply(x);
+		for( int i = 0; i < Y[0].n; ++i ){
+			int idx, lab;
+			double max_num = 0.0;
 			for( int j = 0; j < 10; ++j ){
-				prob[j] = exp(Y[i][0][j]) / sum;
-				if( max_num < prob[j] ){
-					max_num = prob[j];
+				if( max_num < Y[0](j,i) ){
+					max_num = Y[0](j,i);
 					idx = j;
 				}
+				if( d[0](j, i) == 1.0 ) lab = j;
 			}
-			if( idx == train_lab[i] ) ++ans_num;
+			if( idx == lab ) ++ans_num;
 		}
-		printf("Train data answer rate : %.2f%%\n", (double)ans_num/N*100.0);
-	
-		ans_num = 0;
-		Y = nn.apply(test_x);
-		for( int i = 0; i < M; ++i ){
-			vector<double> prob(10, 0.0);
-			int idx;
-			double sum = 0.0, max_num = 0.0;
-			for( int j = 0; j < 10; ++j ) sum += exp(Y[i][0][j]);
-			for( int j = 0; j < 10; ++j ){
-				prob[j] = exp(Y[i][0][j]) / sum;
-				if( max_num < prob[j] ){
-					max_num = prob[j];
-					idx = j;
-				}
-			}
-			if( idx == test_lab[i] ) ++ans_num;
-		}
-		printf("Test  data answer rate : %.2f%%\n", (double)ans_num/M*100.0);
+
+		printf("%s%.2f%%\n", text.c_str(), (double)ans_num/Y[0].n*100.0);
 	};
-	
+
 	// set supervised data.
 	vector<vector<vector<double>>> d(N, vector<vector<double>>(1, vector<double>(10, 0.0)));
 	for( int i = 0; i < N; ++i ) d[i][0][train_lab[i]] = 1.0;
 
+	vector<Matrix<double>> X(1, Matrix<double>(28*28, M)), Y(1, Matrix<double>(10, M));
+	for( int i = 0; i < M; ++i ){
+		for( int j = 0; j < 28*28; ++j ){
+			X[0](j, i) = test_x[i][0][j];
+		}
+		Y[0](test_lab[i], i) = 1.0;
+	}
+
 	// set a hyper parameter.
 	net.set_EPS(1.0E-3);
 	net.set_LAMBDA(0.0);
-	net.set_BATCHSIZE(50);
+	net.set_BATCHSIZE(BATCH_SIZE);
 	// learning the neuralnet in 10 EPOCH and output error defined above in each epoch.
-    net.learning(train_x, d, N/50*10, check_error);
+	net.learning(train_x, d, N/BATCH_SIZE*10, check_error);
+
+	// calc answer rate of test data.
+	text = "Test data answer rate : ";
+	check_error(net, N/BATCH_SIZE, X, Y);
 }
