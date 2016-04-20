@@ -54,6 +54,14 @@ Convolutional::Convolutional( int prev_num_map, int prev_num_unit, int prev_ldu,
 	func = f;
 
 	beta_ = 1.0; gamma_ = 1.0;
+
+	for( int i = 0; i < num_map; ++i ){
+		W.emplace_back(prev_num_map);
+		for( int j = 0; j < prev_num_map; ++j ){
+			W[i][j] = Mat(this->m, this->n);
+		}
+	}
+
 }
 
 void Convolutional::init ( std::mt19937& m )
@@ -64,9 +72,7 @@ void Convolutional::init ( std::mt19937& m )
 	bias = Vec(num_map, 0.0); d_bias = Vec(num_map, 0.0);
 	this->r = Vec(num_map, 0.0); v = Vec(num_map, 0.0);
 	for( int i = 0; i < num_map; ++i ){
-		W.emplace_back(prev_num_map);
 		for( int j = 0; j < prev_num_map; ++j ){
-			W[i][j] = Mat(this->m, this->n);
 			for( int k = 0; k < W[i][j].m; ++k )
 				for( int l = 0; l < W[i][j].m; ++l )
 					W[i][j](k,l) = d_rand(m);

@@ -46,6 +46,13 @@ SparseFullyConnected::SparseFullyConnected( int prev_num_map, int prev_num_unit,
 	this->BETA = BETA;
 
 	func = f;
+
+	for( int i = 0; i < num_map; ++i ){
+		W.emplace_back(prev_num_map);
+		for( int j = 0; j < prev_num_map; ++j ){
+			W[i][j] = Mat(num_unit, 1+prev_num_unit);
+		}
+	}
 }
 
 void SparseFullyConnected::init ( std::mt19937& m )
@@ -55,9 +62,7 @@ void SparseFullyConnected::init ( std::mt19937& m )
 	
 	rho = Mat::ones(num_unit, num_map);
 	for( int i = 0; i < num_map; ++i ){
-		W.emplace_back(prev_num_map);
 		for( int j = 0; j < prev_num_map; ++j ){
-			W[i][j] = Mat(num_unit, 1+prev_num_unit);
 			for( int k = 0; k < W[i][j].m; ++k )
 				for( int l = 0; l < W[i][j].n; ++l )
 					W[i][j](k,l) = d_rand(m);

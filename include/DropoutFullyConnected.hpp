@@ -52,6 +52,13 @@ DropoutFullyConnected::DropoutFullyConnected( int prev_num_map, int prev_num_uni
 	d_rand = std::uniform_real_distribution<double>(0.0, 1.0);
 	
 	func = f;
+
+	for( int i = 0; i < num_map; ++i ){
+		W.emplace_back(prev_num_map);
+		for( int j = 0; j < prev_num_map; ++j ){
+			W[i][j] = Mat(num_unit, 1+prev_num_unit);
+		}
+	}
 }
 
 void DropoutFullyConnected::init ( std::mt19937& m )
@@ -59,9 +66,7 @@ void DropoutFullyConnected::init ( std::mt19937& m )
 	const double r = sqrt(6.0/(num_unit + prev_num_unit));
 	std::uniform_real_distribution<double> d_rand(-r, r);
 	for( int i = 0; i < num_map; ++i ){
-		W.emplace_back(prev_num_map);
 		for( int j = 0; j < prev_num_map; ++j ){
-			W[i][j] = Mat(num_unit, 1+prev_num_unit);
 			for( int k = 0; k < W[i][j].m; ++k )
 				for( int l = 0; l < W[i][j].n; ++l )
 					W[i][j](k,l) = d_rand(m);
