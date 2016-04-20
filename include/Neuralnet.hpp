@@ -183,7 +183,18 @@ void Neuralnet::add_layer( const std::shared_ptr<Layer>& layer )
 
 void Neuralnet::averaging ()
 {
-	for( int i = 0; i < layer.size(); ++i ) layer[i]->param_mix();
+	for( int i = 0; i < layer.size(); ++i ){
+		layer[i]->param_mix();
+		
+		// for( int j = 0; j < adam_v[i].size(); ++j )
+		// 	for( int k = 0; k < adam_v[i][j].size(); ++k )
+		// 		for( int l = 0; l < adam_v[i][j][k].m; ++l )
+		// 			for( int m = 0; m < adam_v[i][j][k].n; ++m ){
+		// 				adam_v[i][j][k](l,m) = 0.0;
+		// 				adam_r[i][j][k](l,m) = 0.0;
+		// 			}
+	}
+	// adam_beta_ = adam_gamma_ = 1.0;
 }
 
 void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::vector<std::vector<Vec>>& y,
