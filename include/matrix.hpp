@@ -11,7 +11,7 @@
 #include <assert.h>
 
 #ifdef USE_EIGEN
-#include <eigen>
+#include <Eigen>
 #endif
 
 template<class T>
