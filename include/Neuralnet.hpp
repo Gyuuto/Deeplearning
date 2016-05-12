@@ -254,7 +254,7 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 				for( int k = 0; k < nabla_w[i][j].size(); ++k )
 					nabla_w[i][j][k] = 1.0/BATCH_SIZE * nabla_w[i][j][k];
 		
-		check_gradient(cnt, idx, x, y, nabla_w);
+		// check_gradient(cnt, idx, x, y, nabla_w);
 		cnt += BATCH_SIZE;
 		if( cnt >= data_size ){
 			shuffle( idx.begin(), idx.end(), m );
