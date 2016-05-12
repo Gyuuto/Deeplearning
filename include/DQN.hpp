@@ -46,7 +46,7 @@ public:
 						val = x(j,i);
 						id = j;
 					}
-				y(id,i) = d(id,i) - val;
+				y(id,i) = val - d(id,i);
 			}
 			
 			return y;
@@ -111,8 +111,8 @@ DQN::DQN(const int mem_capacity, const int max_id,
 	
 	mem.resize(mem_capacity);
 
-	Q = new Neuralnet(std::shared_ptr<LossFunction>(new Square));
-	Q_tilde = new Neuralnet(std::shared_ptr<LossFunction>(new Square));
+	Q = new Neuralnet(std::shared_ptr<LossFunction>(new MaxSquare));
+	Q_tilde = new Neuralnet(std::shared_ptr<LossFunction>(new MaxSquare));
 	for( int i = 0; i < this->layers.size(); ++i ){
 		Q->add_layer(this->layers[i]);
 		Q_tilde->add_layer(this->layers[i]);
