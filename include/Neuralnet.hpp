@@ -97,12 +97,12 @@ void Neuralnet::check_gradient ( int cnt, const std::vector<int>& idx, const std
 		printf("\tlayer %d\n", i);
 		auto W = layer[i]->get_W();
 		std::vector<std::vector<Vec>> X(BATCH_SIZE);
-		for( int j = 0; j < BATCH_SIZE; ++j ) X[j] = x[idx[cnt+j]];
+		for( int j = 0; j < BATCH_SIZE; ++j ) X[j] = x[idx[(cnt+j)%idx.size()]];
 		for( int j = 0; j < std::min(2, (int)W.size()); ++j ){ // num_map
 			for( int k = 0; k < std::min(2, (int)W[j].size()); ++k ){ // prev_num_map
-				for( int l = 0; l < std::min(5, (int)W[j][k].m); ++l ){
-					for( int m = 0; m < std::min(5, (int)W[j][k].n); ++m ){
-						auto tmp = 1.0E-6*(std::abs(W[j][k](l,m)) < 1.0E-3 ? 1.0 : std::abs(W[j][k](l,m)));;
+				for( int l = 0; l < std::min(2, (int)W[j][k].m); ++l ){
+					for( int m = 0; m < std::min(2, (int)W[j][k].n); ++m ){
+						auto tmp = 1.0E-8*(std::abs(W[j][k](l,m)) < 1.0E-3 ? 1.0 : std::abs(W[j][k](l,m)));;
 
 						W[j][k](l,m) += tmp;
 						layer[i]->set_W(W);
@@ -110,7 +110,7 @@ void Neuralnet::check_gradient ( int cnt, const std::vector<int>& idx, const std
 						auto tmp1 = apply(X);
 						for( int n = 0; n < tmp1[0].size(); ++n )
 							for( int o = 0; o < BATCH_SIZE; ++o ){
-								E1 += (*loss)(Mat(tmp1[o][n]), Mat(y[idx[cnt+o]][n]), false)(0,0);
+								E1 += (*loss)(Mat(tmp1[o][n]), Mat(y[idx[(cnt+o)%idx.size()]][n]), false)(0,0);
 							}
 						W[j][k](l,m) -= tmp;
 						layer[i]->set_W(W);
@@ -118,7 +118,7 @@ void Neuralnet::check_gradient ( int cnt, const std::vector<int>& idx, const std
 						auto tmp2 = apply(X);
 						for( int n = 0; n < tmp2[0].size(); ++n )
 							for( int o = 0; o < BATCH_SIZE; ++o )
-								E2 += (*loss)(Mat(tmp2[o][n]), Mat(y[idx[cnt+o]][n]), false)(0,0);
+								E2 += (*loss)(Mat(tmp2[o][n]), Mat(y[idx[(cnt+o)%idx.size()]][n]), false)(0,0);
 
 						printf("\t%3d, %3d, %3d, %3d : ( %.10E, %.10E = %.10E )\n", j, k, l, m, 0.5*(E1 - E2)/tmp/BATCH_SIZE, nabla_w[i][j][k](l,m), (std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE - nabla_w[i][j][k](l,m)))/std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE));
 					}
@@ -207,8 +207,9 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 #endif
 	const int num_layer = layer.size();
 
-	std::vector<int> idx(x.size() / nprocs);
-	iota(idx.begin(), idx.end(), x.size()/nprocs*myrank);
+	const int data_size = x.size() / nprocs;
+	std::vector<int> idx(data_size);
+	iota(idx.begin(), idx.end(), data_size*myrank);
 	shuffle( idx.begin(), idx.end(), m );
 
 	int cnt = 0;
@@ -220,14 +221,14 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 			U[0].emplace_back(x[0][i].size(), BATCH_SIZE);
 			for( int j = 0; j < U[0][i].m; ++j )
 				for( int k = 0; k < BATCH_SIZE; ++k )
-					U[0][i](j,k) = x[idx[cnt+k]][i][j];
+					U[0][i](j,k) = x[idx[(cnt+k)%data_size]][i][j];
 		}
 		
 		for( int i = 0; i < y[0].size(); ++i ){
 			D.emplace_back(y[0][i].size(), BATCH_SIZE);
 			for( int j = 0; j < D[i].m; ++j )
 				for( int k = 0; k < BATCH_SIZE; ++k )
-					D[i](j,k) = y[idx[cnt+k]][i][j];
+					D[i](j,k) = y[idx[(cnt+k)%data_size]][i][j];
 		}
 
 		for( int i = 0; i < num_layer; ++i ) {
@@ -253,9 +254,9 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 				for( int k = 0; k < nabla_w[i][j].size(); ++k )
 					nabla_w[i][j][k] = 1.0/BATCH_SIZE * nabla_w[i][j][k];
 		
-		// check_gradient(cnt, idx, x, y, nabla_w);
+		check_gradient(cnt, idx, x, y, nabla_w);
 		cnt += BATCH_SIZE;
-		if( cnt >= x.size()/nprocs ){
+		if( cnt >= data_size ){
 			shuffle( idx.begin(), idx.end(), m );
 			cnt = 0;
 		}
@@ -365,8 +366,8 @@ void Neuralnet::print_cost ( const std::vector<Mat>& x, const std::vector<Mat>& 
 {
 	double error[3] = { 0.0 }, min_err = 1.0E100, max_err = 0.0;
 	auto v = apply(x);
-	for( int i = 0; i < x.size(); ++i ){
-		for( int j = 0; j < x[i].n; ++j ){
+	for( int i = 0; i < v.size(); ++i ){
+		for( int j = 0; j < v[i].n; ++j ){
 			Mat v_(v[i].m, 1), y_(y[i].m, 1);
 			for( int k = 0; k < v[i].m; ++k ){
 				v_(k,0) = v[i](k,j);
