@@ -99,10 +99,10 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 
 	const int Y = prev_num_unit/prev_ldu, X = prev_ldu;
 	int i, j, k, s, t, y, x;
-	for( i = 0; i < num_map; ++i ){
-		for( j = 0; j < prev_num_map; ++j ){
 #pragma omp parallel for default(none) \
 	private(i,j,k,s,t,y,x) shared(Y, X, delta, nabla, U_)
+	for( i = 0; i < num_map; ++i ){
+		for( j = 0; j < prev_num_map; ++j ){
 			for( k = 0; k < delta[i].n; ++k )
 				for( s = -m/2; s < (m+1)/2; ++s )
 					for( t = -n/2; t < (n+1)/2; ++t )
