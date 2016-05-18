@@ -248,12 +248,12 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 		for( int i = 0; i < x[0].size(); ++i )
 			for( int j = 0; j < BATCH_SIZE; ++j )
 				for( int k = 0; k < U[0][i].m; ++k )
-					U[0][i](k,j) = X[i](k, idx[cnt+j]);
+					U[0][i](k,j) = X[i](k, idx[cnt+j]%num_data);
 		
 		for( int i = 0; i < y[0].size(); ++i )
 			for( int j = 0; j < BATCH_SIZE; ++j )
 				for( int k = 0; k < D[i].m; ++k )
-					D[i](k,j) = Y[i](k, idx[cnt+j]);
+					D[i](k,j) = Y[i](k, idx[cnt+j]%num_data);
 
 		for( int i = 0; i < num_layer; ++i ) {
 			auto V = U[i];
