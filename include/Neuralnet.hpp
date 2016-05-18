@@ -211,20 +211,22 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 	iota(idx.begin(), idx.end(), x.size()/nprocs*myrank);
 	shuffle( idx.begin(), idx.end(), m );
 
+	std::vector<Mat> D(y[0].size(), Mat(y[0][0].size(), BATCH_SIZE));
+	std::vector<std::vector<Mat>> U(num_layer+1);
+	U[0] = std::vector<Mat>(layer[0]->get_prev_num_map(), Mat(layer[0]->get_prev_num_unit(), BATCH_SIZE));
+	for( int i = 0; i < U.size()-1; ++i ){
+		U[i+1] = std::vector<Mat>(layer[i]->get_num_map(), Mat(layer[i]->get_num_unit(), BATCH_SIZE));
+	}
+
 	int cnt = 0;
 	for( int n = 0; n <= MAX_ITER; ++n ){
-		std::vector<Mat> D;
-		std::vector<std::vector<Mat>> U(num_layer+1);
-
 		for( int i = 0; i < x[0].size(); ++i ){
-			U[0].emplace_back(x[0][i].size(), BATCH_SIZE);
 			for( int j = 0; j < U[0][i].m; ++j )
 				for( int k = 0; k < BATCH_SIZE; ++k )
 					U[0][i](j,k) = x[idx[cnt+k]][i][j];
 		}
 		
 		for( int i = 0; i < y[0].size(); ++i ){
-			D.emplace_back(y[0][i].size(), BATCH_SIZE);
 			for( int j = 0; j < D[i].m; ++j )
 				for( int k = 0; k < BATCH_SIZE; ++k )
 					D[i](j,k) = y[idx[cnt+k]][i][j];
@@ -241,7 +243,6 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 			auto tmp = layer[i]->apply(V, false);
 			
 			for( int j = 0; j < tmp.size(); ++j ){
-				U[i+1].emplace_back(tmp[j].m, tmp[j].n);
 				U[i+1][j] = tmp[j];
 			}
 		}
