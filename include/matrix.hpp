@@ -118,7 +118,7 @@ struct Matrix
 #ifdef USE_EIGEN
 		return v(i, j);
 #else		
-		return v[i*n + j];
+		return v[i + j*m];
 #endif
 	}
 
@@ -127,7 +127,7 @@ struct Matrix
 #ifdef USE_EIGEN
 		return v(i, j);
 #else		
-		return v[i*n + j];
+		return v[i + j*m];
 #endif
 	}
 
