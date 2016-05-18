@@ -38,12 +38,17 @@ private:
 	std::mt19937 m;
 	std::uniform_real_distribution<double> d_rand;
 
-	int outer_world, inner_world;
-	
+#ifdef USE_MPI
+	MPI_Comm outer_world, inner_world;
+#endif
+
 	std::vector<std::vector<std::vector<Mat>>> calc_gradient (const std::vector<std::vector<Mat>>& U, const std::vector<Mat>& d);
 	void check_gradient ( int cnt, const std::vector<int>& idx, const std::vector<std::vector<Vec>>& x, const std::vector<std::vector<Vec>>& y, const std::vector<std::vector<std::vector<Mat>>>& nabla_w );
 public:
-	Neuralnet( const std::shared_ptr<LossFunction>& loss, int outer_world = -1, int inner_world = -1 );
+	Neuralnet( const std::shared_ptr<LossFunction>& loss );
+#ifdef USE_MPI
+	Neuralnet( const std::shared_ptr<LossFunction>& loss, MPI_Comm outer_world, MPI_Comm inner_world );
+#endif
 
 	void set_EPS ( const double& EPS );
 	void set_LAMBDA ( const double& LAMBDA );
@@ -134,15 +139,22 @@ void Neuralnet::check_gradient ( int cnt, const std::vector<int>& idx, const std
 }
 
 //////////////////// PUBLIC FUNCTION ////////////////////
-Neuralnet::Neuralnet( const std::shared_ptr<LossFunction>& loss, int outer_world, int inner_world )
+Neuralnet::Neuralnet( const std::shared_ptr<LossFunction>& loss )
+	:EPS(1.0E-3), LAMBDA(1.0E-5), BATCH_SIZE(1), loss(loss)
+{
+	m = std::mt19937(time(NULL));
+}
+
+#ifdef USE_MPI
+Neuralnet::Neuralnet( const std::shared_ptr<LossFunction>& loss, MPI_Comm outer_world, MPI_Comm inner_world )
 	:EPS(1.0E-3), LAMBDA(1.0E-5), BATCH_SIZE(1), loss(loss), outer_world(outer_world), inner_world(inner_world)
 {
 	int rank = 0;
-#ifdef USE_MPI
-	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-#endif
+	MPI_Comm_rank(outer_world, &rank);
+
 	m = std::mt19937(time(NULL) + rank);
 }
+#endif
 
 void Neuralnet::set_EPS ( const double& EPS )
 {
@@ -171,7 +183,7 @@ void Neuralnet::add_layer( const std::shared_ptr<Layer>& layer )
 
 	int idx = this->layer.size()-1;
 	this->layer[idx]->set_prev_function(f);
-	this->layer[idx]->init(m);
+	this->layer[idx]->init(m, inner_world);
 
 	auto w = layer->get_W();
 
@@ -217,9 +229,9 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 	const int offset_in = 0;//myrank*x[0][0].size()/nprocs;
 	const int offset_out = 0;//myrank*y[0][0].size()/nprocs;
 
-	// distributed data
-	std::vector<Mat> X(x[0].size(), Mat(num_dim, num_data)),
-		Y(y[0].size(), Mat(y[0][0].size(), num_data));
+	// distributed data(WIP and perhaps will not distribute data)
+	std::vector<Mat> X(x[0].size(), Mat(num_dim_in, num_data)),
+		Y(y[0].size(), Mat(num_dim_out, num_data));
 	for( int i = 0; i < x[0].size(); ++i )
 		for( int j = 0; j < num_data; ++j )
 			for( int k = 0; k < num_dim_in; ++k )
@@ -245,6 +257,7 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 	int cnt = 0;
 	for( int n = 0; n <= MAX_ITER; ++n ){
 		auto beg = std::chrono::system_clock::now();
+		// assign data to mini-batch
 		for( int i = 0; i < x[0].size(); ++i )
 			for( int j = 0; j < BATCH_SIZE; ++j )
 				for( int k = 0; k < U[0][i].m; ++k )
@@ -255,6 +268,7 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 				for( int k = 0; k < D[i].m; ++k )
 					D[i](k,j) = Y[i](k, idx[cnt+j]%num_data);
 
+		// feed forward calculation
 		for( int i = 0; i < num_layer; ++i ) {
 			auto V = U[i];
 			if( i != 0 ){
@@ -270,20 +284,22 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 			}
 		}
 		auto end = std::chrono::system_clock::now();
-		printf("apply     %lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
+		if( myrank == 0 ) printf("apply     %lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
 		
 		beg = std::chrono::system_clock::now();
+		// back propagation calculation
 		auto nabla_w = calc_gradient(U, D);
 		end = std::chrono::system_clock::now();
-		printf("calc grad %lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
+		if( myrank == 0 ) printf("calc grad %lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
 		
 		beg = std::chrono::system_clock::now();
+		// averaging all gradients of weights of mini-batches
 		for( int i = 0; i < nabla_w.size(); ++i )
 			for( int j = 0; j < nabla_w[i].size(); ++j )
 				for( int k = 0; k < nabla_w[i][j].size(); ++k )
 					nabla_w[i][j][k] = 1.0/BATCH_SIZE * nabla_w[i][j][k];
 		end = std::chrono::system_clock::now();
-		printf("averaged  %lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
+		if( myrank == 0 ) printf("averaged  %lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
 		
 		// check_gradient(cnt, idx, x, y, nabla_w);
 		beg = std::chrono::system_clock::now();
@@ -293,7 +309,7 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 			cnt = 0;
 		}
 		end = std::chrono::system_clock::now();
-		printf("shuffle   %lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
+		if( myrank == 0 ) printf("shuffle   %lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
 
 		// update W
 		beg = std::chrono::system_clock::now();
@@ -334,8 +350,8 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 			layer[i]->update_W(update_W);
 		}
 		end = std::chrono::system_clock::now();
-		printf("update W  %lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
-		puts("--------------------");
+		if( myrank == 0 ) printf("update W  %lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
+		if( myrank == 0 ) puts("--------------------");
 		each_func(*this, n, U[0], D);
 	}
 

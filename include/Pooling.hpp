@@ -15,7 +15,7 @@ public:
 			 int m, int n, int stlide, 
 			 const std::shared_ptr<Function>& f );
 	
-	void init ( std::mt19937& m );
+	void init ( std::mt19937& m, MPI_Comm inner_world );
 	void finalize();
 
 	std::vector<std::vector<Mat>> calc_gradient ( const std::vector<Mat>& U, const std::vector<Mat>& delta );
@@ -51,7 +51,7 @@ Pooling::Pooling( int prev_num_map, int prev_num_unit, int prev_ldu,
 	func = f;
 }
 
-void Pooling::init ( std::mt19937& m )
+void Pooling::init ( std::mt19937& m, MPI_Comm inner_world )
 {
 	W = std::vector<std::vector<Mat>>();
 }

@@ -18,7 +18,7 @@ public:
 				   int m, int n, int stlide, 
 				   const std::shared_ptr<Function>& f );
 
-	void init ( std::mt19937& m );
+	void init ( std::mt19937& m, MPI_Comm inner_world );
 	void finalize();
 	
 	std::vector<std::vector<Mat>> calc_gradient ( const std::vector<Mat>& U, const std::vector<Mat>& delta );
@@ -64,7 +64,7 @@ Convolutional::Convolutional( int prev_num_map, int prev_num_unit, int prev_ldu,
 
 }
 
-void Convolutional::init ( std::mt19937& m )
+void Convolutional::init ( std::mt19937& m, MPI_Comm inner_world )
 {
 	const double r = sqrt(6.0/(num_unit + prev_num_unit));
 	std::normal_distribution<double> d_rand(0.0, 1.0E-1);

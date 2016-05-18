@@ -118,7 +118,7 @@ struct Matrix
 #ifdef USE_EIGEN
 		return v(i, j);
 #else		
-		return v[i + j*m];
+		return v[i*n + j];
 #endif
 	}
 
@@ -127,7 +127,7 @@ struct Matrix
 #ifdef USE_EIGEN
 		return v(i, j);
 #else		
-		return v[i + j*m];
+		return v[i*n + j];
 #endif
 	}
 
@@ -142,7 +142,7 @@ struct Matrix
 	private(i,j) shared(m,n,m1)
 		for( i = 0; i < m; ++i )
 			for( j = 0; j < n; ++j )
-				*this(i,j) += m1(i,j);
+				(*this)(i,j) += m1(i,j);
 #endif
 
 		return *this;
@@ -159,7 +159,7 @@ struct Matrix
 	private(i,j) shared(m,n,m1)
 		for( i = 0; i < m; ++i )
 			for( j = 0; j < n; ++j )
-				*this(i,j) -= m1(i,j);
+				(*this)(i,j) -= m1(i,j);
 #endif
 
 		return *this;

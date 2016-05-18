@@ -27,7 +27,7 @@ protected:
 public:
 	Layer(){}
 
-	virtual void init ( std::mt19937& m ) = 0;
+	virtual void init ( std::mt19937& m, MPI_Comm inner_world ) = 0;
 	virtual void finalize () = 0;
 	virtual std::vector<Mat> calc_delta ( const std::vector<Mat>& U, const std::vector<Mat>& delta ) = 0;
 	virtual std::vector<std::vector<Mat>> calc_gradient ( const std::vector<Mat>& U, const std::vector<Mat>& delta ) = 0;
