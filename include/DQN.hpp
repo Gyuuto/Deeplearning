@@ -76,13 +76,15 @@ private:
 	typedef Matrix<double> Mat;
 	typedef std::vector<double> Vec;
 
-	int mem_capacity, max_id;
+	int mem_capacity, mem_id, max_id;
 	double alpha, gamma, epsilon;
 	std::mt19937 mt;
 	std::uniform_int_distribution<int> i_rand;
 	std::uniform_real_distribution<double> d_rand;
 
 	std::function<State(int)> func_trans; // that is returning next state and reward when give a input action id
+	std::function<bool(int)> func_act; // that is returning possibility given action
+
 	std::vector<DQN_Memory> mem;
 	std::vector<std::shared_ptr<Layer>> layers;
 	Neuralnet *Q, *Q_tilde;
@@ -90,20 +92,25 @@ private:
 public:
 	DQN ( const int mem_capacity, const int max_id,
 		  const double alpha, const double gamma, const double epsilon,
-		  const std::function<State(int)>& func_trans, const std::vector<std::shared_ptr<Layer>>& layers );
+		  const std::function<State(int)>& func_trans, const std::function<bool(int)>& func_act,
+		  const std::vector<std::shared_ptr<Layer>>& layers );
 	~DQN ();
 	
 	int get_next_action ( const std::vector<Vec>& state );
 
 	void learning( const int max_iter, const int batch_size, const int C );
+
+	void output_W ( const std::string& filename );
+	void set_W ( const std::string& filename );
 };
 
 DQN::DQN(const int mem_capacity, const int max_id,
 		 const double alpha, const double gamma, const double epsilon,
-		 const std::function<State(int)>& func_trans, const std::vector<std::shared_ptr<Layer>>& layers )
-	: mem_capacity(mem_capacity), max_id(max_id),
+		 const std::function<State(int)>& func_trans, const std::function<bool(int)>& func_act,
+		 const std::vector<std::shared_ptr<Layer>>& layers )
+	: mem_capacity(mem_capacity), mem_id(0), max_id(max_id),
 	  alpha(alpha), gamma(gamma), epsilon(epsilon),
-	  func_trans(func_trans), layers(layers)
+	  func_trans(func_trans), func_act(func_act), layers(layers)
 {
 	mt = std::mt19937(time(NULL));
 	i_rand = std::uniform_int_distribution<int>(0, max_id-1);
@@ -128,11 +135,11 @@ DQN::~DQN()
 int DQN::get_next_action ( const std::vector<Vec>& state )
 {
 	std::vector<std::vector<Vec>> a = Q->apply(std::vector<std::vector<Vec>>(1, state));
-	int id = 0;
-	double max_Q = a[0][0][0];
+	int id = -100;
+	double max_Q = -1.0E100;
 
-	for( int i = 1; i < a[0][0].size(); ++i ){
-		if( max_Q < a[0][0][i] ){
+	for( int i = 0; i < max_id; ++i ){
+		if( func_act(i) && max_Q < a[0][0][i] ){
 			id = i;
 			max_Q = a[0][0][i];
 		}
@@ -143,8 +150,6 @@ int DQN::get_next_action ( const std::vector<Vec>& state )
 
 void DQN::learning( const int max_iter, const int batch_size, const int C )
 {
-	int mem_id = 0;
-	
 	Q->set_EPS(alpha);
 	Q->set_LAMBDA(0.0);
 	Q->set_BATCHSIZE(batch_size);
@@ -153,16 +158,19 @@ void DQN::learning( const int max_iter, const int batch_size, const int C )
 	for( int n = 0; n < max_iter; ++n ){
 		int next_act_id = -1;
 		
-		if( mem_id < mem_capacity || d_rand(mt) - epsilon < 0.0 ){ // random action
-			next_act_id = i_rand(mt);
+		if( mem_id < batch_size || d_rand(mt) - epsilon < 0.0 ){ // random action
+			std::vector<int> possible;
+			for( int i = 0; i < max_id; ++i ) if( func_act(i) ) possible.push_back(i);
+
+			if( possible.size() == 0 ) next_act_id = -100;
+			else next_act_id = possible[i_rand(mt)%possible.size()];
 		}
 		else{
 			next_act_id = get_next_action(cur_state.s);
 		}
 
-		printf("Next act id : %d\n", next_act_id);
 		State next_state = func_trans(next_act_id);
-
+		
 		mem[mem_id%mem_capacity] = DQN_Memory(cur_state.s, next_state.s, next_act_id, next_state.r);
 		++mem_id;
 
@@ -187,23 +195,19 @@ void DQN::learning( const int max_iter, const int batch_size, const int C )
 				d[i][0][id] = next_state.r + gamma * val;
 			}
 
-			for( int i = 0; i < max_id; ++i ){
-				printf("%d:%.3E ", i, d[0][0][i]);
-			}puts("");
-
 			// do back propagation with mem
-			Q->learning(x, d, data_size/batch_size*C,
-						[&](Neuralnet& nn, const int iter, const std::vector<Mat>& x, const std::vector<Mat>& d) -> void{
-							if( iter == (data_size / batch_size)*C ){
-								printf("Iter : %d\n", n);
-								nn.print_cost(x, d);
-							}
-						});
-		}
-		if( n % 100 == 0 ){
-			std::string str = "W_" + std::to_string(n) + ".dat";
-			Q->output_W(str);
+			Q->learning(x, d, data_size/batch_size*C);
 		}
 		cur_state = next_state;
 	}
+}
+
+void DQN::output_W ( const std::string& filename )
+{
+	Q->output_W(filename);
+}
+
+void DQN::set_W ( const std::string& filename )
+{
+	Q->set_W(filename);
 }
