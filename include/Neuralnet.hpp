@@ -183,7 +183,7 @@ void Neuralnet::add_layer( const std::shared_ptr<Layer>& layer )
 
 	int idx = this->layer.size()-1;
 	this->layer[idx]->set_prev_function(f);
-	this->layer[idx]->init(m, inner_world);
+	this->layer[idx]->init(m, inner_world, outer_world);
 
 	auto w = layer->get_W();
 
@@ -284,13 +284,13 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 			}
 		}
 		auto end = std::chrono::system_clock::now();
-		if( myrank == 0 ) printf("apply     %lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
+		// if( myrank == 0 ) printf("apply     %lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
 		
 		beg = std::chrono::system_clock::now();
 		// back propagation calculation
 		auto nabla_w = calc_gradient(U, D);
 		end = std::chrono::system_clock::now();
-		if( myrank == 0 ) printf("calc grad %lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
+		// if( myrank == 0 ) printf("calc grad %lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
 		
 		beg = std::chrono::system_clock::now();
 		// averaging all gradients of weights of mini-batches
@@ -299,7 +299,7 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 				for( int k = 0; k < nabla_w[i][j].size(); ++k )
 					nabla_w[i][j][k] = 1.0/BATCH_SIZE * nabla_w[i][j][k];
 		end = std::chrono::system_clock::now();
-		if( myrank == 0 ) printf("averaged  %lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
+		// if( myrank == 0 ) printf("averaged  %lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
 		
 		// check_gradient(cnt, idx, x, y, nabla_w);
 		beg = std::chrono::system_clock::now();
@@ -309,7 +309,7 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 			cnt = 0;
 		}
 		end = std::chrono::system_clock::now();
-		if( myrank == 0 ) printf("shuffle   %lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
+		// if( myrank == 0 ) printf("shuffle   %lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
 
 		// update W
 		beg = std::chrono::system_clock::now();
@@ -350,8 +350,8 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 			layer[i]->update_W(update_W);
 		}
 		end = std::chrono::system_clock::now();
-		if( myrank == 0 ) printf("update W  %lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
-		if( myrank == 0 ) puts("--------------------");
+		// if( myrank == 0 ) printf("update W  %lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
+		// if( myrank == 0 ) puts("--------------------");
 		each_func(*this, n, U[0], D);
 	}
 
