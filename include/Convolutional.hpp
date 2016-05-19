@@ -7,7 +7,7 @@ class Convolutional : public Layer
 {
 private:
 	int prev_ldu, ldu;
-	int m, n, stlide;
+	int m, n, stride;
 
 	Vec bias, d_bias;
 	Vec r, v;
@@ -15,10 +15,14 @@ private:
 public:
 	Convolutional( int prev_num_map, int prev_num_unit, int prev_ldu,
 				   int num_map, int num_unit, int ldu,
-				   int m, int n, int stlide, 
+				   int m, int n, int stride, 
 				   const std::shared_ptr<Function>& f );
 
-	void init ( std::mt19937& m, MPI_Comm inner_world );
+#ifdef USE_MPI
+	void init( std::mt19937& m, MPI_Comm inner_world, MPI_Comm outer_world );
+#else
+	void init( std::mt19937& m );
+#endif
 	void finalize();
 	
 	std::vector<std::vector<Mat>> calc_gradient ( const std::vector<Mat>& U, const std::vector<Mat>& delta );
@@ -33,12 +37,14 @@ public:
 	void set_W ( const std::string& filename );
 	void output_W ( const std::string& filename );
 	
+#ifdef USE_MPI
 	void param_mix ();
+#endif
 };
 
 Convolutional::Convolutional( int prev_num_map, int prev_num_unit, int prev_ldu,
 							  int num_map, int num_unit, int ldu,
-							  int m, int n, int stlide, 
+							  int m, int n, int stride, 
 							  const std::shared_ptr<Function>& f )
 {
 	this->prev_num_map = prev_num_map;
@@ -49,7 +55,7 @@ Convolutional::Convolutional( int prev_num_map, int prev_num_unit, int prev_ldu,
 	this->num_unit = num_unit;
 	this->ldu = ldu;	
 
-	this->m = m; this->n = n; this->stlide = stlide;
+	this->m = m; this->n = n; this->stride = stride;
 
 	func = f;
 
@@ -64,8 +70,20 @@ Convolutional::Convolutional( int prev_num_map, int prev_num_unit, int prev_ldu,
 
 }
 
-void Convolutional::init ( std::mt19937& m, MPI_Comm inner_world )
+#ifdef USE_MPI
+void Convolutional::init ( std::mt19937& m, MPI_Comm inner_world, MPI_Comm outer_world )
+#else
+void Convolutional::init ( std::mt19937& m )
+#endif
 {
+#ifdef USE_MPI
+	this->inner_world = inner_world;
+	this->outer_world = outer_world;
+
+	MPI_Comm_rank(inner_world, &rank);
+	MPI_Comm_size(inner_world, &nprocs);
+#endif
+
 	const double r = sqrt(6.0/(num_unit + prev_num_unit));
 	std::normal_distribution<double> d_rand(0.0, 1.0E-1);
 
@@ -79,13 +97,20 @@ void Convolutional::init ( std::mt19937& m, MPI_Comm inner_world )
 		}				
 	}
 }
-	
+
 void Convolutional::finalize ()
 {
 }
 
+#include <chrono>
 std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( const std::vector<Mat>& U, const std::vector<Mat>& delta )
 {
+	int offset = 0, my_size = delta[0].n*delta[0].m;
+#ifdef USE_MPI
+	offset = rank*my_size/nprocs;
+	my_size = (rank+1)*my_size/nprocs - rank*my_size/nprocs;
+#endif
+
 	std::vector<std::vector<Mat>> nabla(num_map);
 	for( int i = 0; i < num_map; ++i ){
 		nabla[i] = std::vector<Mat>(prev_num_map);
@@ -98,30 +123,49 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 		U_[i] = (*prev_func)(U[i], false);
 
 	const int Y = prev_num_unit/prev_ldu, X = prev_ldu;
-	int i, j, k, s, t, y, x;
+	const int Y_ = num_unit/ldu, X_ = ldu;
+	int i, j, k, l, s, t, y, x;
+	std::vector<Mat> delta_mat(num_map), U_mat(prev_num_map);
+	for( i = 0; i < num_map; ++i ){
+		delta_mat[i] = Mat(m*n, my_size);
+		for( j = 0; j < m*n; ++j ){
+			int s = j%m - (m/2), t = j/m - (n/2);
+			for( k = 0; k < my_size; ++k ){
+				int idx1 = (offset + k)/delta[0].m, idx2 = (offset + k)%delta[0].m;
+				int nx = idx2%ldu - s, ny = idx2/ldu - t;
+				if( nx < 0 || ny < 0 || X_ <= nx || Y_ <= ny ){
+					delta_mat[i](j, k) = 0.0;
+					continue;
+				}
+				delta_mat[i](j, k) =  delta[i](ny*ldu + nx, idx1);
+			}
+		}
+	}
+
+	for( i = 0; i < prev_num_map; ++i ){
+		U_mat[i] = Mat(my_size, 1);
+		for( j = 0; j < my_size; ++j ){
+			int idx1 = (offset + j)/delta[0].m, idx2 = (offset + j)%delta[0].m;
+			U_mat[i](j, 0) = U_[i](idx2, idx1);
+		}
+	}
+
 #pragma omp parallel for default(none) \
-	private(i,j,k,s,t,y,x) shared(Y, X, delta, nabla, U_)
+	private(i,j,k,l,s,t,y,x) shared(Y, X, delta, nabla, delta_mat, U_mat)
 	for( i = 0; i < num_map; ++i ){
 		for( j = 0; j < prev_num_map; ++j ){
-			for( k = 0; k < delta[i].n; ++k )
-				for( s = -m/2; s < (m+1)/2; ++s )
-					for( t = -n/2; t < (n+1)/2; ++t )
-						for( y = 0; y < Y; y += stlide )
-							for( x = 0; x < X; x += stlide ){
-								int nx = x + s, ny = y + t;
-								if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
-#pragma omp atomic
-								nabla[i][j](s+m/2,t+n/2) +=
-									delta[i](x/stlide+ldu*(y/stlide),k)*
-									U_[j](nx+prev_ldu*ny,k);
-							}
+			auto tmp = delta_mat[i] * U_mat[j];
+			for( k = 0; k < n; ++k )
+				for( l = 0; l < m; ++l )
+					nabla[i][j](k, l) = tmp(l*n + k, 0);
+#ifdef USE_MPI
+			MPI_Allreduce(MPI_IN_PLACE, &nabla[i][j](0,0), m*n, MPI_DOUBLE_PRECISION, MPI_SUM, inner_world);
+#endif
 		}
-		
-#pragma omp parallel for default(none)	\
-	private(i,j,k,s,t,y,x) shared(Y, X, delta, U_)
+
 		for( j = 0; j < delta[i].n; ++j )
-			for( y = 0; y < Y; y += stlide )
-				for( x = 0; x < X; x += stlide ){
+			for( y = 0; y < Y; y += stride )
+				for( x = 0; x < X; x += stride ){
 					double val = 0.0;
 					for( k = 0; k < prev_num_map; ++k )
 						for( s = -m/2; s < (m+1)/2; ++s )
@@ -130,7 +174,7 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 								if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
 								val += U_[k](nx+prev_ldu*ny,j);
 							}
-					d_bias[i] = delta[i](x/stlide+ldu*(y/stlide),j) * val;
+					d_bias[i] = delta[i](x/stride+ldu*(y/stride),j) * val;
 				}
 	}
 
@@ -143,25 +187,48 @@ std::vector<Convolutional::Mat> Convolutional::calc_delta ( const std::vector<Ma
 	const int X_ = ldu, Y_ = num_unit/ldu;
 	std::vector<Mat> tmp(prev_num_map), nx_delta(prev_num_map);
 
-	int i, j, k, x, y, s, t;
+	int i, j, k, l, x, y, s, t;
+	for( int i = 0; i < prev_num_map; ++i ) tmp[i] = Mat(prev_num_unit, U[0].n);
+
+	Mat kernel(m*n*num_map, prev_num_map);
 #pragma omp parallel for default(none) \
-	private(i,j,k,s,t,y,x) shared(Y, X, tmp, delta, U)
-	for( i = 0; i < prev_num_map; ++i ){
-		tmp[i] = Mat(prev_num_unit, U[0].n);
-		for( j = 0; j < num_map; ++j ){
-			for( k = 0; k < U[0].n; ++k )
-				for( x = 0; x < X; ++x )
-					for( y = 0; y < Y; ++ y ){
-						for( s = -m/2; s < (m+1)/2; ++s )
-							for( t = -n/2; t < (n+1)/2; ++t ){
-								int nx = (x - s),
-									ny = (y - t);
-								if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
-								nx /= stlide; ny /= stlide;
-								tmp[i](x+ldu*y,k) += W[j][i](s+m/2,t+n/2)*delta[j](nx+ldu*ny,k);
-							}
+	private(i,j,k,l) shared(kernel)
+	for( i = 0; i < num_map; ++i )
+		for( j = 0; j < prev_num_map; ++j )
+			for( k = 0; k < m; ++ k )
+				for( l = 0; l < n; ++l )
+					kernel(i*(m*n) + k*m + l, j) = W[i][j](l, k);
+			
+#pragma omp parallel for default(none) \
+	private(i,x,y,s,t,j,k) shared(kernel, tmp, delta, X, Y, X_, Y_)
+	for( i = 0; i < delta[0].n; ++i ){
+		Mat input_image(prev_num_unit, m*n*num_map);
+
+		for( j = 0; j < prev_num_unit; ++j )
+			for( k = 0; k < m*n*num_map; ++k )
+				input_image(j, k) = 0.0;
+		
+		for( x = 0; x < X; ++x )
+			for( y = 0; y < Y; ++y ){
+				int idx = y*prev_ldu + x;
+
+				for( s = -m/2; s < (m+1)/2; s += stride )
+					for( t = -n/2; t < (n+1)/2; t += stride ){
+						int nx = x - s, ny = y - t;
+						if( nx < 0 || nx >= X_ || ny < 0 || ny >= Y_ ){
+							for( j = 0; j < num_map; ++j )
+								input_image(idx, m*n*j + (t+(n/2))*n + s+(m/2)) = 0.0;
+							continue;
+						}
+						for( j = 0; j < num_map; ++j )
+							input_image(idx, m*n*j + (t+(n/2))*n + s+(m/2)) = delta[j](ny*ldu + nx, i);
 					}
-		}
+			}
+
+		Mat output_image = input_image * kernel;
+		for( j = 0; j < prev_num_map; ++j )
+			for( k = 0; k < prev_num_unit; ++k )
+				tmp[j](k, i) = output_image(k, j);
 	}
 
 #pragma omp parallel for default(none) \
@@ -191,30 +258,45 @@ std::vector<Convolutional::Mat> Convolutional::apply ( const std::vector<Mat>& U
 	const int Y = prev_num_unit/prev_ldu, X = prev_ldu;
 	std::vector<Mat> ret(num_map);
 
-	int i,j,k,y,x,s,t;
+	int i, j, k, l, y, x, s, t;
+	for( int i = 0; i < num_map; ++i ) ret[i] = Mat(num_unit, U[0].n);
+
+	Mat kernel(m*n*prev_num_map, num_map);
 #pragma omp parallel for default(none) \
-	private(i,j,k,y,x,s,t) shared(Y, X, ret, U)
-	for( i = 0; i < num_map; ++i ){
-		ret[i] = Mat(num_unit, U[0].n);
-		for( j = 0; j < prev_num_map; ++j ){
-			for( k = 0; k < U[0].n; ++k ){
-				for( y = 0; y < Y; y += stlide )
-					for( x = 0; x < X; x += stlide ){
-						double val = 0.0;
+	private(i,j,k,l) shared(kernel)
+	for( i = 0; i < num_map; ++i )
+		for( j = 0; j < prev_num_map; ++j )
+			for( k = 0; k < m; ++ k )
+				for( l = 0; l < n; ++l )
+					kernel(j*(m*n) + k*n + l, i) = W[i][j](l, k);
+			
+#pragma omp parallel for default(none) \
+	private(i,x,y,s,t,j,k) shared(kernel, U, ret, X, Y)
+	for( i = 0; i < U[0].n; ++i ){
+		Mat input_image(num_unit, m*n*prev_num_map);
 
-						for( s = -m/2; s < (m+1)/2; ++s )
-							for( t = -n/2; t < (n+1)/2; ++t ){
-								int nx = x + s, ny = y + t;
-								if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
-								val += W[i][j](s+m/2,t+n/2)*U[j](nx + ny*prev_ldu,k);
-							}
-
-						ret[i](y/stlide*ldu + x/stlide,k) += val;
+		for( x = 0; x < X; x += stride )
+			for( y = 0; y < Y; y += stride ){
+				int idx = (y/stride)*ldu + (x/stride);
+				for( s = -m/2; s < (m+1)/2; ++s )
+					for( t = -n/2; t < (n+1)/2; ++t ){
+						int nx = x + s, ny = y + t;
+						if( nx < 0 || nx >= X || ny < 0 || ny >= Y ){
+							for( j = 0; j < prev_num_map; ++j )
+								input_image(idx, m*n*j + (t+(n/2))*n + s+(m/2)) = 0.0;
+							continue;
+						}
+						for( j = 0; j < prev_num_map; ++j )
+							input_image(idx, m*n*j + (t+(n/2))*n + s+(m/2)) = U[j](ny*prev_ldu + nx, i);
 					}
 			}
-		}
+		
+		Mat output_image = input_image * kernel;
+		for( j = 0; j < num_map; ++j )
+			for( k = 0; k < num_unit; ++k )
+				ret[j](k, i) = output_image(k, j);
 	}
-
+	
 #pragma omp parallel for default(none) \
 	private(i,j,k) shared(ret)
 	for( i = 0; i < num_map; ++i )
@@ -273,7 +355,7 @@ std::vector<Convolutional::Mat> Convolutional::deconvolution ( const std::vector
 								int nx = (x - s),
 									ny = (y - t);
 								if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
-								nx /= stlide; ny /= stlide;
+								nx /= stride; ny /= stride;
 								ret[i](x+prev_ldu*y,k) += W[j][i](s+m/2,t+n/2)*(U_(nx+ldu*ny,k) - bias[j]);
 							}
 					}
@@ -335,11 +417,11 @@ void Convolutional::output_W ( const std::string& filename )
 		}	
 }
 
+#ifdef USE_MPI
 void Convolutional::param_mix ()
 {
-#ifdef USE_MPI
 	int nprocs;
-	MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
+	MPI_Comm_size(outer_world, &nprocs);
 	if( W.size() == 0 ) return;
 
 	int cnt = W.size()*W[0].size()*W[0][0].m*W[0][0].n + bias.size();
@@ -354,7 +436,7 @@ void Convolutional::param_mix ()
 
 	for( int i = 0; i < bias.size(); ++i ) w[idx++] = bias[i];
 	
-	MPI_Allreduce(MPI_IN_PLACE, &w[0], cnt, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD);
+	MPI_Allreduce(MPI_IN_PLACE, &w[0], cnt, MPI_DOUBLE_PRECISION, MPI_SUM, outer_world);
 
 	idx = 0;
 	for( int i = 0; i < W.size(); ++i )
@@ -363,7 +445,7 @@ void Convolutional::param_mix ()
 				for( int l = 0; l < W[i][j].n; ++l )
 					W[i][j](k,l) = w[idx++]/nprocs;
 	for( int i = 0; i < bias.size(); ++i ) bias[i] = w[idx++]/nprocs;
-#endif
 }
+#endif
 
 #endif
