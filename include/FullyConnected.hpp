@@ -10,15 +10,15 @@
 class FullyConnected : public Layer
 {
 private:
-#ifdef USE_MPI
-	MPI_Comm inner_world;
-	int rank, nprocs;
-#endif
 public:
 	FullyConnected ( int prev_num_map, int prev_num_unit, int num_map, int num_unit,
 					 const std::shared_ptr<Function>& f );
 
-	void init( std::mt19937& m, MPI_Comm inner_world );
+#ifdef USE_MPI
+	void init( std::mt19937& m, MPI_Comm inner_world, MPI_Comm outer_world );
+#else
+	void init( std::mt19937& m );
+#endif
 	void finalize();
 	
 	std::vector<std::vector<Mat>> calc_gradient ( const std::vector<Mat>& U, const std::vector<Mat>& delta );
@@ -31,7 +31,9 @@ public:
 	void set_W( const std::string& filename );
 	void output_W ( const std::string& filename );
 
+#ifdef USE_MPI
 	void param_mix ();
+#endif
 };
 
 FullyConnected::FullyConnected( int prev_num_map, int prev_num_unit, int num_map, int num_unit,
@@ -47,19 +49,24 @@ FullyConnected::FullyConnected( int prev_num_map, int prev_num_unit, int num_map
 	rank = 0; nprocs = 1;
 }
 
-void FullyConnected::init ( std::mt19937& m, MPI_Comm inner_world )
+#ifdef USE_MPI
+void FullyConnected::init ( std::mt19937& m, MPI_Comm inner_world, MPI_Comm outer_world )
+#else
+void FullyConnected::init ( std::mt19937& m )
+#endif
 {
 #ifdef USE_MPI
 	this->inner_world = inner_world;
+	this->outer_world = outer_world;
 	MPI_Comm_size(inner_world, &nprocs);
 	MPI_Comm_rank(inner_world, &rank);
-#endif
 
-	int offset = 0, my_size = num_unit;
-#ifdef USE_MPI
+	int offset, my_size;
 	// currently, divide by holizontal
 	my_size = (rank+1)*num_unit/nprocs - rank*num_unit/nprocs;
 	offset = rank*num_unit/nprocs;
+#else
+	int my_size = num_unit;
 #endif
 	
 	for( int i = 0; i < num_map; ++i ){
@@ -112,7 +119,7 @@ std::vector<std::vector<FullyConnected::Mat>> FullyConnected::calc_gradient ( co
 			Mat tmp_delta(W[i][j].m, delta[i].n);
 			for( int k = 0; k < W[i][j].m; ++k )
 				for( int l = 0; l < delta[i].n; ++l )
-					tmp_delta(k,l) = delta[i](k+offset,l);
+					tmp_delta(k,l) = delta[i](k + offset,l);
 			nabla[i][j] = tmp_delta*Mat::transpose(V);
 		}
 
@@ -263,11 +270,11 @@ void FullyConnected::output_W ( const std::string& filename )
 		}
 }
 
+#ifdef USE_MPI
 void FullyConnected::param_mix ()
 {
-#ifdef USE_MPI
 	int nprocs;
-	MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
+	MPI_Comm_size(outer_world, &nprocs);
 	if( W.size() == 0 ) return;
 
 	int cnt = W.size()*W[0].size()*W[0][0].m*W[0][0].n;
@@ -280,7 +287,7 @@ void FullyConnected::param_mix ()
 				for( int l = 0; l < W[i][j].n; ++l )
 					w[idx++] = W[i][j](k,l);
 		
-	MPI_Allreduce(MPI_IN_PLACE, &w[0], cnt, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD);
+	MPI_Allreduce(MPI_IN_PLACE, &w[0], cnt, MPI_DOUBLE_PRECISION, MPI_SUM, outer_world);
 
 	idx = 0;
 	for( int i = 0; i < W.size(); ++i )
@@ -288,7 +295,7 @@ void FullyConnected::param_mix ()
 			for( int k = 0; k < W[i][j].m; ++k )
 				for( int l = 0; l < W[i][j].n; ++l )
 					W[i][j](k,l) = w[idx++]/nprocs;
-#endif
 }
+#endif
 
 #endif
