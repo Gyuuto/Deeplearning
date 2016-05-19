@@ -183,6 +183,18 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 
 std::vector<Convolutional::Mat> Convolutional::calc_delta ( const std::vector<Mat>& U, const std::vector<Mat>& delta )
 {
+	int my_size = prev_num_unit, my_offset = 0;
+#ifdef USE_MPI
+	std::vector<int> size(nprocs), offset(nprocs);
+	for( int i = 0; i < nprocs; ++i ){
+		size[i] = ((i+1)*prev_num_unit/nprocs - i*prev_num_unit/nprocs)*prev_num_map;
+		offset[i] = i*prev_num_unit/nprocs;
+	}
+
+	my_offset = offset[rank];
+	my_size = size[rank] / prev_num_map;
+#endif
+
 	const int X = prev_ldu, Y = prev_num_unit/prev_ldu;
 	const int X_ = ldu, Y_ = num_unit/ldu;
 	std::vector<Mat> tmp(prev_num_map), nx_delta(prev_num_map);
@@ -198,34 +210,40 @@ std::vector<Convolutional::Mat> Convolutional::calc_delta ( const std::vector<Ma
 			for( k = 0; k < m; ++ k )
 				for( l = 0; l < n; ++l )
 					kernel(i*(m*n) + k*m + l, j) = W[i][j](l, k);
-			
+
 #pragma omp parallel for default(none) \
 	private(i,x,y,s,t,j,k) shared(kernel, tmp, delta, X, Y, X_, Y_)
 	for( i = 0; i < delta[0].n; ++i ){
-		Mat input_image(prev_num_unit, m*n*num_map);
+		Mat input_image(my_size, m*n*num_map);
 
-		for( j = 0; j < prev_num_unit; ++j )
+		for( j = 0; j < my_size; ++j )
 			for( k = 0; k < m*n*num_map; ++k )
 				input_image(j, k) = 0.0;
 		
-		for( x = 0; x < X; ++x )
-			for( y = 0; y < Y; ++y ){
-				int idx = y*prev_ldu + x;
+		for( j = 0; j < my_size; ++j ){
+			int x = (j + my_offset)%prev_ldu, y = (j + my_offset)/prev_ldu;
 
-				for( s = -m/2; s < (m+1)/2; s += stride )
-					for( t = -n/2; t < (n+1)/2; t += stride ){
-						int nx = x - s, ny = y - t;
-						if( nx < 0 || nx >= X_ || ny < 0 || ny >= Y_ ){
-							for( j = 0; j < num_map; ++j )
-								input_image(idx, m*n*j + (t+(n/2))*n + s+(m/2)) = 0.0;
-							continue;
-						}
-						for( j = 0; j < num_map; ++j )
-							input_image(idx, m*n*j + (t+(n/2))*n + s+(m/2)) = delta[j](ny*ldu + nx, i);
+			for( s = -m/2; s < (m+1)/2; s += stride )
+				for( t = -n/2; t < (n+1)/2; t += stride ){
+					int nx = x - s, ny = y - t;
+					if( nx < 0 || nx >= X_ || ny < 0 || ny >= Y_ ){
+						for( k = 0; k < num_map; ++k )
+							input_image(j, m*n*k + (t+(n/2))*n + s+(m/2)) = 0.0;
+						continue;
 					}
-			}
+					for( k = 0; k < num_map; ++k )
+						input_image(j, m*n*k + (t+(n/2))*n + s+(m/2)) = delta[k](ny*ldu + nx, i);
+				}
+		}
 
+#ifdef USE_MPI
+		Mat tmp_output_image = input_image * kernel;
+		Mat output_image(prev_num_unit, prev_num_map);
+		MPI_Allgatherv(&tmp_output_image(0,0), size[rank], MPI_DOUBLE_PRECISION,
+					   &output_image(0,0), &size[0], &offset[0], MPI_DOUBLE_PRECISION, inner_world);
+#else
 		Mat output_image = input_image * kernel;
+#endif
 		for( j = 0; j < prev_num_map; ++j )
 			for( k = 0; k < prev_num_unit; ++k )
 				tmp[j](k, i) = output_image(k, j);
