@@ -45,8 +45,6 @@ FullyConnected::FullyConnected( int prev_num_map, int prev_num_unit, int num_map
 	this->num_unit = num_unit;
 
 	func = f;
-
-	rank = 0; nprocs = 1;
 }
 
 #ifdef USE_MPI
@@ -66,9 +64,12 @@ void FullyConnected::init ( std::mt19937& m )
 	my_size = (rank+1)*num_unit/nprocs - rank*num_unit/nprocs;
 	offset = rank*num_unit/nprocs;
 #else
+	rank = 0;
+	nprocs = 1;
+
 	int my_size = num_unit;
 #endif
-	
+
 	for( int i = 0; i < num_map; ++i ){
 		W.emplace_back(prev_num_map);
 		for( int j = 0; j < prev_num_map; ++j ){
@@ -246,11 +247,24 @@ void FullyConnected::set_W ( const std::string& filename )
 
 	for( int i = 0; i < num_map; ++i )
 		for( int j = 0; j < prev_num_map; ++j ){
-			ifs.read((char*)&W[i][j].m, sizeof(W[i][j].m));
-			ifs.read((char*)&W[i][j].n, sizeof(W[i][j].n));
+			int m, n;
+			ifs.read((char*)&m, sizeof(m));
+			ifs.read((char*)&n, sizeof(n));
+
+			int my_size = W[i][j].m*W[i][j].n, offset = 0;
+#ifdef USE_MPI
+			my_size = ((rank+1)*num_unit/nprocs - rank*num_unit/nprocs) * W[i][j].n;
+			offset = rank*num_unit/nprocs * W[i][j].n;
+			
+			ifs.seekg(offset*sizeof(double), std::ios::cur);
+
+#endif
 			for( int k = 0; k < W[i][j].m; ++k )
 				for( int l = 0; l < W[i][j].n; ++l )
 					ifs.read((char*)&W[i][j](k,l), sizeof(W[i][j](k,l)));
+#ifdef USE_MPI
+			ifs.seekg((num_unit * W[i][j].n - (offset + my_size))*sizeof(double), std::ios::cur);
+#endif
 		}
 }
 
@@ -260,11 +274,19 @@ void FullyConnected::output_W ( const std::string& filename )
 
 	for( int i = 0; i < num_map; ++i )
 		for( int j = 0; j < prev_num_map; ++j ){
-			ofs.write((char*)&W[i][j].m, sizeof(W[i][j].m));
+			ofs.write((char*)&num_unit, sizeof(num_unit));
 			ofs.write((char*)&W[i][j].n, sizeof(W[i][j].n));
-			for( int k = 0; k < W[i][j].m; ++k )
-				for( int l = 0; l < W[i][j].n; ++l )
-					ofs.write((char*)&W[i][j](k,l), sizeof(W[i][j](k,l)));
+
+			for( int n = 0; n < nprocs; ++n ){
+				if( rank == n ){
+					for( int k = 0; k < W[i][j].m; ++k )
+						for( int l = 0; l < W[i][j].n; ++l )
+							ofs.write((char*)&W[i][j](k,l), sizeof(W[i][j](k,l)));
+				}
+#ifdef USE_MPI
+				MPI_Barrier(inner_world);
+#endif
+			}
 		}
 }
 
