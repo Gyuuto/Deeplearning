@@ -58,8 +58,8 @@ void FullyConnected::init ( std::mt19937& m )
 #ifdef USE_MPI
 	this->inner_world = inner_world;
 	this->outer_world = outer_world;
-	MPI_Comm_size(inner_world, &nprocs);
-	MPI_Comm_rank(inner_world, &rank);
+	MPI_Comm_size(inner_world, &(this->nprocs));
+	MPI_Comm_rank(inner_world, &(this->rank));
 
 	int offset, my_size;
 	// currently, divide by holizontal
@@ -133,20 +133,21 @@ std::vector<FullyConnected::Mat> FullyConnected::calc_delta ( const std::vector<
 #ifdef USE_MPI
 	offset = rank*num_unit/nprocs;
 #endif
-	
+
 	for( int i = 0; i < num_map; ++i ){
 		tmp_delta[i] = Mat(W[0][0].m, delta[i].n);
-		for( int j = 0; j < delta[i].n; ++j )
-			for( int k = 0; k < W[0][0].m; ++k )
-				tmp_delta[i](k, j) = delta[i](offset + k, j);
+		for( int j = 0; j < W[0][0].m; ++j ){
+			for( int k = 0; k < delta[i].n; ++k )
+				tmp_delta[i](j, k) = delta[i](offset + j, k);
+		}
 	}
 
 	int i, j, k;
 #pragma omp parallel for default(none) \
-	private(i,j) shared(tmp, tmp_delta, delta)
+	private(i,j) shared(tmp, tmp_delta)
 	for( i = 0; i < prev_num_map; ++i ){
-		tmp[i] = Mat(W[0][0].n, delta[0].n);
-		
+		tmp[i] = Mat(W[0][0].n, tmp_delta[0].n);
+
 		for( j = 0; j < num_map; ++j ){
 			tmp[i] += Mat::transpose(W[j][i])*tmp_delta[j];
 		}
@@ -158,9 +159,6 @@ std::vector<FullyConnected::Mat> FullyConnected::calc_delta ( const std::vector<
 					  MPI_DOUBLE_PRECISION, MPI_SUM, inner_world);
 #endif
 	
-	for( int i = 0; i < prev_num_map; ++i )
-		nx_delta[i] = Mat(tmp[0].m-1, tmp[0].n);
-
 	for( int i = 0; i < prev_num_map; ++i ){
 		int j, k;
 		Mat V(tmp[i].m-1, tmp[i].n), U_ = (*prev_func)(U[i], true);
