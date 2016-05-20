@@ -56,7 +56,9 @@ public:
 
 	void add_layer( const std::shared_ptr<Layer>& layer );
 
+#ifdef USE_MPI
 	void averaging ();
+#endif
 	void learning ( const std::vector<std::vector<Vec>>& x, const std::vector<std::vector<Vec>>& y,
 					const int MAX_ITER = 1000,
 					const std::function<void(Neuralnet&, const int, const std::vector<Mat>&, const std::vector<Mat>&)>& each_func
@@ -99,10 +101,12 @@ std::vector<std::vector<std::vector<Neuralnet::Mat>>> Neuralnet::calc_gradient (
 
 void Neuralnet::check_gradient ( int cnt, const std::vector<int>& idx, const std::vector<std::vector<Vec>>& x, const std::vector<std::vector<Vec>>& y, const std::vector<std::vector<std::vector<Mat>>>& nabla_w )
 {
-	int rank;
+	int rank = 0;
 	int num_layer = this->layer.size();
 
+#ifdef USE_MPI
 	MPI_Comm_rank(inner_world, &rank);
+#endif
 	
 	// Calculate gradient numerically for confirmation of computing
 	for( int i = 0; i < num_layer; ++i ){
@@ -194,7 +198,11 @@ void Neuralnet::add_layer( const std::shared_ptr<Layer>& layer )
 
 	int idx = this->layer.size()-1;
 	this->layer[idx]->set_prev_function(f);
+#ifdef USE_MPI
 	this->layer[idx]->init(m, inner_world, outer_world);
+#else
+	this->layer[idx]->init(m);
+#endif
 
 	auto w = layer->get_W();
 
@@ -208,6 +216,7 @@ void Neuralnet::add_layer( const std::shared_ptr<Layer>& layer )
 	}
 }
 
+#ifdef USE_MPI
 void Neuralnet::averaging ()
 {
 	for( int i = 0; i < layer.size(); ++i ){
@@ -223,6 +232,7 @@ void Neuralnet::averaging ()
 	}
 	// adam_beta_ = adam_gamma_ = 1.0;
 }
+#endif
 
 void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::vector<std::vector<Vec>>& y,
 						   const int MAX_ITER, const std::function<void(Neuralnet&, const int, const std::vector<Mat>&, const std::vector<Mat>&)>& each_func )

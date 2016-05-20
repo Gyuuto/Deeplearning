@@ -61,7 +61,11 @@ SparseFullyConnected::SparseFullyConnected( int prev_num_map, int prev_num_unit,
 	}
 }
 
+#ifdef USE_MPI
+void SparseFullyConnected::init( std::mt19937& m, MPI_Comm inner_world, MPI_Comm outer_world )
+#else
 void SparseFullyConnected::init ( std::mt19937& m )
+#endif
 {
 	const double r = sqrt(6.0/(prev_num_unit + num_unit));
 	std::uniform_real_distribution<double> d_rand(-r, r);
@@ -234,9 +238,9 @@ void SparseFullyConnected::output_W ( const std::string& filename )
 		}
 }
 
+#ifdef USE_MPI
 void SparseFullyConnected::param_mix ()
 {
-#ifdef USE_MPI
 	int nprocs;
 	MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
 	if( W.size() == 0 ) return;
@@ -259,7 +263,7 @@ void SparseFullyConnected::param_mix ()
 			for( int k = 0; k < W[i][j].m; ++k )
 				for( int l = 0; l < W[i][j].n; ++l )
 					W[i][j](k,l) = w[idx++]/nprocs;
-#endif
 }	
+#endif
 
 #endif
