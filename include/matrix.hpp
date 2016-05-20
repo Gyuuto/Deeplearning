@@ -19,7 +19,7 @@ struct Matrix
 {
 	int m, n;
 #ifdef USE_EIGEN
-	Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> v;
+	Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> v;
 #else
 	std::vector<T> v;
 #endif
@@ -28,7 +28,7 @@ struct Matrix
 	Matrix( const int& m, const int& n ) :m(m), n(n)
 	{
 #ifdef USE_EIGEN
-		v = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>(m, n);
+		v = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>(m, n);
 		for( int i = 0; i < m; ++i ) for( int j = 0; j < n; ++j ) v(i,j) = T();
 #else
 		v = std::vector<T>(m*n, T());
@@ -38,7 +38,7 @@ struct Matrix
 	Matrix( const std::vector<double>& v ):m(v.size()), n(1)
 	{
 #ifdef USE_EIGEN
-		this->v = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>(m, n);
+		this->v = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>(m, n);
 		for( int i = 0; i < m; ++i ) this->v(i, 0) = v[i];
 #else
 		this->v = std::vector<T>(v.size(), T());
@@ -47,7 +47,7 @@ struct Matrix
 	}
 
 #ifdef USE_EIGEN
-	Matrix( const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>& A ) :v(A), m(A.rows()), n(A.cols()) {}
+	Matrix( const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>& A ) :v(A), m(A.rows()), n(A.cols()) {}
 #endif
 	
 	static Matrix<T> eye ( const int& m, const int& n )
@@ -142,7 +142,7 @@ struct Matrix
 	private(i,j) shared(m,n,m1)
 		for( i = 0; i < m; ++i )
 			for( j = 0; j < n; ++j )
-				*this(i,j) += m1(i,j);
+				(*this)(i,j) += m1(i,j);
 #endif
 
 		return *this;
@@ -159,7 +159,7 @@ struct Matrix
 	private(i,j) shared(m,n,m1)
 		for( i = 0; i < m; ++i )
 			for( j = 0; j < n; ++j )
-				*this(i,j) -= m1(i,j);
+				(*this)(i,j) -= m1(i,j);
 #endif
 
 		return *this;

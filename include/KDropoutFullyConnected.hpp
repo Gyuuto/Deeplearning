@@ -20,7 +20,11 @@ public:
 							 double K, 
 							 const std::shared_ptr<Function>& f );
 
+#ifdef USE_MPI
+	void init( std::mt19937& m, MPI_Comm inner_world, MPI_Comm outer_world );
+#else
 	void init( std::mt19937& m );
+#endif
 	void finalize();
 	
 	std::vector<std::vector<Mat>> calc_gradient ( const std::vector<Mat>& U, const std::vector<Mat>& delta );
@@ -33,7 +37,9 @@ public:
 	void set_W( const std::string& filename );
 	void output_W ( const std::string& filename );
 
+#ifdef USE_MPI
 	void param_mix ();
+#endif
 };
 
 KDropoutFullyConnected::KDropoutFullyConnected( int prev_num_map, int prev_num_unit,
