@@ -91,6 +91,7 @@ private:
 
 	std::vector<DQN_Memory> mem;
 	std::vector<std::shared_ptr<Layer>> layers;
+
 	Neuralnet *Q, *Q_tilde;
 	
 public:
@@ -118,20 +119,17 @@ public:
 #ifdef USE_MPI
 DQN::DQN(const int mem_capacity, const int max_id,
 		 const double alpha, const double gamma, const double epsilon,
-		 const std::function<State(int)>& func_trans, const std::vector<std::shared_ptr<Layer>>& layers,
-		 MPI_Comm outer_world, MPI_Comm inner_world )
-	: mem_capacity(mem_capacity), max_id(max_id),
-	  alpha(alpha), gamma(gamma), epsilon(epsilon),
-	  func_trans(func_trans), func_act(func_act), layers(layers)
+		 const std::function<State(int)>& func_trans, const std::function<bool(int)>& func_act,
+		 const std::vector<std::shared_ptr<Layer>>& layers, MPI_Comm outer_world, MPI_Comm inner_world )
 #else
 DQN::DQN(const int mem_capacity, const int max_id,
 		 const double alpha, const double gamma, const double epsilon,
 		 const std::function<State(int)>& func_trans, const std::function<bool(int)>& func_act,
 		 const std::vector<std::shared_ptr<Layer>>& layers )
-	: mem_capacity(mem_capacity), mem_id(0), max_id(max_id),
-	  alpha(alpha), gamma(gamma), epsilon(epsilon),
-	  func_trans(func_trans), func_act(func_act), layers(layers)
 #endif
+	: mem_capacity(mem_capacity), mem_id(0), max_id(max_id),
+	alpha(alpha), gamma(gamma), epsilon(epsilon),
+	func_trans(func_trans), func_act(func_act), layers(layers)
 {
 	mt = std::mt19937(time(NULL));
 	i_rand = std::uniform_int_distribution<int>(0, max_id-1);
@@ -141,21 +139,22 @@ DQN::DQN(const int mem_capacity, const int max_id,
 
 #ifdef USE_MPI
 	Q = new Neuralnet(std::shared_ptr<LossFunction>(new MaxSquare), outer_world, inner_world);
-	Q_tilde = new Neuralnet(std::shared_ptr<LossFunction>(new MaxSquare), outer_world, inner_world);
+	// Q_tilde = new Neuralnet(std::shared_ptr<LossFunction>(new MaxSquare), outer_world, inner_world);
 #else
 	Q = new Neuralnet(std::shared_ptr<LossFunction>(new MaxSquare));
-	Q_tilde = new Neuralnet(std::shared_ptr<LossFunction>(new MaxSquare));
+	// Q_tilde = new Neuralnet(std::shared_ptr<LossFunction>(new MaxSquare));
 #endif
+	
 	for( int i = 0; i < this->layers.size(); ++i ){
 		Q->add_layer(this->layers[i]);
-		Q_tilde->add_layer(this->layers[i]);
+		// Q_tilde->add_layer(this->layers[i]);
 	}
 }
 
 DQN::~DQN()
 {
 	delete Q;
-	delete Q_tilde;
+	// delete Q_tilde;
 }
 
 int DQN::get_next_action ( const std::vector<Vec>& state )
@@ -208,7 +207,7 @@ void DQN::learning( const int max_iter, const int batch_size, const int C )
 			for( int i = 0; i < data_size; ++i ){
 				x[i] = mem[i].s;
 
-				auto tmp = Q_tilde->apply(std::vector<std::vector<Vec>>(1, mem[i].s_n));
+				auto tmp = Q->apply(std::vector<std::vector<Vec>>(1, mem[i].s_n));
 				int id = 0;
 				double val = tmp[0][0][0];
 				for( int j = 1; j < max_id; ++j ){
