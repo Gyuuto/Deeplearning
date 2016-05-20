@@ -240,11 +240,6 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 	const int offset_in = 0;
 	const int offset_out = 0;
 
-<<<<<<< HEAD
-	const int data_size = x.size() / nprocs;
-	std::vector<int> idx(data_size);
-	iota(idx.begin(), idx.end(), data_size*myrank);
-=======
 	int seed = time(NULL);
 #ifdef USE_MPI
 	MPI_Bcast(&seed, 1, MPI_INTEGER, 0, inner_world);
@@ -266,7 +261,6 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 	// index of data
 	std::vector<int> idx(num_data);
 	iota(idx.begin(), idx.end(), 0);
->>>>>>> origin/inner_dist
 	shuffle( idx.begin(), idx.end(), m );
 
 	// memory allocation for matrix U and D.
@@ -279,24 +273,6 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 
 	int cnt = 0;
 	for( int n = 0; n <= MAX_ITER; ++n ){
-<<<<<<< HEAD
-		std::vector<Mat> D;
-		std::vector<std::vector<Mat>> U(num_layer+1);
-
-		for( int i = 0; i < x[0].size(); ++i ){
-			U[0].emplace_back(x[0][i].size(), BATCH_SIZE);
-			for( int j = 0; j < U[0][i].m; ++j )
-				for( int k = 0; k < BATCH_SIZE; ++k )
-					U[0][i](j,k) = x[idx[(cnt+k)%data_size]][i][j];
-		}
-		
-		for( int i = 0; i < y[0].size(); ++i ){
-			D.emplace_back(y[0][i].size(), BATCH_SIZE);
-			for( int j = 0; j < D[i].m; ++j )
-				for( int k = 0; k < BATCH_SIZE; ++k )
-					D[i](j,k) = y[idx[(cnt+k)%data_size]][i][j];
-		}
-=======
 		auto beg = std::chrono::system_clock::now();
 		// assign data to mini-batch
 		for( int i = 0; i < x[0].size(); ++i )
@@ -308,7 +284,6 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 			for( int j = 0; j < BATCH_SIZE; ++j )
 				for( int k = 0; k < D[i].m; ++k )
 					D[i](k,j) = Y[i](k, idx[cnt+j]%num_data);
->>>>>>> origin/inner_dist
 
 		// feed forward calculation
 		for( int i = 0; i < num_layer; ++i ) {
@@ -346,11 +321,7 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 		// check_gradient(cnt, idx, x, y, nabla_w);
 		beg = std::chrono::system_clock::now();
 		cnt += BATCH_SIZE;
-<<<<<<< HEAD
-		if( cnt >= data_size ){
-=======
 		if( cnt >= num_data ){
->>>>>>> origin/inner_dist
 			shuffle( idx.begin(), idx.end(), m );
 			cnt = 0;
 		}
