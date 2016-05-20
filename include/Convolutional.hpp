@@ -188,10 +188,10 @@ std::vector<Convolutional::Mat> Convolutional::calc_delta ( const std::vector<Ma
 	std::vector<int> size(nprocs), offset(nprocs);
 	for( int i = 0; i < nprocs; ++i ){
 		size[i] = ((i+1)*prev_num_unit/nprocs - i*prev_num_unit/nprocs)*prev_num_map;
-		offset[i] = i*prev_num_unit/nprocs;
+		offset[i] = i*prev_num_unit/nprocs*prev_num_map;
 	}
 
-	my_offset = offset[rank];
+	my_offset = offset[rank] / prev_num_map;
 	my_size = size[rank] / prev_num_map;
 #endif
 
@@ -212,14 +212,10 @@ std::vector<Convolutional::Mat> Convolutional::calc_delta ( const std::vector<Ma
 					kernel(i*(m*n) + k*m + l, j) = W[i][j](l, k);
 
 #pragma omp parallel for default(none) \
-	private(i,x,y,s,t,j,k) shared(kernel, tmp, delta, X, Y, X_, Y_)
+	private(i,j,k,s,t) shared(kernel, tmp, delta, X, Y, X_, Y_)
 	for( i = 0; i < delta[0].n; ++i ){
 		Mat input_image(my_size, m*n*num_map);
 
-		for( j = 0; j < my_size; ++j )
-			for( k = 0; k < m*n*num_map; ++k )
-				input_image(j, k) = 0.0;
-		
 		for( j = 0; j < my_size; ++j ){
 			int x = (j + my_offset)%prev_ldu, y = (j + my_offset)/prev_ldu;
 
@@ -273,6 +269,18 @@ void Convolutional::update_W ( const std::vector<std::vector<Mat>>& dW )
 
 std::vector<Convolutional::Mat> Convolutional::apply ( const std::vector<Mat>& U, bool use_func )
 {
+	int my_size = num_unit, my_offset = 0;
+#ifdef USE_MPI
+	std::vector<int> size(nprocs), offset(nprocs);
+	for( int i = 0; i < nprocs; ++i ){		
+		size[i] = ((i+1)*num_unit/nprocs - i*num_unit/nprocs)*num_map;
+		offset[i] = i*num_unit/nprocs*num_map;
+	}
+
+	my_offset = offset[rank] / num_map;
+	my_size = size[rank] / num_map;
+#endif
+
 	const int Y = prev_num_unit/prev_ldu, X = prev_ldu;
 	std::vector<Mat> ret(num_map);
 
@@ -289,27 +297,34 @@ std::vector<Convolutional::Mat> Convolutional::apply ( const std::vector<Mat>& U
 					kernel(j*(m*n) + k*n + l, i) = W[i][j](l, k);
 			
 #pragma omp parallel for default(none) \
-	private(i,x,y,s,t,j,k) shared(kernel, U, ret, X, Y)
+	private(i,j,k,x,y,s,t) shared(kernel, U, ret, X, Y)
 	for( i = 0; i < U[0].n; ++i ){
-		Mat input_image(num_unit, m*n*prev_num_map);
+		Mat input_image(my_size, m*n*prev_num_map);
 
-		for( x = 0; x < X; x += stride )
-			for( y = 0; y < Y; y += stride ){
-				int idx = (y/stride)*ldu + (x/stride);
-				for( s = -m/2; s < (m+1)/2; ++s )
-					for( t = -n/2; t < (n+1)/2; ++t ){
-						int nx = x + s, ny = y + t;
-						if( nx < 0 || nx >= X || ny < 0 || ny >= Y ){
-							for( j = 0; j < prev_num_map; ++j )
-								input_image(idx, m*n*j + (t+(n/2))*n + s+(m/2)) = 0.0;
-							continue;
-						}
-						for( j = 0; j < prev_num_map; ++j )
-							input_image(idx, m*n*j + (t+(n/2))*n + s+(m/2)) = U[j](ny*prev_ldu + nx, i);
+		for( j = 0; j < my_size; ++j ){
+			int x = (j + my_offset)%prev_ldu, y = (j + my_offset)/prev_ldu;
+			for( s = -m/2; s < (m+1)/2; ++s )
+				for( t = -n/2; t < (n+1)/2; ++t ){
+					int nx = x + s, ny = y + t;
+					if( nx < 0 || nx >= X || ny < 0 || ny >= Y ){
+						for( k = 0; k < prev_num_map; ++k )
+							input_image(j, m*n*k + (t+(n/2))*n + s+(m/2)) = 0.0;
+						continue;
 					}
-			}
-		
+					for( k = 0; k < prev_num_map; ++k )
+						input_image(j, m*n*k + (t+(n/2))*m + s+(m/2)) = U[k](ny*prev_ldu + nx, i);
+				}
+		}
+
+#ifdef USE_MPI
+		Mat tmp_output_image = input_image * kernel;
+		Mat output_image(num_unit, num_map);
+		MPI_Allgatherv(&tmp_output_image(0,0), size[rank], MPI_DOUBLE_PRECISION,
+					   &output_image(0,0), &size[0], &offset[0], MPI_DOUBLE_PRECISION, inner_world);
+#else
 		Mat output_image = input_image * kernel;
+#endif
+		
 		for( j = 0; j < num_map; ++j )
 			for( k = 0; k < num_unit; ++k )
 				ret[j](k, i) = output_image(k, j);
