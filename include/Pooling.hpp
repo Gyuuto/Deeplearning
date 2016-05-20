@@ -83,7 +83,7 @@ std::vector<Pooling::Mat> Pooling::calc_delta ( const std::vector<Mat>& U, const
 
 	int i, j, x, y, s, t;
 #pragma omp parallel for default(none) \
-	private(i,j,s,t,y,x) shared(Y, X, nx_delta, delta, U)
+	private(i,j,s,t,y,x) shared(nx_delta, delta, U)
 	for( i = 0; i < prev_num_map; ++i ){
 		auto U_ = (*prev_func)(U[i], true);
 		nx_delta[i] = Mat(U[i].m, U[i].n);
@@ -125,7 +125,7 @@ std::vector<Pooling::Mat> Pooling::apply ( const std::vector<Mat>& U, bool use_f
 
 	int i,j,k,y,x,s,t;
 #pragma omp parallel for default(none) \
-	private(i,j,y,x,s,t) shared(new_S, Y, X, ret, U)
+	private(i,j,y,x,s,t) shared(new_S, ret, U)
 	for( i = 0; i < num_map; ++i ){
 		ret[i] = Mat(num_unit, U[0].n);
 		for( j = 0; j < U[0].n; ++j ){
@@ -188,7 +188,7 @@ std::vector<Pooling::Mat> Pooling::unpooling ( const std::vector<Mat>& U )
 
 	int i,j,k,y,x;
 #pragma omp parallel for default(none) \
-	private(i,j,y,x) shared(Y, X, ret, U)
+	private(i,j,y,x) shared(ret, U)
 	for( i = 0; i < num_map; ++i ){
 		ret[i] = Mat(prev_num_unit, U[0].n);
 		for( j = 0; j < U[0].n; ++j ){

@@ -66,7 +66,11 @@ KDropoutFullyConnected::KDropoutFullyConnected( int prev_num_map, int prev_num_u
 	}
 }
 
+#ifdef USE_MPI
+void KDropoutFullyConnected::init ( std::mt19937& m, MPI_Comm outer_world, MPI_Comm inner_world )
+#else
 void KDropoutFullyConnected::init ( std::mt19937& m )
+#endif
 {
 	const double r = sqrt(6.0/(num_unit + prev_num_unit));
 	std::uniform_real_distribution<double> d_rand(-r, r);
@@ -248,9 +252,9 @@ void KDropoutFullyConnected::output_W ( const std::string& filename )
 		}
 }
 
+#ifdef USE_MPI
 void KDropoutFullyConnected::param_mix ()
 {
-#ifdef USE_MPI
 	int nprocs;
 	MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
 	if( W.size() == 0 ) return;
@@ -273,7 +277,7 @@ void KDropoutFullyConnected::param_mix ()
 			for( int k = 0; k < W[i][j].m; ++k )
 				for( int l = 0; l < W[i][j].n; ++l )
 					W[i][j](k,l) = w[idx++]/nprocs;
-#endif
 }	
+#endif
 
 #endif
