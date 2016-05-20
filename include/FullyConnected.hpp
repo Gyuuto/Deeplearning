@@ -64,9 +64,6 @@ void FullyConnected::init ( std::mt19937& m )
 	my_size = (rank+1)*num_unit/nprocs - rank*num_unit/nprocs;
 	offset = rank*num_unit/nprocs;
 #else
-	rank = 0;
-	nprocs = 1;
-
 	int my_size = num_unit;
 #endif
 
@@ -277,16 +274,17 @@ void FullyConnected::output_W ( const std::string& filename )
 			ofs.write((char*)&num_unit, sizeof(num_unit));
 			ofs.write((char*)&W[i][j].n, sizeof(W[i][j].n));
 
+#ifdef USE_MPI
 			for( int n = 0; n < nprocs; ++n ){
-				if( rank == n ){
+				if( rank == n )
+#endif
 					for( int k = 0; k < W[i][j].m; ++k )
 						for( int l = 0; l < W[i][j].n; ++l )
 							ofs.write((char*)&W[i][j](k,l), sizeof(W[i][j](k,l)));
-				}
 #ifdef USE_MPI
 				MPI_Barrier(inner_world);
-#endif
 			}
+#endif
 		}
 }
 

@@ -151,7 +151,7 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 	}
 
 #pragma omp parallel for default(none) \
-	private(i,j,k,l,s,t,y,x) shared(Y, X, delta, nabla, delta_mat, U_mat)
+	private(i,j,k,l,s,t,y,x) shared(delta, nabla, delta_mat, U_, U_mat)
 	for( i = 0; i < num_map; ++i ){
 		for( j = 0; j < prev_num_map; ++j ){
 			auto tmp = delta_mat[i] * U_mat[j];
@@ -212,7 +212,7 @@ std::vector<Convolutional::Mat> Convolutional::calc_delta ( const std::vector<Ma
 					kernel(i*(m*n) + k*m + l, j) = W[i][j](l, k);
 
 #pragma omp parallel for default(none) \
-	private(i,j,k,s,t) shared(kernel, tmp, delta, X, Y, X_, Y_)
+	private(i,j,k,s,t) shared(my_size, my_offset, kernel, tmp, delta)
 	for( i = 0; i < delta[0].n; ++i ){
 		Mat input_image(my_size, m*n*num_map);
 
@@ -297,7 +297,7 @@ std::vector<Convolutional::Mat> Convolutional::apply ( const std::vector<Mat>& U
 					kernel(j*(m*n) + k*n + l, i) = W[i][j](l, k);
 			
 #pragma omp parallel for default(none) \
-	private(i,j,k,x,y,s,t) shared(kernel, U, ret, X, Y)
+	private(i,j,k,x,y,s,t) shared(my_size, my_offset, kernel, U, ret)
 	for( i = 0; i < U[0].n; ++i ){
 		Mat input_image(my_size, m*n*prev_num_map);
 
@@ -375,7 +375,7 @@ std::vector<Convolutional::Mat> Convolutional::deconvolution ( const std::vector
 
 	int i, j, k, x, y, s, t;
 #pragma omp parallel for default(none) \
-	private(i,j,k,s,t,y,x) shared(Y, X, ret, U)
+	private(i,j,k,s,t,y,x) shared(ret, U)
 	for( i = 0; i < prev_num_map; ++i ){
 		ret[i] = Mat(prev_num_unit, U[0].n);
 		for( j = 0; j < num_map; ++j ){
@@ -438,16 +438,22 @@ void Convolutional::set_W ( const std::string& filename )
 
 void Convolutional::output_W ( const std::string& filename )
 {
-	std::ofstream ofs(filename, std::ios::binary);
-
-	for( int i = 0; i < num_map; ++i )
-		for( int j = 0; j < prev_num_map; ++j ){
-			ofs.write((char*)&W[i][j].m, sizeof(W[i][j].m));
-			ofs.write((char*)&W[i][j].n, sizeof(W[i][j].n));
-			for( int k = 0; k < W[i][j].m; ++k )
-				for( int l = 0; l < W[i][j].n; ++l )
-					ofs.write((char*)&W[i][j](k,l), sizeof(W[i][j](k,l)));
-		}	
+#ifdef USE_MPI
+	if( rank == 0 ){
+#endif
+		std::ofstream ofs(filename, std::ios::binary);
+		
+		for( int i = 0; i < num_map; ++i )
+			for( int j = 0; j < prev_num_map; ++j ){
+				ofs.write((char*)&W[i][j].m, sizeof(W[i][j].m));
+				ofs.write((char*)&W[i][j].n, sizeof(W[i][j].n));
+				for( int k = 0; k < W[i][j].m; ++k )
+					for( int l = 0; l < W[i][j].n; ++l )
+						ofs.write((char*)&W[i][j](k,l), sizeof(W[i][j](k,l)));
+			}	
+#ifdef USE_MPI
+	}
+#endif
 }
 
 #ifdef USE_MPI
