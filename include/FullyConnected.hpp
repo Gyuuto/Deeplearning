@@ -76,7 +76,6 @@ void FullyConnected::init ( std::mt19937& m )
 	
 	const double r = sqrt(6.0/(num_unit + prev_num_unit));
 	std::uniform_real_distribution<double> d_rand(-r, r);
-
 	for( int i = 0; i < num_map; ++i ){
 		for( int j = 0; j < prev_num_map; ++j ){
 			for( int k = 0; k < W[i][j].m; ++k ){
@@ -126,11 +125,11 @@ std::vector<std::vector<FullyConnected::Mat>> FullyConnected::calc_gradient ( co
 
 std::vector<FullyConnected::Mat> FullyConnected::calc_delta ( const std::vector<Mat>& U, const std::vector<Mat>& delta )
 {
-	std::vector<Mat> tmp_delta(num_map), tmp(prev_num_map), nx_delta(prev_num_map);
 	int offset = 0;
 #ifdef USE_MPI
 	offset = rank*num_unit/nprocs;
 #endif
+	std::vector<Mat> tmp_delta(num_map), tmp(prev_num_map), nx_delta(prev_num_map);
 
 	for( int i = 0; i < num_map; ++i ){
 		tmp_delta[i] = Mat(W[0][0].m, delta[i].n);
