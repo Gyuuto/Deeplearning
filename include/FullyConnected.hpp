@@ -205,6 +205,8 @@ std::vector<FullyConnected::Mat> FullyConnected::apply ( const std::vector<Mat>&
 	for( int i = 0; i < num_map; ++i )
 		MPI_Allgatherv(&tmp_ret[i](0,0), size[rank], MPI_DOUBLE_PRECISION,
 					   &ret[i](0,0), &size[0], &offset[0], MPI_DOUBLE_PRECISION, inner_world);
+#else
+	ret = tmp_ret;
 #endif
 	
 	if( use_func )
