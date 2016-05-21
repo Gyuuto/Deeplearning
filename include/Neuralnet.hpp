@@ -68,6 +68,7 @@ public:
 	std::vector<std::vector<Vec>> apply ( const std::vector<std::vector<Vec>>& x ) const;
 
 	void print_cost ( const std::vector<Mat>& x, const std::vector<Mat>& y ) const;
+	void print_cost ( const std::vector<std::vector<Vec>>& x, const std::vector<std::vector<Vec>>& y ) const;
 	void print_weight () const;
 	void print_gradient () const;
 
@@ -472,16 +473,45 @@ void Neuralnet::print_cost ( const std::vector<Mat>& x, const std::vector<Mat>& 
 	}
 	error[2] *= LAMBDA;
 
-	printf("Cost     :    Average    |      Min      |      Max      |\n");
-	printf("           %13.6E | %13.6E | %13.6E |\n", error[0], min_err, max_err);
-	printf("           Sum of costs  |   The cost    |L2 norm regul. |\n");
-	printf("           %13.6E = %13.6E + %13.6E\n",
-		   error[0]+error[1]+error[2], error[0], error[2]);
+	int rank = 0;
+#ifdef USE_MPI
+	MPI_Comm_rank(inner_world, &rank);
+#endif
+
+	if( rank == 0 ){
+		printf("Cost     :    Average    |      Min      |      Max      |\n");
+		printf("           %13.6E | %13.6E | %13.6E |\n", error[0], min_err, max_err);
+		printf("           Sum of costs  |   The cost    |L2 norm regul. |\n");
+		printf("           %13.6E = %13.6E + %13.6E\n",
+			   error[0]+error[1]+error[2], error[0], error[2]);
+	}
+}
+
+void Neuralnet::print_cost ( const std::vector<std::vector<Vec>>& x, const std::vector<std::vector<Vec>>& y ) const
+{
+	std::vector<Mat> X(x[0].size(), Mat(x[0][0].size(), x.size())), Y(y[0].size(), Mat(y[0][0].size(), y.size()));
+
+	for( int i = 0; i < x[0].size(); ++i )
+		for( int j = 0; j < x[0][0].size(); ++j )
+			for( int k = 0; k < x.size(); ++k )
+				X[i](j,k) = x[k][i][j];
+
+	for( int i = 0; i < y[0].size(); ++i )
+		for( int j = 0; j < y[0][0].size(); ++j )
+			for( int k = 0; k < y.size(); ++k )
+				Y[i](j,k) = y[k][i][j];
+	
+	print_cost( X, Y );
 }
 
 void Neuralnet::print_weight () const
 {
-	printf("Weight   :    Average    |      Min      |      Max      |\n");
+	int rank = 0;
+#ifdef USE_MPI
+	MPI_Comm_rank(inner_world, &rank);
+#endif
+
+	if( rank == 0 ) printf("Weight   :    Average    |      Min      |      Max      |\n");
 	for( int i = 0; i < layer.size(); ++i ){
 		double ave_weight = 0.0;
 		double max_weight = -1.0E100;
@@ -504,16 +534,23 @@ void Neuralnet::print_weight () const
 		}
 		ave_weight /= num;
 
-		if( W.size() == 0 )
-			printf(" Layer %d   ------------- | ------------- | ------------- |\n", i);
-		else
-			printf(" Layer %d   %13.6E | %13.6E | %13.6E |\n", i, ave_weight, min_weight, max_weight);
+		if( rank == 0 ){
+			if( W.size() == 0 )
+				printf(" Layer %d   ------------- | ------------- | ------------- |\n", i);
+			else
+				printf(" Layer %d   %13.6E | %13.6E | %13.6E |\n", i, ave_weight, min_weight, max_weight);
+		}
 	}
 }
 
 void Neuralnet::print_gradient () const
 {
-	printf("Gradient :    Average    |      Min      |      Max      |\n");
+	int rank = 0;
+#ifdef USE_MPI
+	MPI_Comm_rank(inner_world, &rank);
+#endif
+
+	if( rank == 0 ) printf("Gradient :    Average    |      Min      |      Max      |\n");
 	for( int i = 0; i < layer.size(); ++i ){
 		double ave_gradient = 0.0;
 		double max_gradient = -1.0E100;
@@ -538,10 +575,12 @@ void Neuralnet::print_gradient () const
 		}
 		ave_gradient /= num;
 
-		if( W.size() == 0 )
-			printf(" Layer %d   ------------- | ------------- | ------------- |\n", i);
-		else
-			printf(" Layer %d   %13.6E | %13.6E | %13.6E |\n", i, ave_gradient, min_gradient, max_gradient);
+		if( rank == 0 ){
+			if( W.size() == 0 )
+				printf(" Layer %d   ------------- | ------------- | ------------- |\n", i);
+			else
+				printf(" Layer %d   %13.6E | %13.6E | %13.6E |\n", i, ave_gradient, min_gradient, max_gradient);
+		}
 	}
 }
 
