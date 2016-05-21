@@ -1,7 +1,7 @@
 # Neural network C++ Library
 ----
 Programs of relation with artificial neural network. There are 4 types of layers, FullyConnected, SparseFullyConnected, Convolutional and Max-Pooling. I introduce these layers in below.
-
+This library is released under the MIT License, for more details see a file LICENSE.
 
 # Layers
 ----
