@@ -29,7 +29,7 @@ private:
 	std::vector<std::vector<std::vector<Mat>>> adam_v, adam_r;
 	double adam_beta_ = 1.0, adam_gamma_ = 1.0;
 
-	int BATCH_SIZE;
+	int BATCH_SIZE, UPDATE_ITER;
 	double EPS, LAMBDA;
 
 	std::shared_ptr<LossFunction> loss;
@@ -53,6 +53,7 @@ public:
 	void set_EPS ( const double& EPS );
 	void set_LAMBDA ( const double& LAMBDA );
 	void set_BATCHSIZE ( const int& BATCH_SIZE );
+	void set_UPDATEITER ( const int& UPDATE_ITER );
 
 	void add_layer( const std::shared_ptr<Layer>& layer );
 
@@ -154,14 +155,14 @@ void Neuralnet::check_gradient ( int cnt, const std::vector<int>& idx, const std
 
 //////////////////// PUBLIC FUNCTION ////////////////////
 Neuralnet::Neuralnet( const std::shared_ptr<LossFunction>& loss )
-	:EPS(1.0E-3), LAMBDA(1.0E-5), BATCH_SIZE(1), loss(loss)
+	:EPS(1.0E-3), LAMBDA(0.0), BATCH_SIZE(1), UPDATE_ITER(-1), loss(loss)
 {
 	m = std::mt19937(time(NULL));
 }
 
 #ifdef USE_MPI
 Neuralnet::Neuralnet( const std::shared_ptr<LossFunction>& loss, MPI_Comm outer_world, MPI_Comm inner_world )
-	:EPS(1.0E-3), LAMBDA(1.0E-5), BATCH_SIZE(1), loss(loss), outer_world(outer_world), inner_world(inner_world)
+	:EPS(1.0E-3), LAMBDA(0.0), BATCH_SIZE(1), UPDATE_ITER(-1), loss(loss), outer_world(outer_world), inner_world(inner_world)
 {
 	int rank = 0, seed;
 	MPI_Comm_rank(outer_world, &rank);
@@ -185,6 +186,11 @@ void Neuralnet::set_LAMBDA ( const double& LAMBDA )
 void Neuralnet::set_BATCHSIZE ( const int& BATCH_SIZE )
 {
 	this->BATCH_SIZE = BATCH_SIZE;
+}
+
+void Neuralnet::set_UPDATEITER ( const int& UPDATE_ITER )
+{
+	this->UPDATE_ITER = UPDATE_ITER;
 }
 
 void Neuralnet::add_layer( const std::shared_ptr<Layer>& layer )
@@ -380,6 +386,13 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 		end = std::chrono::system_clock::now();
 		// if( myrank == 0 ) printf("update W  %lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
 		// if( myrank == 0 ) puts("--------------------");
+
+#ifdef USE_MPI
+		if( UPDATE_ITER != -1 && n % UPDATE_ITER == 0 ){
+			averaging();
+		}
+#endif
+		
 		each_func(*this, n, U[0], D);
 	}
 
