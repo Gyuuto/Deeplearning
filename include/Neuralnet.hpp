@@ -256,7 +256,7 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 	MPI_Bcast(&seed, 1, MPI_INTEGER, 0, inner_world);
 #endif
 	m = std::mt19937(seed);
-	
+
 	// distributed data(WIP and perhaps will not distribute data)
 	std::vector<Mat> X(x[0].size(), Mat(num_dim_in, num_data)),
 		Y(y[0].size(), Mat(num_dim_out, num_data));

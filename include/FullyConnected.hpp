@@ -76,7 +76,6 @@ void FullyConnected::init ( std::mt19937& m )
 	
 	const double r = sqrt(6.0/(num_unit + prev_num_unit));
 	std::uniform_real_distribution<double> d_rand(-r, r);
-
 	for( int i = 0; i < num_map; ++i ){
 		for( int j = 0; j < prev_num_map; ++j ){
 			for( int k = 0; k < W[i][j].m; ++k ){
@@ -126,11 +125,11 @@ std::vector<std::vector<FullyConnected::Mat>> FullyConnected::calc_gradient ( co
 
 std::vector<FullyConnected::Mat> FullyConnected::calc_delta ( const std::vector<Mat>& U, const std::vector<Mat>& delta )
 {
-	std::vector<Mat> tmp_delta(num_map), tmp(prev_num_map), nx_delta(prev_num_map);
 	int offset = 0;
 #ifdef USE_MPI
 	offset = rank*num_unit/nprocs;
 #endif
+	std::vector<Mat> tmp_delta(num_map), tmp(prev_num_map), nx_delta(prev_num_map);
 
 	for( int i = 0; i < num_map; ++i ){
 		tmp_delta[i] = Mat(W[0][0].m, delta[i].n);
@@ -206,6 +205,8 @@ std::vector<FullyConnected::Mat> FullyConnected::apply ( const std::vector<Mat>&
 	for( int i = 0; i < num_map; ++i )
 		MPI_Allgatherv(&tmp_ret[i](0,0), size[rank], MPI_DOUBLE_PRECISION,
 					   &ret[i](0,0), &size[0], &offset[0], MPI_DOUBLE_PRECISION, inner_world);
+#else
+	ret = tmp_ret;
 #endif
 	
 	if( use_func )
