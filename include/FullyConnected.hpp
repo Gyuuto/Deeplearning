@@ -272,6 +272,13 @@ void FullyConnected::output_W ( const std::string& filename )
 	if( rank == 0 ){
 		all_W = std::vector<std::vector<Mat>>(num_map, std::vector<Mat>(prev_num_map, Mat(num_unit, prev_num_unit+1)));
 
+		for( int i = 0; i < num_map; ++i )
+			for( int j = 0; j < prev_num_map; ++j )
+				for( int k = 0; k < W[i][j].m; ++k )
+					for( int l = 0; l < W[i][j].n; ++l )
+						all_W[i][j](k,l) = W[i][j](k,l);
+		
+
 		for( int n = 1; n < nprocs; ++n ){
 			int M, N, offset, my_size;
 			MPI_Status tmp[256];
