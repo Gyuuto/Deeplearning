@@ -52,13 +52,6 @@ SparseFullyConnected::SparseFullyConnected( int prev_num_map, int prev_num_unit,
 	this->BETA = BETA;
 
 	func = f;
-
-	for( int i = 0; i < num_map; ++i ){
-		W.emplace_back(prev_num_map);
-		for( int j = 0; j < prev_num_map; ++j ){
-			W[i][j] = Mat(num_unit, 1+prev_num_unit);
-		}
-	}
 }
 
 #ifdef USE_MPI
@@ -67,9 +60,29 @@ void SparseFullyConnected::init( std::mt19937& m, MPI_Comm inner_world, MPI_Comm
 void SparseFullyConnected::init ( std::mt19937& m )
 #endif
 {
+#ifdef USE_MPI
+	this->inner_world = inner_world;
+	this->outer_world = outer_world;
+	MPI_Comm_size(inner_world, &(this->nprocs));
+	MPI_Comm_rank(inner_world, &(this->rank));
+
+	int offset, my_size;
+	// currently, divide by holizontal
+	my_size = (rank+1)*num_unit/nprocs - rank*num_unit/nprocs;
+	offset = rank*num_unit/nprocs;
+#else
+	int my_size = num_unit;
+#endif
+
+	for( int i = 0; i < num_map; ++i ){
+		W.emplace_back(prev_num_map);
+		for( int j = 0; j < prev_num_map; ++j ){
+			W[i][j] = Mat(my_size, 1+prev_num_unit);
+		}
+	}
+
 	const double r = sqrt(6.0/(prev_num_unit + num_unit));
 	std::uniform_real_distribution<double> d_rand(-r, r);
-	
 	rho = Mat::ones(num_unit, num_map);
 	for( int i = 0; i < num_map; ++i ){
 		for( int j = 0; j < prev_num_map; ++j ){
@@ -86,6 +99,11 @@ void SparseFullyConnected::finalize ()
 
 std::vector<std::vector<SparseFullyConnected::Mat>> SparseFullyConnected::calc_gradient ( const std::vector<Mat>& U, const std::vector<Mat>& delta )
 {
+	int offset = 0;
+#ifdef USE_MPI
+	offset = rank*num_unit/nprocs;
+#endif
+
 	std::vector<std::vector<Mat>> nabla(num_map);
 	for( int i = 0; i < num_map; ++i ){
 		nabla[i] = std::vector<Mat>(prev_num_map);
@@ -117,7 +135,12 @@ std::vector<std::vector<SparseFullyConnected::Mat>> SparseFullyConnected::calc_g
 				for( int l = 0; l < delta[i].n; ++l ) delta_(k,l) += BETA*KL;
 			}
 					
-			nabla[i][j] = delta_*Mat::transpose(V);
+			Mat tmp_delta(W[i][j].m, delta[i].n);
+			for( int k = 0; k < W[i][j].m; ++k )
+				for( int l = 0; l < delta[i].n; ++l )
+					tmp_delta(k,l) = delta_(k + offset,l);
+
+			nabla[i][j] = tmp_delta*Mat::transpose(V);
 		}
 	
 	return nabla;
@@ -125,21 +148,30 @@ std::vector<std::vector<SparseFullyConnected::Mat>> SparseFullyConnected::calc_g
 
 std::vector<SparseFullyConnected::Mat> SparseFullyConnected::calc_delta ( const std::vector<Mat>& U, const std::vector<Mat>& delta )
 {
+	int offset = 0;
+#ifdef USE_MPI
+	offset = rank*num_unit/nprocs;
+#endif
 	std::vector<Mat> tmp(prev_num_map), nx_delta(prev_num_map), delta_(num_map);
+
 	for( int i = 0; i < num_map; ++i ){
-		delta_[i] = delta[i];
+		delta_[i] = Mat(W[0][0].m, delta[i].n);//delta[i];
 		for( int j = 0; j < delta_[i].m; ++j )
 			for( int k = 0; k < delta_[i].n; ++k )
-				delta_[i](j,k) += BETA*((1.0-RHO)/(1.0-rho(j,i)) - RHO/rho(j,i));
+				delta_[i](j,k) = delta[i](offset+j, k) + BETA*((1.0-RHO)/(1.0-rho(offset + j,i)) - RHO/rho(offset + j,i));
 	}
 	
 	for( int i = 0; i < prev_num_map; ++i ){
 		tmp[i] = Mat(W[0][0].n, delta[0].n);
 		for( int j = 0; j < num_map; ++j )
-			tmp[i] = tmp[i] + Mat::transpose(W[j][i])*delta[j];
+			tmp[i] += Mat::transpose(W[j][i])*delta_[j];
 	}
+
+#ifdef USE_MPI
 	for( int i = 0; i < prev_num_map; ++i )
-		nx_delta[i] = Mat(tmp[0].m-1, tmp[0].n);
+		MPI_Allreduce(MPI_IN_PLACE, &tmp[i](0,0), tmp[i].m*tmp[i].n,
+					  MPI_DOUBLE_PRECISION, MPI_SUM, inner_world);
+#endif
 
 	for( int i = 0; i < prev_num_map; ++i ){
 		int j, k;
@@ -216,33 +248,96 @@ void SparseFullyConnected::set_W ( const std::string& filename )
 
 	for( int i = 0; i < num_map; ++i )
 		for( int j = 0; j < prev_num_map; ++j ){
-			ifs.read((char*)&W[i][j].m, sizeof(W[i][j].m));
-			ifs.read((char*)&W[i][j].n, sizeof(W[i][j].n));
+			int m, n;
+			ifs.read((char*)&m, sizeof(m));
+			ifs.read((char*)&n, sizeof(n));
+
+			int my_size = W[i][j].m*W[i][j].n, offset = 0;
+#ifdef USE_MPI
+			my_size = ((rank+1)*num_unit/nprocs - rank*num_unit/nprocs) * W[i][j].n;
+			offset = rank*num_unit/nprocs * W[i][j].n;
+			
+			ifs.seekg(offset*sizeof(double), std::ios::cur);
+
+#endif
 			for( int k = 0; k < W[i][j].m; ++k )
 				for( int l = 0; l < W[i][j].n; ++l )
 					ifs.read((char*)&W[i][j](k,l), sizeof(W[i][j](k,l)));
+#ifdef USE_MPI
+			ifs.seekg((num_unit * W[i][j].n - (offset + my_size))*sizeof(double), std::ios::cur);
+#endif
 		}
 }
 
 void SparseFullyConnected::output_W ( const std::string& filename )
 {
-	std::ofstream ofs(filename, std::ios::binary);
+#ifdef USE_MPI
+	std::vector<std::vector<Mat>> all_W;
+	if( rank == 0 ){
+		all_W = std::vector<std::vector<Mat>>(num_map, std::vector<Mat>(prev_num_map, Mat(num_unit, prev_num_unit+1)));
 
-	for( int i = 0; i < num_map; ++i )
-		for( int j = 0; j < prev_num_map; ++j ){
-			ofs.write((char*)&W[i][j].m, sizeof(W[i][j].m));
-			ofs.write((char*)&W[i][j].n, sizeof(W[i][j].n));
-			for( int k = 0; k < W[i][j].m; ++k )
-				for( int l = 0; l < W[i][j].n; ++l )
-					ofs.write((char*)&W[i][j](k,l), sizeof(W[i][j](k,l)));
+		for( int i = 0; i < num_map; ++i )
+			for( int j = 0; j < prev_num_map; ++j )
+				for( int k = 0; k < W[i][j].m; ++k )
+					for( int l = 0; l < W[i][j].n; ++l )
+						all_W[i][j](k,l) = W[i][j](k,l);
+		
+
+		for( int n = 1; n < nprocs; ++n ){
+			int M, N, offset, my_size;
+			MPI_Status tmp[256];
+			MPI_Recv(&M, 1, MPI_INTEGER, n, MPI_ANY_TAG, inner_world, tmp);
+			MPI_Recv(&N, 1, MPI_INTEGER, n, MPI_ANY_TAG, inner_world, tmp);
+			
+			my_size = ((n+1)*num_unit/nprocs - n*num_unit/nprocs) * N;
+			offset = n*num_unit/nprocs;
+
+			for( int i = 0; i < num_map; ++i )
+				for( int j = 0; j < prev_num_map; ++j )
+					MPI_Recv(&all_W[i][j](offset, 0), my_size, MPI_DOUBLE_PRECISION, n,
+							 MPI_ANY_TAG, inner_world, tmp);
 		}
+	}
+	else{
+		int my_size = ((rank+1)*num_unit/nprocs - rank*num_unit/nprocs) * W[0][0].n;
+		MPI_Send(&W[0][0].m, 1, MPI_INTEGER, 0, 0, inner_world);
+		MPI_Send(&W[0][0].n, 1, MPI_INTEGER, 0, 0, inner_world);
+
+		for( int i = 0; i < num_map; ++i )
+			for( int j = 0; j < prev_num_map; ++j )
+				MPI_Send(&W[i][j](0,0), my_size, MPI_DOUBLE_PRECISION, 0, 0, inner_world);
+	}
+#endif
+
+#ifdef USE_MPI
+	if( rank == 0 ){
+#endif
+		std::ofstream ofs(filename, std::ios::binary);
+
+		for( int i = 0; i < num_map; ++i )
+			for( int j = 0; j < prev_num_map; ++j ){
+				ofs.write((char*)&num_unit, sizeof(num_unit));
+				ofs.write((char*)&W[i][j].n, sizeof(W[i][j].n));
+				
+				for( int k = 0; k < num_unit; ++k )
+					for( int l = 0; l < W[i][j].n; ++l ){
+#ifdef USE_MPI
+						ofs.write((char*)&all_W[i][j](k,l), sizeof(all_W[i][j](k,l)));
+#else
+						ofs.write((char*)&W[i][j](k,l), sizeof(W[i][j](k,l)));
+#endif
+					}
+		}
+#ifdef USE_MPI
+	}
+#endif
 }
 
 #ifdef USE_MPI
 void SparseFullyConnected::param_mix ()
 {
 	int nprocs;
-	MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
+	MPI_Comm_size(outer_world, &nprocs);
 	if( W.size() == 0 ) return;
 
 	int cnt = W.size()*W[0].size()*W[0][0].m*W[0][0].n;
@@ -255,7 +350,7 @@ void SparseFullyConnected::param_mix ()
 				for( int l = 0; l < W[i][j].n; ++l )
 					w[idx++] = W[i][j](k,l);
 		
-	MPI_Allreduce(MPI_IN_PLACE, &w[0], cnt, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD);
+	MPI_Allreduce(MPI_IN_PLACE, &w[0], cnt, MPI_DOUBLE_PRECISION, MPI_SUM, outer_world);
 
 	idx = 0;
 	for( int i = 0; i < W.size(); ++i )
