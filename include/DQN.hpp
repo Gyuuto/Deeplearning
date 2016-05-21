@@ -193,8 +193,9 @@ void DQN::learning( const int max_iter, const int batch_size, const int C )
 	State cur_state = func_trans(-1);
 
 	int rank = 0;
+#ifdef USE_MPI
 	MPI_Comm_rank(inner_world, &rank);
-
+#endif
 	for( int n = 0; n < max_iter; ++n ){
 		int next_act_id = -1;
 
