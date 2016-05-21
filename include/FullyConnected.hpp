@@ -267,25 +267,66 @@ void FullyConnected::set_W ( const std::string& filename )
 
 void FullyConnected::output_W ( const std::string& filename )
 {
-	std::ofstream ofs(filename, std::ios::binary);
-
-	for( int i = 0; i < num_map; ++i )
-		for( int j = 0; j < prev_num_map; ++j ){
-			ofs.write((char*)&num_unit, sizeof(num_unit));
-			ofs.write((char*)&W[i][j].n, sizeof(W[i][j].n));
-
 #ifdef USE_MPI
-			for( int n = 0; n < nprocs; ++n ){
-				if( rank == n )
-#endif
-					for( int k = 0; k < W[i][j].m; ++k )
-						for( int l = 0; l < W[i][j].n; ++l )
-							ofs.write((char*)&W[i][j](k,l), sizeof(W[i][j](k,l)));
-#ifdef USE_MPI
-				MPI_Barrier(inner_world);
-			}
-#endif
+	std::vector<std::vector<Mat>> all_W;
+	if( rank == 0 ){
+		all_W = std::vector<std::vector<Mat>>(num_map, std::vector<Mat>(prev_num_map, Mat(num_unit, prev_num_unit+1)));
+
+		for( int i = 0; i < num_map; ++i )
+			for( int j = 0; j < prev_num_map; ++j )
+				for( int k = 0; k < W[i][j].m; ++k )
+					for( int l = 0; l < W[i][j].n; ++l )
+						all_W[i][j](k,l) = W[i][j](k,l);
+		
+
+		for( int n = 1; n < nprocs; ++n ){
+			int M, N, offset, my_size;
+			MPI_Status tmp[256];
+			MPI_Recv(&M, 1, MPI_INTEGER, n, MPI_ANY_TAG, inner_world, tmp);
+			MPI_Recv(&N, 1, MPI_INTEGER, n, MPI_ANY_TAG, inner_world, tmp);
+			
+			my_size = ((n+1)*num_unit/nprocs - n*num_unit/nprocs) * N;
+			offset = n*num_unit/nprocs;
+
+			for( int i = 0; i < num_map; ++i )
+				for( int j = 0; j < prev_num_map; ++j )
+					MPI_Recv(&all_W[i][j](offset, 0), my_size, MPI_DOUBLE_PRECISION, n,
+							 MPI_ANY_TAG, inner_world, tmp);
 		}
+	}
+	else{
+		int my_size = ((rank+1)*num_unit/nprocs - rank*num_unit/nprocs) * W[0][0].n;
+		MPI_Send(&W[0][0].m, 1, MPI_INTEGER, 0, 0, inner_world);
+		MPI_Send(&W[0][0].n, 1, MPI_INTEGER, 0, 0, inner_world);
+
+		for( int i = 0; i < num_map; ++i )
+			for( int j = 0; j < prev_num_map; ++j )
+				MPI_Send(&W[i][j](0,0), my_size, MPI_DOUBLE_PRECISION, 0, 0, inner_world);
+	}
+#endif
+
+#ifdef USE_MPI
+	if( rank == 0 ){
+#endif
+		std::ofstream ofs(filename, std::ios::binary);
+
+		for( int i = 0; i < num_map; ++i )
+			for( int j = 0; j < prev_num_map; ++j ){
+				ofs.write((char*)&num_unit, sizeof(num_unit));
+				ofs.write((char*)&W[i][j].n, sizeof(W[i][j].n));
+				
+				for( int k = 0; k < num_unit; ++k )
+					for( int l = 0; l < W[i][j].n; ++l ){
+#ifdef USE_MPI
+						ofs.write((char*)&all_W[i][j](k,l), sizeof(all_W[i][j](k,l)));
+#else
+						ofs.write((char*)&W[i][j](k,l), sizeof(W[i][j](k,l)));
+#endif
+					}
+		}
+#ifdef USE_MPI
+	}
+#endif
 }
 
 #ifdef USE_MPI
