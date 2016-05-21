@@ -126,6 +126,8 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 	const int Y_ = num_unit/ldu, X_ = ldu;
 	int i, j, k, l, s, t, y, x;
 	std::vector<Mat> delta_mat(num_map), U_mat(prev_num_map);
+#pragma omp parallel for default(none) \
+	private(i,j,k) shared(my_size, offset, X_, Y_, delta_mat, delta)
 	for( i = 0; i < num_map; ++i ){
 		delta_mat[i] = Mat(m*n, my_size);
 		for( j = 0; j < m*n; ++j ){
