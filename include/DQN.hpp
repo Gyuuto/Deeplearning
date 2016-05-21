@@ -93,7 +93,10 @@ private:
 	std::vector<std::shared_ptr<Layer>> layers;
 
 	Neuralnet *Q, *Q_tilde;
-	
+
+#ifdef USE_MPI
+	MPI_Comm inner_world, outer_world;
+#endif
 public:
 #ifdef USE_MPI
 	DQN ( const int mem_capacity, const int max_id,
@@ -131,13 +134,20 @@ DQN::DQN(const int mem_capacity, const int max_id,
 	alpha(alpha), gamma(gamma), epsilon(epsilon),
 	func_trans(func_trans), func_act(func_act), layers(layers)
 {
-	mt = std::mt19937(time(NULL));
+	int seed = time(NULL);
+
+#ifdef USE_MPI
+	MPI_Bcast(&seed, 1, MPI_INTEGER, 0, inner_world);
+#endif
+	mt = std::mt19937(seed);
 	i_rand = std::uniform_int_distribution<int>(0, max_id-1);
 	d_rand = std::uniform_real_distribution<double>(0.0, 1.0);
 	
 	mem.resize(mem_capacity);
 
 #ifdef USE_MPI
+	this->inner_world = inner_world;
+	this->outer_world = outer_world;
 	Q = new Neuralnet(std::shared_ptr<LossFunction>(new MaxSquare), outer_world, inner_world);
 	// Q_tilde = new Neuralnet(std::shared_ptr<LossFunction>(new MaxSquare), outer_world, inner_world);
 #else
@@ -173,6 +183,7 @@ int DQN::get_next_action ( const std::vector<Vec>& state )
 	return id;
 }
 
+#include <chrono>
 void DQN::learning( const int max_iter, const int batch_size, const int C )
 {
 	Q->set_EPS(alpha);
@@ -180,10 +191,15 @@ void DQN::learning( const int max_iter, const int batch_size, const int C )
 	Q->set_BATCHSIZE(batch_size);
 
 	State cur_state = func_trans(-1);
+
+	int rank = 0;
+	MPI_Comm_rank(inner_world, &rank);
+
 	for( int n = 0; n < max_iter; ++n ){
 		int next_act_id = -1;
-		
-		if( mem_id < batch_size || d_rand(mt) - epsilon < 0.0 ){ // random action
+
+		double prob = d_rand(mt);
+		if( mem_id < batch_size || prob - epsilon < 0.0 ){ // random action
 			std::vector<int> possible;
 			for( int i = 0; i < max_id; ++i ) if( func_act(i) ) possible.push_back(i);
 
@@ -195,7 +211,6 @@ void DQN::learning( const int max_iter, const int batch_size, const int C )
 		}
 
 		State next_state = func_trans(next_act_id);
-		
 		mem[mem_id%mem_capacity] = DQN_Memory(cur_state.s, next_state.s, next_act_id, next_state.r);
 		++mem_id;
 
@@ -203,17 +218,25 @@ void DQN::learning( const int max_iter, const int batch_size, const int C )
 		const int data_size = std::min(mem_id, mem_capacity);
 		const int dim = next_state.s.size();
 		if( data_size > batch_size ){
-			std::vector<std::vector<Vec>> x(data_size), d(data_size);
-			for( int i = 0; i < data_size; ++i ){
-				x[i] = mem[i].s;
+			std::vector<int> idx(data_size);
+			std::vector<std::vector<Vec>> x(batch_size), x_n(batch_size), d(batch_size);
 
-				auto tmp = Q->apply(std::vector<std::vector<Vec>>(1, mem[i].s_n));
+			std::iota( idx.begin(), idx.end(), 0 );
+			std::shuffle( idx.begin(), idx.end(), mt );
+			
+			for( int i = 0; i < batch_size; ++i ){
+				x[i] = mem[idx[i]].s;
+				x_n[i] = mem[idx[i]].s_n;
+			}
+
+			auto tmp = Q->apply(x_n);
+			for( int i = 0; i < batch_size; ++i ){
 				int id = 0;
-				double val = tmp[0][0][0];
+				double val = tmp[i][0][0];
 				for( int j = 1; j < max_id; ++j ){
-					if( val < tmp[0][0][j] ){
+					if( val < tmp[i][0][j] ){
 						id = j;
-						val = tmp[0][0][j];
+						val = tmp[i][0][j];
 					}
 				}
 				d[i] = std::vector<Vec>(1, Vec(max_id, 0.0));
@@ -221,8 +244,9 @@ void DQN::learning( const int max_iter, const int batch_size, const int C )
 			}
 
 			// do back propagation with mem
-			Q->learning(x, d, data_size/batch_size*C);
+			Q->learning(x, d, 1);
 		}
+
 		cur_state = next_state;
 	}
 }
