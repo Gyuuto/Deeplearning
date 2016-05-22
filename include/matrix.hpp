@@ -271,12 +271,11 @@ struct Matrix
 		for( int i = 0; i < m; ++i ) for( int j = 0; j < n; ++j ) ret(i,j) = tmp_ret[i+m*j];
 #else
 		int i, j, k;
-		double sum;
-#pragma omp parallel for default(none) \
-	private(i,j,k,sum) shared(m,n,l,m1,m2,ret)
+#pragma omp parallel for default(none)	\
+	private(i,j,k) shared(m,n,l,m1,m2,ret)
 		for( i = 0; i < m; ++i )
 			for( j = 0; j < n; ++j ){
-				sum = 0.0;
+				double sum = 0.0;
 				for( k = 0; k < l; ++k )
 					sum += m1(i,k)*m2(k,j);
 				ret(i,j) = sum;

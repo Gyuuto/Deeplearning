@@ -126,10 +126,10 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 	const int Y_ = num_unit/ldu, X_ = ldu;
 	int i, j, k, l, s, t, y, x;
 	std::vector<Mat> delta_mat(num_map), U_mat(prev_num_map);
-#pragma omp parallel for default(none) \
-	private(i,j,k) shared(my_size, offset, X_, Y_, delta_mat, delta)
 	for( i = 0; i < num_map; ++i ){
 		delta_mat[i] = Mat(m*n, my_size);
+#pragma omp parallel for default(none) \
+	private(j,k) shared(i,my_size, offset, X_, Y_, delta_mat, delta)
 		for( j = 0; j < m*n; ++j ){
 			int s = j%m - (m/2), t = j/m - (n/2);
 			for( k = 0; k < my_size; ++k ){
@@ -207,10 +207,10 @@ std::vector<Convolutional::Mat> Convolutional::calc_delta ( const std::vector<Ma
 	for( int i = 0; i < prev_num_map; ++i ) tmp[i] = Mat(prev_num_unit, U[0].n);
 
 	Mat kernel(m*n*num_map, prev_num_map);
-#pragma omp parallel for default(none) \
-	private(i,j,k,l) shared(kernel)
 	for( i = 0; i < num_map; ++i )
 		for( j = 0; j < prev_num_map; ++j )
+#pragma omp parallel for default(none) \
+	private(k,l) shared(i,j, kernel)
 			for( k = 0; k < m; ++ k )
 				for( l = 0; l < n; ++l )
 					kernel(i*(m*n) + k*m + l, j) = W[i][j](l, k);
@@ -254,7 +254,7 @@ std::vector<Convolutional::Mat> Convolutional::calc_delta ( const std::vector<Ma
 
 #pragma omp parallel for default(none) \
 	private(i,j,k) shared(nx_delta, tmp, U)
-	for( int i = 0; i < prev_num_map; ++i )
+	for( i = 0; i < prev_num_map; ++i )
 		nx_delta[i] = Mat::hadamard(tmp[i], (*prev_func)(U[i], true));
 	
 	return nx_delta;
