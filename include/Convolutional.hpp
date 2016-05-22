@@ -124,10 +124,9 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 	const int Y = prev_num_unit/prev_ldu, X = prev_ldu;
 	const int Y_ = num_unit/ldu, X_ = ldu;
 	int i, j, k, l, s, t, y, x;
-	std::vector<Mat> delta_mat(num_map);
+	Mat delta_mat(m*n*num_map, my_size);
 	auto beg = std::chrono::system_clock::now();
 	for( i = 0; i < num_map; ++i ){
-		delta_mat[i] = Mat(m*n, my_size);
 #pragma omp parallel for default(none) \
 	private(j,k) shared(i,my_size, offset, X_, Y_, delta_mat, delta)
 		for( j = 0; j < m*n; ++j ){
@@ -136,10 +135,10 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 				int idx1 = (offset + k)/delta[0].m, idx2 = (offset + k)%delta[0].m;
 				int nx = idx2%ldu - s, ny = idx2/ldu - t;
 				if( nx < 0 || ny < 0 || X_ <= nx || Y_ <= ny ){
-					delta_mat[i](j, k) = 0.0;
+					delta_mat(i*m*n + j, k) = 0.0;
 					continue;
 				}
-				delta_mat[i](j, k) =  delta[i](ny*ldu + nx, idx1);
+				delta_mat(i*m*n + j, k) =  delta[i](ny*ldu + nx, idx1);
 			}
 		}
 	}
@@ -154,30 +153,22 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 		}
 	}
 	
-	beg = std::chrono::system_clock::now();
 	long long W_time = 0, W_time2 = 0, b_time = 0;
-	for( i = 0; i < num_map; ++i ){
-		auto beg_in = std::chrono::system_clock::now();
-		auto tmp = delta_mat[i] * U_mat;
-		auto end_in = std::chrono::system_clock::now();
-		W_time += std::chrono::duration_cast<std::chrono::milliseconds>(end_in - beg_in).count();
+	beg = std::chrono::system_clock::now();
+	auto nabla_mat = delta_mat * U_mat;
 
-		beg_in = std::chrono::system_clock::now();
+	for( i = 0; i < num_map; ++i ){
 		for( j = 0; j < prev_num_map; ++j ){
 #pragma omp parallel for default(none)			\
-	private(k,l) shared(i,j, my_size, nabla,tmp)
+	private(k,l) shared(i,j, my_size, nabla,nabla_mat)
 			for( k = 0; k < n; ++k )
 				for( l = 0; l < m; ++l )
-					nabla[i][j](k, l) = tmp(l*n + k, j);
+					nabla[i][j](k, l) = nabla_mat(i*m*n + l*n + k, j);
 #ifdef USE_MPI
 			MPI_Allreduce(MPI_IN_PLACE, &nabla[i][j](0,0), m*n, MPI_DOUBLE_PRECISION, MPI_SUM, inner_world);
 #endif
 		}
-		end_in = std::chrono::system_clock::now();
-		W_time2 += std::chrono::duration_cast<std::chrono::milliseconds>(end_in - beg_in).count();
-
-		beg_in = std::chrono::system_clock::now();
-
+	
 		double sum = 0.0;
 		for( j = 0; j < delta[i].n; ++j )
 #pragma omp parallel for reduction(+:sum) default(none)	\
@@ -185,9 +176,6 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 			for( k = 0; k < delta[i].m; ++k )
 				sum += delta[i](k,j);
 		d_bias[i] = sum / delta[i].n;
-		
-		end_in = std::chrono::system_clock::now();
-		b_time += std::chrono::duration_cast<std::chrono::milliseconds>(end_in - beg_in).count();
 	}
 	end = std::chrono::system_clock::now();
 	// printf("in conv calc_grad, calc grad %lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
