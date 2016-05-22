@@ -12,6 +12,12 @@
 
 #ifdef USE_EIGEN
 #include <Eigen>
+#elif USE_BLAS
+extern "C"{
+	void dgemm_(char* transa, char* transb, int* m, int* n, int* k,
+				double* alpha, double* A, int* lda, double* B, int* ldb,
+				double* beta, double* C, int* ldc);
+	};
 #endif
 
 template<class T>
@@ -252,14 +258,24 @@ struct Matrix
 
 #ifdef USE_EIGEN
 		ret.v = m1.v*m2.v;
+#elif USE_BLAS
+		double ONE = 1.0, ZERO = 0.0;
+		std::vector<double> tmp_m1(m1.m*m1.n), tmp_m2(m2.m*m2.n), tmp_ret(m*n);
+
+		for( int i = 0; i < m1.m; ++i ) for( int j = 0; j < m1.n; ++j ) tmp_m1[i+m1.m*j] = m1(i,j);
+		for( int i = 0; i < m2.m; ++i ) for( int j = 0; j < m2.n; ++j ) tmp_m2[i+m2.m*j] = m2(i,j);
+
+		int lda = m1.m, ldb = m2.m;
+		dgemm_("N", "N", &m, &n, &l, &ONE, &tmp_m1[0], &lda, &tmp_m2[0], &ldb, &ZERO, &tmp_ret[0], &lda);
+
+		for( int i = 0; i < m; ++i ) for( int j = 0; j < n; ++j ) ret(i,j) = tmp_ret[i+m*j];
 #else
 		int i, j, k;
-		double sum;
-#pragma omp parallel for default(none) \
-	private(i,j,k,sum) shared(m,n,l,m1,m2,ret)
+#pragma omp parallel for default(none)	\
+	private(i,j,k) shared(m,n,l,m1,m2,ret)
 		for( i = 0; i < m; ++i )
 			for( j = 0; j < n; ++j ){
-				sum = 0.0;
+				double sum = 0.0;
 				for( k = 0; k < l; ++k )
 					sum += m1(i,k)*m2(k,j);
 				ret(i,j) = sum;
