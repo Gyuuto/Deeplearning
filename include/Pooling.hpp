@@ -81,31 +81,37 @@ std::vector<Pooling::Mat> Pooling::calc_delta ( const std::vector<Mat>& U, const
 	const int Y = prev_num_unit/prev_ldu, X = prev_ldu;
 	std::vector<Mat> nx_delta(prev_num_map);
 
-	int i, j, x, y, s, t;
-#pragma omp parallel for default(none) \
-	private(i,j,s,t,y,x) shared(nx_delta, delta, U)
+	int i, j, k, x, y, s, t;
 	for( i = 0; i < prev_num_map; ++i ){
-		auto U_ = (*prev_func)(U[i], true);
+		auto U_apply = (*prev_func)(U[i], false);
+		auto U_diff = (*prev_func)(U[i], true);
 		nx_delta[i] = Mat(U[i].m, U[i].n);
+
+#pragma omp parallel for default(none) \
+	private(j,k) shared(i, nx_delta)
+		for( j = 0; j < nx_delta[i].m; ++j )
+			for( k = 0; k < nx_delta[i].n; ++k )
+				nx_delta[i](j,k) = 0.0;
+		
+#pragma omp parallel for shared(+:nx_delta[i]) default(none)			\
+	private(j,s,t,y,x) shared(i, nx_delta, delta, U_apply, U_diff)
 		for( j = 0; j < U[i].n; ++j )
-			for( x = 0; x < X; x += stride )
-				for( y = 0; y < Y; y += stride ){
-					int idx1 = x/stride + y/stride*ldu, idx2 = x+y*prev_ldu;
-					double val = U[i](x+y*prev_ldu,j);
+			for( y = 0; y < Y; y += stride )
+				for( x = 0; x < X; x += stride ){
+					int idx = x + y*prev_ldu;
+					double val = U_apply(idx,j);
 					
 					for( s = 0; s < m; ++s )
 						for( t = 0; t < n; ++t ){
 							int nx = x + s, ny = y + t;
-							if( nx < 0 || nx >= X|| ny < 0 || ny >= Y ) continue;
-							nx = (x + s)/stride; ny = (y + t)/stride;
-
-							if( val < U[i]((x+s)+(y+t)*prev_ldu,j) ){
-								idx1 = nx+ny*ldu;
-								idx2 = (x+s)+(y+t)*prev_ldu;
-								val = U[i](idx2,j);
+							if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
+							
+							if( val < U_apply(nx+ny*prev_ldu,j) ){
+								idx = nx + ny*prev_ldu;
+								val = U_apply(idx,j);
 							}
 						}
-					nx_delta[i](idx2,j) = delta[i](idx1,j) * U_(idx2,j);
+					nx_delta[i](idx,j) += delta[i](x/stride + y/stride*ldu,j) * U_diff(idx,j);
 				}
 	}
 	
@@ -128,18 +134,20 @@ std::vector<Pooling::Mat> Pooling::apply ( const std::vector<Mat>& U, bool use_f
 	private(i,j,y,x,s,t) shared(new_S, ret, U)
 	for( i = 0; i < num_map; ++i ){
 		ret[i] = Mat(num_unit, U[0].n);
+		Mat U_ = (*prev_func)(U[i], false);
+
 		for( j = 0; j < U[0].n; ++j ){
 			for( y = 0; y < Y; y += stride )
 				for( x = 0; x < X; x += stride ){
 					int idx = 0;
-					double val = U[i](x+prev_ldu*y,j);
+					double val = U_(x+prev_ldu*y,j);
 
 					for( s = 0; s < m; ++s )
 						for( t = 0; t < n; ++t ){
 							int nx = x+s, ny = y+t;
 							if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
-							if( val < U[i](nx + ny*prev_ldu,j) ){
-								val = U[i](nx + ny*prev_ldu,j);
+							if( val < U_(nx + ny*prev_ldu,j) ){
+								val = U_(nx + ny*prev_ldu,j);
 								idx = nx + ny*prev_ldu;
 							}
 						}
