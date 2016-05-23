@@ -102,7 +102,6 @@ void Convolutional::finalize ()
 {
 }
 
-#include <chrono>
 std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( const std::vector<Mat>& U, const std::vector<Mat>& delta )
 {
 	int offset = 0, my_size = delta[0].n*delta[0].m;
@@ -125,7 +124,6 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 	const int Y_ = num_unit/ldu, X_ = ldu;
 	int i, j, k, l, s, t, y, x;
 	Mat delta_mat(m*n*num_map, my_size);
-	auto beg = std::chrono::system_clock::now();
 	for( i = 0; i < num_map; ++i ){
 #pragma omp parallel for default(none) \
 	private(j,k) shared(i,my_size, offset, X_, Y_, delta_mat, delta)
@@ -142,8 +140,6 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 			}
 		}
 	}
-	auto end = std::chrono::system_clock::now();
-	// printf("in conv calc_grad, init delta_mat %lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
 
 	Mat U_mat(my_size, prev_num_map);
 	for( i = 0; i < prev_num_map; ++i ){
@@ -153,10 +149,7 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 		}
 	}
 	
-	long long W_time = 0, W_time2 = 0, b_time = 0;
-	beg = std::chrono::system_clock::now();
 	auto nabla_mat = delta_mat * U_mat;
-
 	for( i = 0; i < num_map; ++i ){
 		for( j = 0; j < prev_num_map; ++j ){
 #pragma omp parallel for default(none)			\
@@ -177,9 +170,6 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 				sum += delta[i](k,j);
 		d_bias[i] = sum / delta[i].n;
 	}
-	end = std::chrono::system_clock::now();
-	// printf("in conv calc_grad, calc grad %lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
-	// printf("  %lld %lld %lld\n", W_time, W_time2, b_time);
 
 	return nabla;				
 }

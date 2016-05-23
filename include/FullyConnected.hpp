@@ -91,7 +91,6 @@ void FullyConnected::finalize ()
 {
 }
 
-#include <chrono>
 std::vector<std::vector<FullyConnected::Mat>> FullyConnected::calc_gradient ( const std::vector<Mat>& U, const std::vector<Mat>& delta )
 {
 	int offset = 0;
