@@ -198,10 +198,32 @@ void Neuralnet::set_UPDATEITER ( const int& UPDATE_ITER )
 void Neuralnet::add_layer( const std::shared_ptr<Layer>& layer )
 {
 	std::shared_ptr<Function> f;
+	int prev_num_unit = -1, prev_num_map = -1;
+
 	if( this->layer.size() == 0 )
 		f = std::shared_ptr<Function>(new Identity);
-	else
+	else{
+		prev_num_unit = this->layer[this->layer.size()-1]->get_num_unit();
+		prev_num_map = this->layer[this->layer.size()-1]->get_num_map();
 		f = this->layer[this->layer.size()-1]->get_function();
+	}
+
+	if( prev_num_unit != -1 &&
+		(layer->get_prev_num_map() != prev_num_map || layer->get_prev_num_unit() != prev_num_unit)
+		){
+		int rank = 0;
+#ifdef USE_MPI
+		MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+#endif
+		if( rank == 0 ){
+			if( layer->get_prev_num_map() != prev_num_map )
+				printf("WARNING : Wrong prev_num_map on  layer %lu.\n  Estimate prev_num_map = %d\n",
+					   this->layer.size() + 1, prev_num_map);
+			if( layer->get_prev_num_unit() != prev_num_unit )
+				printf("WARNING : Wrong prev_num_unit on layer %lu.\n  Estimate prev_num_unit = %d\n",
+					   this->layer.size() + 1, prev_num_unit);
+		}
+	}
 	
 	this->layer.emplace_back( layer );
 
