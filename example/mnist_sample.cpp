@@ -66,10 +66,10 @@ int main( int argc, char* argv[] )
 		train_lab.push_back(tmp_lab);
 		
 		vector<vector<double>> tmp(1, vector<double>(28*28));
-		for( int i = 0; i < 28*28; ++i ){
+		for( int j = 0; j < 28*28; ++j ){
 			unsigned char c;
 			train_image.read((char*)&c, sizeof(unsigned char));
-			tmp[0][i] = (c/255.0);
+			tmp[0][j] = (c/255.0);
 		}
 		
 		train_x.push_back(tmp);
@@ -93,10 +93,10 @@ int main( int argc, char* argv[] )
 		test_lab.push_back(tmp_lab);
 		
 		vector<vector<double>> tmp(1, vector<double>(28*28));
-		for( int i = 0; i < 28*28; ++i ){
+		for( int j = 0; j < 28*28; ++j ){
 			unsigned char c;
 			test_image.read((char*)&c, sizeof(unsigned char));
-			tmp[0][i] = (c/255.0 - ave[0][i]);
+			tmp[0][j] = (c/255.0 - ave[0][j]);
 		}
 		
 		test_x.push_back(tmp);
