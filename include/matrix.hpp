@@ -12,6 +12,12 @@
 
 #ifdef USE_EIGEN
 #include <Eigen>
+#elif USE_BLAS
+extern "C"{
+	void dgemm_(char* transa, char* transb, int* m, int* n, int* k,
+				double* alpha, double* A, int* lda, double* B, int* ldb,
+				double* beta, double* C, int* ldc);
+	};
 #endif
 
 template<class T>
@@ -19,7 +25,7 @@ struct Matrix
 {
 	int m, n;
 #ifdef USE_EIGEN
-	Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> v;
+	Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> v;
 #else
 	std::vector<T> v;
 #endif
@@ -28,7 +34,7 @@ struct Matrix
 	Matrix( const int& m, const int& n ) :m(m), n(n)
 	{
 #ifdef USE_EIGEN
-		v = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>(m, n);
+		v = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>(m, n);
 		for( int i = 0; i < m; ++i ) for( int j = 0; j < n; ++j ) v(i,j) = T();
 #else
 		v = std::vector<T>(m*n, T());
@@ -38,7 +44,7 @@ struct Matrix
 	Matrix( const std::vector<double>& v ):m(v.size()), n(1)
 	{
 #ifdef USE_EIGEN
-		this->v = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>(m, n);
+		this->v = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>(m, n);
 		for( int i = 0; i < m; ++i ) this->v(i, 0) = v[i];
 #else
 		this->v = std::vector<T>(v.size(), T());
@@ -47,7 +53,7 @@ struct Matrix
 	}
 
 #ifdef USE_EIGEN
-	Matrix( const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>& A ) :v(A), m(A.rows()), n(A.cols()) {}
+	Matrix( const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>& A ) :v(A), m(A.rows()), n(A.cols()) {}
 #endif
 	
 	static Matrix<T> eye ( const int& m, const int& n )
@@ -142,7 +148,7 @@ struct Matrix
 	private(i,j) shared(m,n,m1)
 		for( i = 0; i < m; ++i )
 			for( j = 0; j < n; ++j )
-				*this(i,j) += m1(i,j);
+				(*this)(i,j) += m1(i,j);
 #endif
 
 		return *this;
@@ -159,7 +165,7 @@ struct Matrix
 	private(i,j) shared(m,n,m1)
 		for( i = 0; i < m; ++i )
 			for( j = 0; j < n; ++j )
-				*this(i,j) -= m1(i,j);
+				(*this)(i,j) -= m1(i,j);
 #endif
 
 		return *this;
@@ -252,14 +258,31 @@ struct Matrix
 
 #ifdef USE_EIGEN
 		ret.v = m1.v*m2.v;
+#elif USE_BLAS
+		double ONE = 1.0, ZERO = 0.0;
+		std::vector<double> tmp_m1(m1.m*m1.n), tmp_m2(m2.m*m2.n), tmp_ret(m*n);
+
+		int i, j;
+#pragma omp parallel for default(none) \
+	private(i,j) shared(tmp_m1, m1)
+		for( i = 0; i < m1.m; ++i ) for( j = 0; j < m1.n; ++j ) tmp_m1[i+m1.m*j] = m1(i,j);
+#pragma omp parallel for default(none) \
+	private(i,j) shared(tmp_m2, m2)
+		for( i = 0; i < m2.m; ++i ) for( j = 0; j < m2.n; ++j ) tmp_m2[i+m2.m*j] = m2(i,j);
+
+		int lda = m1.m, ldb = m2.m;
+		dgemm_("N", "N", &m, &n, &l, &ONE, &tmp_m1[0], &lda, &tmp_m2[0], &ldb, &ZERO, &tmp_ret[0], &lda);
+
+#pragma omp parallel for default(none) \
+	private(i,j) shared(ret, tmp_ret, m, n)
+		for( i = 0; i < m; ++i ) for( j = 0; j < n; ++j ) ret(i,j) = tmp_ret[i+m*j];
 #else
 		int i, j, k;
-		double sum;
-#pragma omp parallel for default(none) \
-	private(i,j,k,sum) shared(m,n,l,m1,m2,ret)
+#pragma omp parallel for default(none)	\
+	private(i,j,k) shared(m,n,l,m1,m2,ret)
 		for( i = 0; i < m; ++i )
 			for( j = 0; j < n; ++j ){
-				sum = 0.0;
+				double sum = 0.0;
 				for( k = 0; k < l; ++k )
 					sum += m1(i,k)*m2(k,j);
 				ret(i,j) = sum;

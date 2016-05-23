@@ -7,15 +7,19 @@ class Pooling : public Layer
 {
 private:
 	int prev_ldu, ldu;
-	int m, n, stlide;
+	int m, n, stride;
 	std::vector<Mat> S;
 public:
 	Pooling( int prev_num_map, int prev_num_unit, int prev_ldu,
 			 int num_map, int num_unit, int ldu,
-			 int m, int n, int stlide, 
+			 int m, int n, int stride, 
 			 const std::shared_ptr<Function>& f );
 	
-	void init ( std::mt19937& m );
+#ifdef USE_MPI
+	void init( std::mt19937& m, MPI_Comm inner_world, MPI_Comm outer_world );
+#else
+	void init( std::mt19937& m );
+#endif
 	void finalize();
 
 	std::vector<std::vector<Mat>> calc_gradient ( const std::vector<Mat>& U, const std::vector<Mat>& delta );
@@ -30,12 +34,14 @@ public:
 	void set_W ( const std::string& filename );
 	void output_W ( const std::string& filename );
 
+#ifdef USE_MPI
 	void param_mix ();
+#endif
 };
 
 Pooling::Pooling( int prev_num_map, int prev_num_unit, int prev_ldu,
 				  int num_map, int num_unit, int ldu,
-				  int m, int n, int stlide, 
+				  int m, int n, int stride, 
 				  const std::shared_ptr<Function>& f )
 {
 	this->prev_num_map = prev_num_map;
@@ -46,12 +52,16 @@ Pooling::Pooling( int prev_num_map, int prev_num_unit, int prev_ldu,
 	this->num_unit = num_unit;
 	this->ldu = ldu;
 
-	this->m = m; this->n = n; this->stlide = stlide;
+	this->m = m; this->n = n; this->stride = stride;
 
 	func = f;
 }
 
+#ifdef USE_MPI
+void Pooling::init ( std::mt19937& m, MPI_Comm inner_world, MPI_Comm outer_world )
+#else
 void Pooling::init ( std::mt19937& m )
+#endif
 {
 	W = std::vector<std::vector<Mat>>();
 }
@@ -73,21 +83,21 @@ std::vector<Pooling::Mat> Pooling::calc_delta ( const std::vector<Mat>& U, const
 
 	int i, j, x, y, s, t;
 #pragma omp parallel for default(none) \
-	private(i,j,s,t,y,x) shared(Y, X, nx_delta, delta, U)
+	private(i,j,s,t,y,x) shared(nx_delta, delta, U)
 	for( i = 0; i < prev_num_map; ++i ){
 		auto U_ = (*prev_func)(U[i], true);
 		nx_delta[i] = Mat(U[i].m, U[i].n);
 		for( j = 0; j < U[i].n; ++j )
-			for( x = 0; x < X; x += stlide )
-				for( y = 0; y < Y; y += stlide ){
-					int idx1 = x/stlide + y/stlide*ldu, idx2 = x+y*prev_ldu;
+			for( x = 0; x < X; x += stride )
+				for( y = 0; y < Y; y += stride ){
+					int idx1 = x/stride + y/stride*ldu, idx2 = x+y*prev_ldu;
 					double val = U[i](x+y*prev_ldu,j);
 					
 					for( s = 0; s < m; ++s )
 						for( t = 0; t < n; ++t ){
 							int nx = x + s, ny = y + t;
 							if( nx < 0 || nx >= X|| ny < 0 || ny >= Y ) continue;
-							nx = (x + s)/stlide; ny = (y + t)/stlide;
+							nx = (x + s)/stride; ny = (y + t)/stride;
 
 							if( val < U[i]((x+s)+(y+t)*prev_ldu,j) ){
 								idx1 = nx+ny*ldu;
@@ -115,12 +125,12 @@ std::vector<Pooling::Mat> Pooling::apply ( const std::vector<Mat>& U, bool use_f
 
 	int i,j,k,y,x,s,t;
 #pragma omp parallel for default(none) \
-	private(i,j,y,x,s,t) shared(new_S, Y, X, ret, U)
+	private(i,j,y,x,s,t) shared(new_S, ret, U)
 	for( i = 0; i < num_map; ++i ){
 		ret[i] = Mat(num_unit, U[0].n);
 		for( j = 0; j < U[0].n; ++j ){
-			for( y = 0; y < Y; y += stlide )
-				for( x = 0; x < X; x += stlide ){
+			for( y = 0; y < Y; y += stride )
+				for( x = 0; x < X; x += stride ){
 					int idx = 0;
 					double val = U[i](x+prev_ldu*y,j);
 
@@ -133,8 +143,8 @@ std::vector<Pooling::Mat> Pooling::apply ( const std::vector<Mat>& U, bool use_f
 								idx = nx + ny*prev_ldu;
 							}
 						}
-					ret[i](x/stlide + (y/stlide)*ldu,j) = val;
-					new_S[i](x/stlide + (y/stlide)*ldu,j) = idx;
+					ret[i](x/stride + (y/stride)*ldu,j) = val;
+					new_S[i](x/stride + (y/stride)*ldu,j) = idx;
 				}
 		}
 	}
@@ -178,16 +188,16 @@ std::vector<Pooling::Mat> Pooling::unpooling ( const std::vector<Mat>& U )
 
 	int i,j,k,y,x;
 #pragma omp parallel for default(none) \
-	private(i,j,y,x) shared(Y, X, ret, U)
+	private(i,j,y,x) shared(ret, U)
 	for( i = 0; i < num_map; ++i ){
 		ret[i] = Mat(prev_num_unit, U[0].n);
 		for( j = 0; j < U[0].n; ++j ){
-			for( y = 0; y < Y; y += stlide )
-				for( x = 0; x < X; x += stlide ){
-					int idx = S[i](x/stlide + (y/stlide)*ldu, j);
+			for( y = 0; y < Y; y += stride )
+				for( x = 0; x < X; x += stride ){
+					int idx = S[i](x/stride + (y/stride)*ldu, j);
 					double val = U[i](x+prev_ldu*y,j);
 
-					ret[i](idx,j) = U[i](x/stlide + (y/stlide)*ldu,j);
+					ret[i](idx,j) = U[i](x/stride + (y/stride)*ldu,j);
 				}
 		}
 	}
@@ -228,9 +238,11 @@ void Pooling::output_W ( const std::string& filename )
 	std::ofstream ofs(filename, std::ios::binary);
 }
 
+#ifdef USE_MPI
 void Pooling::param_mix ()
 {
 
 }
+#endif
 
 #endif

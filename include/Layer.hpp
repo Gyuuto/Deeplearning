@@ -22,12 +22,21 @@ protected:
 	int prev_num_map, num_map;
 	int prev_num_unit, num_unit;
 	
+#ifdef USE_MPI
+	MPI_Comm inner_world, outer_world;
+	int rank, nprocs;
+#endif
+
 	std::vector<std::vector<Mat>> W;
 	std::shared_ptr<Function> func, prev_func;
 public:
 	Layer(){}
 
+#ifdef USE_MPI
+	virtual void init ( std::mt19937& m, MPI_Comm inner_world, MPI_Comm outer_world ) = 0;
+#else
 	virtual void init ( std::mt19937& m ) = 0;
+#endif
 	virtual void finalize () = 0;
 	virtual std::vector<Mat> calc_delta ( const std::vector<Mat>& U, const std::vector<Mat>& delta ) = 0;
 	virtual std::vector<std::vector<Mat>> calc_gradient ( const std::vector<Mat>& U, const std::vector<Mat>& delta ) = 0;
@@ -52,8 +61,10 @@ public:
 	
 	virtual void set_W ( const std::string& filename ) = 0;
 	virtual void output_W ( const std::string& filename ) = 0;
-
+	
+#ifdef USE_MPI
 	virtual void param_mix () = 0;
+#endif
 };
 
 std::vector<std::vector<Layer::Mat>> Layer::get_W ()
