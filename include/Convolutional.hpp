@@ -215,11 +215,6 @@ std::vector<Convolutional::Mat> Convolutional::calc_delta ( const std::vector<Ma
 				for( l = 0; l < n; ++l )
 					kernel(i*(m*n) + k*m + l, j) = W[i][j](l, k);
 
-<<<<<<< HEAD
-#pragma omp parallel for default(none) \
-	private(i,j,k,s,t) shared(my_size, my_offset, kernel, tmp, delta)
-=======
->>>>>>> inner_dist
 	for( i = 0; i < delta[0].n; ++i ){
 		Mat input_image(my_size, m*n*num_map);
 
@@ -308,11 +303,6 @@ std::vector<Convolutional::Mat> Convolutional::apply ( const std::vector<Mat>& U
 				for( l = 0; l < n; ++l )
 					kernel(j*(m*n) + k*n + l, i) = W[i][j](l, k);
 			
-<<<<<<< HEAD
-#pragma omp parallel for default(none) \
-	private(i,j,k,x,y,s,t) shared(my_size, my_offset, kernel, U, ret)
-=======
->>>>>>> inner_dist
 	for( i = 0; i < U[0].n; ++i ){
 		Mat input_image(my_size, m*n*prev_num_map);
 
