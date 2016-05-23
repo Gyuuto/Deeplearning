@@ -119,17 +119,11 @@ void Neuralnet::check_gradient ( int cnt, const std::vector<int>& idx, const std
 			for( int k = 0; k < std::min(2, (int)W[j].size()); ++k ){ // prev_num_map
 				for( int l = 0; l < std::min(2, (int)W[j][k].m); ++l ){
 					for( int m = 0; m < std::min(2, (int)W[j][k].n); ++m ){
-						auto tmp = 1.0E-8;//*(std::abs(W[j][k](l,m)) < 1.0E-3 ? 1.0 : std::abs(W[j][k](l,m)));;
+						auto tmp = 1.0E-6*(std::abs(W[j][k](l,m)) < 1.0E-3 ? 1.0 : std::abs(W[j][k](l,m)));;
 
 						if( layer[i]->get_num_map() != 1 || rank == 0 ){
-							if( layer[i]->get_num_map() != 1 && l == 0 && m == 0 ){ // for check bias
-								Convolutional* conv = (Convolutional*)layer[i].get();
-								conv->bias[j] += tmp;
-							}
-							else{
-								W[j][k](l,m) += tmp;
-								layer[i]->set_W(W);
-							}
+							W[j][k](l,m) += tmp;
+							layer[i]->set_W(W);
 						}
 						double E1 = 0.0;
 						auto tmp1 = apply(X);
@@ -139,14 +133,8 @@ void Neuralnet::check_gradient ( int cnt, const std::vector<int>& idx, const std
 							}
 
 						if( layer[i]->get_num_map() != 1 || rank == 0 ){
-							if( layer[i]->get_num_map() != 1 && l == 0 && m == 0 ){
-								Convolutional* conv = (Convolutional*)layer[i].get();
-								conv->bias[j] -= tmp;
-							}
-							else{
-								W[j][k](l,m) -= tmp;
-								layer[i]->set_W(W);
-							}
+							W[j][k](l,m) -= tmp;
+							layer[i]->set_W(W);
 						}
 						double E2 = 0.0;
 						auto tmp2 = apply(X);
@@ -156,10 +144,7 @@ void Neuralnet::check_gradient ( int cnt, const std::vector<int>& idx, const std
 
 						if( rank == 0 ){
 							double grad = nabla_w[i][j][k](l,m);
-							if( layer[i]->get_num_map() != 1 && l == 0 && m == 0 ){
-								Convolutional* conv = (Convolutional*)layer[i].get();
-								grad = conv->d_bias[j];
-							}								
+
 							printf("\t%3d, %3d, %3d, %3d : ( %.10E, %.10E = %.10E )\n", j, k, l, m, 0.5*(E1 - E2)/tmp/BATCH_SIZE, grad, (std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE - grad))/std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE));
 						}
 					}
