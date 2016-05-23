@@ -130,12 +130,12 @@ std::vector<Pooling::Mat> Pooling::apply ( const std::vector<Mat>& U, bool use_f
 	std::vector<Mat> ret(num_map);
 
 	int i,j,k,y,x,s,t;
-#pragma omp parallel for default(none) \
-	private(i,j,y,x,s,t) shared(new_S, ret, U)
 	for( i = 0; i < num_map; ++i ){
 		ret[i] = Mat(num_unit, U[0].n);
 		Mat U_ = (*prev_func)(U[i], false);
 
+#pragma omp parallel for default(none) \
+	private(j,y,x,s,t) shared(i, new_S, ret, U, U_)
 		for( j = 0; j < U[0].n; ++j ){
 			for( y = 0; y < Y; y += stride )
 				for( x = 0; x < X; x += stride ){
