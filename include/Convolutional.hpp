@@ -241,8 +241,8 @@ std::vector<Convolutional::Mat> Convolutional::calc_delta ( const std::vector<Ma
 				tmp[j](k, i) = output_image(k, j);
 	}
 
-#pragma omp parallel for default(none)			\
-	private(i,j,k) shared(nx_delta, tmp, U)
+// #pragma omp parallel for default(none)			\
+// 	private(i,j,k) shared(nx_delta, tmp, U)
 	for( i = 0; i < prev_num_map; ++i )
 		nx_delta[i] = Mat::hadamard(tmp[i], (*prev_func)(U[i], true));
 
