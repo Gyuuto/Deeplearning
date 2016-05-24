@@ -295,7 +295,7 @@ std::vector<Convolutional::Mat> Convolutional::apply ( const std::vector<Mat>& U
 	for( i = 0; i < U[0].n; ++i ){
 		Mat input_image(my_size, m*n*prev_num_map);
 
-#pragma omp parallel for default(none)									\
+#pragma omp parallel for default(none) \
 	private(j,k,s,t) shared(i, input_image, my_size, my_offset, U, X, Y)
 		for( j = 0; j < my_size; ++j ){
 			int x = (j + my_offset)%prev_ldu, y = (j + my_offset)/prev_ldu;
@@ -322,7 +322,7 @@ std::vector<Convolutional::Mat> Convolutional::apply ( const std::vector<Mat>& U
 #endif
 		
 		for( j = 0; j < num_map; ++j )
-#pragma omp parallel for default(none)			\
+#pragma omp parallel for default(none) \
 	private(k) shared(i,j, output_image, ret)
 			for( k = 0; k < num_unit; ++k )
 				ret[j](k, i) = output_image(k, j);

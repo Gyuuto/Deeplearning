@@ -93,9 +93,9 @@ std::vector<Pooling::Mat> Pooling::calc_delta ( const std::vector<Mat>& U, const
 			for( k = 0; k < nx_delta[i].n; ++k )
 				nx_delta[i](j,k) = 0.0;
 		
-#pragma omp parallel for shared(+:nx_delta[i]) default(none)			\
+#pragma omp parallel for default(none)			\
 	private(j,s,t,y,x) shared(i, nx_delta, delta, U_apply, U_diff)
-		for( j = 0; j < U[i].n; ++j )
+		for( j = 0; j < U_apply.n; ++j )
 			for( y = 0; y < Y; y += stride )
 				for( x = 0; x < X; x += stride ){
 					int idx = x + y*prev_ldu;
