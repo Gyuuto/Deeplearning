@@ -57,7 +57,16 @@ int main( int argc, char* argv[] )
 	vector<vector<vector<double>>> train_x;
 	const int N = 1000;
 	ifstream train_image("train-images-idx3-ubyte", ios_base::binary);
+	if( !train_image.is_open() ){
+		cerr << "\"train-images-idx3-ubyte\" is not found!" << endl;
+		return 1;
+	}
 	ifstream train_label("train-labels-idx1-ubyte", ios_base::binary);
+	if( !train_label.is_open() ){
+		cerr << "\"train-labels-idx1-ubyte\" is not found!" << endl;
+		return 1;
+	}
+
 	train_image.seekg(4*4, ios_base::beg);
 	train_label.seekg(4*2, ios_base::beg);
 	for( int i = 0; i < N; ++i ){
@@ -82,9 +91,18 @@ int main( int argc, char* argv[] )
 	// read a train data of MNIST.
 	vector<int> test_lab;
 	vector<vector<vector<double>>> test_x;
-	const int M = 1000;
+	const int M = 5000;
 	ifstream test_image("t10k-images-idx3-ubyte", ios_base::binary);
+	if( !test_image.is_open() ){
+		cerr << "\"t10k-images-idx3-ubyte\" is not found!" << endl;
+		return 1;
+	}
 	ifstream test_label("t10k-labels-idx1-ubyte", ios_base::binary);
+	if( !test_label.is_open() ){
+		cerr << "\"t10k-labels-idx1-ubyte\" is not found!" << endl;
+		return 1;
+	}
+
 	test_image.seekg(4*4, ios_base::beg);
 	test_label.seekg(4*2, ios_base::beg);
 	for( int i = 0; i < M; ++i ){

@@ -74,7 +74,7 @@ int main( int argc, char* argv[] )
 										  5, 5, 1, shared_ptr<Function>(new ReLU)));
 	layers.emplace_back(new Pooling(10, 28*28, 28,
 									10, 14*14, 14,
-									2, 2, 2, shared_ptr<Function>(new Identity)));
+									3, 3, 2, shared_ptr<Function>(new Identity)));
 	layers.emplace_back(new Convolutional(10, 14*14, 14,
 										  20, 14*14, 14,
 										  5, 5, 1, shared_ptr<Function>(new ReLU)));
@@ -94,7 +94,17 @@ int main( int argc, char* argv[] )
 	vector<vector<vector<double>>> train_x;
 	const int N = 10000 / outer_nprocs;
 	ifstream train_image("train-images-idx3-ubyte", ios_base::binary);
+	ifstream train_image("train-images-idx3-ubyte", ios_base::binary);
+	if( !train_image.is_open() ){
+		cerr << "\"train-images-idx3-ubyte\" is not found!" << endl;
+		return 1;
+	}
 	ifstream train_label("train-labels-idx1-ubyte", ios_base::binary);
+	if( !train_label.is_open() ){
+		cerr << "\"train-labels-idx1-ubyte\" is not found!" << endl;
+		return 1;
+	}
+
 	train_image.seekg(4*4 + 28*28*outer_rank * N, ios_base::beg);
 	train_label.seekg(4*2 + outer_rank * N, ios_base::beg);
 	for( int i = 0; i < N; ++i ){
@@ -125,7 +135,16 @@ int main( int argc, char* argv[] )
 	vector<vector<vector<double>>> test_x;
 	const int M = 5000;
 	ifstream test_image("t10k-images-idx3-ubyte", ios_base::binary);
+	if( !test_image.is_open() ){
+		cerr << "\"t10k-images-idx3-ubyte\" is not found!" << endl;
+		return 1;
+	}
 	ifstream test_label("t10k-labels-idx1-ubyte", ios_base::binary);
+	if( !test_label.is_open() ){
+		cerr << "\"t10k-labels-idx1-ubyte\" is not found!" << endl;
+		return 1;
+	}
+
 	test_image.seekg(4*4, ios_base::beg);
 	test_label.seekg(4*2, ios_base::beg);
 	for( int i = 0; i < M; ++i ){
@@ -155,7 +174,7 @@ int main( int argc, char* argv[] )
 	// checking error function.
 	double prev_time, total_time;
 	auto check_error = [&](const Neuralnet& nn, const int iter, const std::vector<Matrix<double>>& x, const std::vector<Matrix<double>>& d ) -> void {
-		if( iter%((N/BATCH_SIZE)) != 0 ) return;
+		if( iter%((N/BATCH_SIZE)) != 0 || iter == 0 ) return;
 
 		double tmp_time = MPI_Wtime();
 
@@ -210,10 +229,10 @@ int main( int argc, char* argv[] )
 	net.set_EPS(1.0E-3);
 	net.set_LAMBDA(0.0);
 	net.set_BATCHSIZE(BATCH_SIZE);
-	net.set_UPDATEITER(N/BATCH_SIZE*5);
+	net.set_UPDATEITER(N/BATCH_SIZE*2);
 	// learning the neuralnet in 20 EPOCH and output error defined above in each epoch.
 	prev_time = total_time = MPI_Wtime();
-	net.learning(train_x, d, N/BATCH_SIZE*20, check_error);
+	net.learning(train_x, d, N/BATCH_SIZE*10, check_error);
 
 	MPI_Finalize();
 }
