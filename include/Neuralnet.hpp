@@ -9,9 +9,8 @@
 #include <memory>
 #include <random>
 
-#include <chrono>
-
 #include "Layer.hpp"
+#include "Convolutional.hpp"
 #include "Function.hpp"
 #include "matrix.hpp"
 
@@ -143,8 +142,11 @@ void Neuralnet::check_gradient ( int cnt, const std::vector<int>& idx, const std
 							for( int o = 0; o < BATCH_SIZE; ++o )
 								E2 += (*loss)(Mat(tmp2[o][n]), Mat(y[idx[(cnt+o)%idx.size()]][n]), false)(0,0);
 
-						if( rank == 0 )
-							printf("\t%3d, %3d, %3d, %3d : ( %.10E, %.10E = %.10E )\n", j, k, l, m, 0.5*(E1 - E2)/tmp/BATCH_SIZE, nabla_w[i][j][k](l,m), (std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE - nabla_w[i][j][k](l,m)))/std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE));
+						if( rank == 0 ){
+							double grad = nabla_w[i][j][k](l,m);
+
+							printf("\t%3d, %3d, %3d, %3d : ( %.10E, %.10E = %.10E )\n", j, k, l, m, 0.5*(E1 - E2)/tmp/BATCH_SIZE, grad, (std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE - grad))/std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE));
+						}
 					}
 				}
 			}
@@ -196,10 +198,32 @@ void Neuralnet::set_UPDATEITER ( const int& UPDATE_ITER )
 void Neuralnet::add_layer( const std::shared_ptr<Layer>& layer )
 {
 	std::shared_ptr<Function> f;
+	int prev_num_unit = -1, prev_num_map = -1;
+
 	if( this->layer.size() == 0 )
 		f = std::shared_ptr<Function>(new Identity);
-	else
+	else{
+		prev_num_unit = this->layer[this->layer.size()-1]->get_num_unit();
+		prev_num_map = this->layer[this->layer.size()-1]->get_num_map();
 		f = this->layer[this->layer.size()-1]->get_function();
+	}
+
+	if( prev_num_unit != -1 &&
+		(layer->get_prev_num_map() != prev_num_map || layer->get_prev_num_unit() != prev_num_unit)
+		){
+		int rank = 0;
+#ifdef USE_MPI
+		MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+#endif
+		if( rank == 0 ){
+			if( layer->get_prev_num_map() != prev_num_map )
+				printf("WARNING : Wrong prev_num_map on  layer %lu.\n  Estimate prev_num_map = %d\n",
+					   this->layer.size() + 1, prev_num_map);
+			if( layer->get_prev_num_unit() != prev_num_unit )
+				printf("WARNING : Wrong prev_num_unit on layer %lu.\n  Estimate prev_num_unit = %d\n",
+					   this->layer.size() + 1, prev_num_unit);
+		}
+	}
 	
 	this->layer.emplace_back( layer );
 
@@ -294,7 +318,6 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 	int i, j, k, l, m;
 	int cnt = 0;
 	for( int n = 0; n <= MAX_ITER; ++n ){
-		auto beg = std::chrono::system_clock::now();
 		// assign data to mini-batch
 		for( i = 0; i < X.size(); ++i )
 #pragma omp parallel for default(none) \
@@ -309,11 +332,8 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 			for( j = 0; j < BATCH_SIZE; ++j )
 				for( k = 0; k < D[i].m; ++k )
 					D[i](k,j) = Y[i](k, idx[cnt+j]%num_data);
-		auto end = std::chrono::system_clock::now();
-		assign += std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count()/1000.0;
-		
+
 		// feed forward calculation
-		beg = std::chrono::system_clock::now();
 		for( i = 0; i < num_layer; ++i ) {
 			auto V = U[i];
 			if( i != 0 ){
@@ -328,52 +348,38 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 				U[i+1][j] = tmp[j];
 			}
 		}
-		end = std::chrono::system_clock::now();
-		forward += std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count()/1000.0;
-		// if( myrank == 0 ) printf("apply     %lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
 		
-		beg = std::chrono::system_clock::now();
 		// back propagation calculation
 		auto nabla_w = calc_gradient(U, D);
-		end = std::chrono::system_clock::now();
-		// if( myrank == 0 ) printf("calc grad %lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
-		back += std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count()/1000.0;
 		
-		beg = std::chrono::system_clock::now();
 		// averaging all gradients of weights of mini-batches
 		for( i = 0; i < nabla_w.size(); ++i )
 			for( j = 0; j < nabla_w[i].size(); ++j )
 #pragma omp parallel for default(none) \
-	shared(i,j,k, nabla_w)
+	private(k), shared(i,j, nabla_w)
 				for( k = 0; k < nabla_w[i][j].size(); ++k )
 					nabla_w[i][j][k] = 1.0/BATCH_SIZE * nabla_w[i][j][k];
-		end = std::chrono::system_clock::now();
-		// if( myrank == 0 ) printf("averaged  %lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
 		
 		// check_gradient(cnt, idx, x, y, nabla_w);
-		beg = std::chrono::system_clock::now();
 		cnt += BATCH_SIZE;
 		if( cnt >= num_data ){
 			std::shuffle( idx.begin(), idx.end(), mt );
 			cnt = 0;
 		}
-		end = std::chrono::system_clock::now();
-		// if( myrank == 0 ) printf("shuffle   %lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
 
 		// update W
-		beg = std::chrono::system_clock::now();
 		adam_beta_ *= adam_beta;
 		adam_gamma_ *= adam_gamma;
 		for( i = 0; i < num_layer; ++i ){
 			// L2 norm regularization
 			auto W = layer[i]->get_W();
-			
+
 			if( W.size() == 0 ) continue;
 
 			for( j = 0; j < W.size(); ++j )
 				for( k = 0; k < W[j].size(); ++k )
 #pragma omp parallel for default(none) \
-	private(m), shared(i,j,k,l, W, nabla_w)
+	private(l,m), shared(i,j,k, W, nabla_w)
 					for( l = 0; l < W[j][k].m; ++l )
 						for( m = 1; m < W[j][k].n; ++m )
 							nabla_w[i][j][k](l,m) += LAMBDA*W[j][k](l,m);
@@ -382,7 +388,7 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 			for( j = 0; j < nabla_w[i].size(); ++j )
 				for( k = 0; k < nabla_w[i][j].size(); ++k )
 #pragma omp parallel for default(none) \
-	private(m), shared(i,j,k,l, nabla_w)
+	private(l,m), shared(i,j,k, nabla_w)
 					for( l = 0; l < nabla_w[i][j][k].m; ++l )
 						for( m = 0; m < nabla_w[i][j][k].n; ++m ){
 							adam_v[i][j][k](l,m) = adam_beta*adam_v[i][j][k](l,m) + (1.0 - adam_beta)*nabla_w[i][j][k](l,m);
@@ -394,21 +400,16 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 				for( k = 0; k < W[j].size(); ++k ){
 					update_W[j][k] = Mat::zeros(W[j][k].m, W[j][k].n);
 #pragma omp parallel for default(none) \
-	private(m), shared(i,j,k,l, W, update_W)
-					for( l = 0; l < W[j][k].m; ++l )
-						for( m = 0; m < W[j][k].n; ++m ){
+	private(l,m), shared(i,j,k, update_W)
+					for( l = 0; l < update_W[j][k].m; ++l )
+						for( m = 0; m < update_W[j][k].n; ++m ){
 							auto v_hat = adam_v[i][j][k](l,m) / (1.0 - adam_beta_);
 							auto r_hat = adam_r[i][j][k](l,m) / (1.0 - adam_gamma_);
 							update_W[j][k](l,m) = -EPS*v_hat/(sqrt(r_hat)+adam_eps);
 						}
 				}
-
 			layer[i]->update_W(update_W);
 		}
-		end = std::chrono::system_clock::now();
-		update += std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count()/1000.0;
-		// if( myrank == 0 ) printf("update W  %lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
-		// if( myrank == 0 ) puts("--------------------");
 
 #ifdef USE_MPI
 		if( UPDATE_ITER != -1 && n % UPDATE_ITER == 0 ){
@@ -420,13 +421,6 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 	}
 
 	for( int i = 0; i < num_layer; ++i ) layer[i]->finalize();
-
-	if( myrank == 0 ){
-		printf("assign           : %.3f\n", assign);
-		printf("feed forward     : %.3f\n", forward);
-		printf("back propagation : %.3f\n", back);
-		printf("update weights   : %.3f\n", update);
-	}
 }
 
 std::vector<Neuralnet::Mat> Neuralnet::apply ( const std::vector<Mat>& X ) const

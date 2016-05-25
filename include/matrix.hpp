@@ -262,13 +262,20 @@ struct Matrix
 		double ONE = 1.0, ZERO = 0.0;
 		std::vector<double> tmp_m1(m1.m*m1.n), tmp_m2(m2.m*m2.n), tmp_ret(m*n);
 
-		for( int i = 0; i < m1.m; ++i ) for( int j = 0; j < m1.n; ++j ) tmp_m1[i+m1.m*j] = m1(i,j);
-		for( int i = 0; i < m2.m; ++i ) for( int j = 0; j < m2.n; ++j ) tmp_m2[i+m2.m*j] = m2(i,j);
+		int i, j;
+#pragma omp parallel for default(none) \
+	private(i,j) shared(tmp_m1, m1)
+		for( i = 0; i < m1.m; ++i ) for( j = 0; j < m1.n; ++j ) tmp_m1[i+m1.m*j] = m1(i,j);
+#pragma omp parallel for default(none) \
+	private(i,j) shared(tmp_m2, m2)
+		for( i = 0; i < m2.m; ++i ) for( j = 0; j < m2.n; ++j ) tmp_m2[i+m2.m*j] = m2(i,j);
 
 		int lda = m1.m, ldb = m2.m;
 		dgemm_("N", "N", &m, &n, &l, &ONE, &tmp_m1[0], &lda, &tmp_m2[0], &ldb, &ZERO, &tmp_ret[0], &lda);
 
-		for( int i = 0; i < m; ++i ) for( int j = 0; j < n; ++j ) ret(i,j) = tmp_ret[i+m*j];
+#pragma omp parallel for default(none) \
+	private(i,j) shared(ret, tmp_ret, m, n)
+		for( i = 0; i < m; ++i ) for( j = 0; j < n; ++j ) ret(i,j) = tmp_ret[i+m*j];
 #else
 		int i, j, k;
 #pragma omp parallel for default(none)	\
