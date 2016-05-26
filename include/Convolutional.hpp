@@ -104,7 +104,7 @@ void Convolutional::finalize ()
 
 std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( const std::vector<Mat>& U, const std::vector<Mat>& delta )
 {
-	int offset = 0, my_size = delta[0].n*delta[0].m;
+	int offset = 0, my_size = delta[0].m;
 #ifdef USE_MPI
 	offset = rank*my_size/nprocs;
 	my_size = (rank+1)*my_size/nprocs - rank*my_size/nprocs;
@@ -116,6 +116,7 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 		for( int j = 0; j < prev_num_map; ++j )
 			nabla[i][j] = Mat(W[i][j].m, W[i][j].n);
 	}
+
 	std::vector<Mat> U_(prev_num_map);
 	for( int i = 0; i < prev_num_map; ++i )
 		U_[i] = (*prev_func)(U[i], false);
@@ -123,33 +124,34 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 	const int Y = prev_num_unit/prev_ldu, X = prev_ldu;
 	const int Y_ = num_unit/ldu, X_ = ldu;
 	int i, j, k, l, s, t, y, x;
-	Mat delta_mat(m*n*num_map, my_size);
-	for( i = 0; i < num_map; ++i ){
-#pragma omp parallel for default(none) \
-	private(j,k) shared(i,my_size, offset, X_, Y_, delta_mat, delta)
-		for( j = 0; j < m*n; ++j ){
-			int s = j%m - (m/2), t = j/m - (n/2);
-			for( k = 0; k < my_size; ++k ){
-				int idx1 = (offset + k)/delta[0].m, idx2 = (offset + k)%delta[0].m;
-				int nx = idx2%ldu - s, ny = idx2/ldu - t;
-				if( nx < 0 || ny < 0 || X_ <= nx || Y_ <= ny ){
-					delta_mat(i*m*n + j, k) = 0.0;
-					continue;
+	Mat nabla_mat(m*n*num_map, prev_num_map);
+	for( i = 0; i < delta[0].n; ++i ){
+		Mat delta_mat(m*n*num_map, my_size);
+		for( j = 0; j < num_map; ++j )
+			for( k = 0; k < m*n; ++k ){
+				int s = k%m - (m/2), t = k/m - (n/2);
+#pragma omp parallel for default(none)					\
+	private(l) shared(i,j,k,s,t, my_size, delta,delta_mat)
+				for( l = 0; l < my_size; ++l ){
+					int nx = (l + offset)%ldu - s, ny = (l + offset)/ldu - t;
+					if( nx < 0 || ny < 0 || X_ <= nx || Y_ <= ny ){
+						delta_mat(j*m*n + k, l) = 0.0;
+						continue;
+					}
+					delta_mat(j*m*n + k, l) = delta[j](ny*ldu + nx, i);
 				}
-				delta_mat(i*m*n + j, k) =  delta[i](ny*ldu + nx, idx1);
 			}
-		}
-	}
 
-	Mat U_mat(my_size, prev_num_map);
-	for( i = 0; i < prev_num_map; ++i ){
-		for( j = 0; j < my_size; ++j ){
-			int idx1 = (offset + j)/delta[0].m, idx2 = (offset + j)%delta[0].m;
-			U_mat(j, i) = U_[i](idx2, idx1);
-		}
+		Mat U_mat(my_size, prev_num_map);
+		for( j = 0; j < prev_num_map; ++j )
+#pragma omp parallel for default(none)					\
+	private(k) shared(i,j, my_size, U,U_mat)
+			for( k = 0; k < my_size; ++k )
+				U_mat(k, j) = U_[j](offset+k, i);
+
+		nabla_mat += delta_mat*U_mat;
 	}
 	
-	auto nabla_mat = delta_mat * U_mat;
 	for( i = 0; i < num_map; ++i ){
 		for( j = 0; j < prev_num_map; ++j ){
 #pragma omp parallel for default(none)			\
@@ -263,6 +265,7 @@ void Convolutional::update_W ( const std::vector<std::vector<Mat>>& dW )
 	}
 }
 
+#include <chrono>
 std::vector<Convolutional::Mat> Convolutional::apply ( const std::vector<Mat>& U, bool use_func )
 {
 	int my_size = num_unit, my_offset = 0;
@@ -320,7 +323,7 @@ std::vector<Convolutional::Mat> Convolutional::apply ( const std::vector<Mat>& U
 #else
 		Mat output_image = input_image * kernel;
 #endif
-		
+
 		for( j = 0; j < num_map; ++j )
 #pragma omp parallel for default(none) \
 	private(k) shared(i,j, output_image, ret)

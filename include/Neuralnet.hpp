@@ -351,7 +351,7 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 		
 		// back propagation calculation
 		auto nabla_w = calc_gradient(U, D);
-		
+				
 		// averaging all gradients of weights of mini-batches
 		for( i = 0; i < nabla_w.size(); ++i )
 			for( j = 0; j < nabla_w[i].size(); ++j )
@@ -410,7 +410,7 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 				}
 			layer[i]->update_W(update_W);
 		}
-
+		
 #ifdef USE_MPI
 		if( UPDATE_ITER != -1 && n % UPDATE_ITER == 0 ){
 			averaging();
