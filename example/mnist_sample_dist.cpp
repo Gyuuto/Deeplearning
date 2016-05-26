@@ -92,7 +92,7 @@ int main( int argc, char* argv[] )
 	// read a test data of MNIST(http://yann.lecun.com/exdb/mnist/).
 	vector<int> train_lab;
 	vector<vector<vector<double>>> train_x;
-	const int N = 10000 / outer_nprocs;
+	const int N = 60000 / outer_nprocs;
 	ifstream train_image("train-images-idx3-ubyte", ios_base::binary);
 	if( !train_image.is_open() ){
 		cerr << "\"train-images-idx3-ubyte\" is not found!" << endl;
@@ -132,7 +132,7 @@ int main( int argc, char* argv[] )
 	// read a train data of MNIST.
 	vector<int> test_lab;
 	vector<vector<vector<double>>> test_x;
-	const int M = 5000;
+	const int M = 10000;
 	ifstream test_image("t10k-images-idx3-ubyte", ios_base::binary);
 	if( !test_image.is_open() ){
 		cerr << "\"t10k-images-idx3-ubyte\" is not found!" << endl;
@@ -175,37 +175,51 @@ int main( int argc, char* argv[] )
 	auto check_error = [&](const Neuralnet& nn, const int iter, const std::vector<Matrix<double>>& x, const std::vector<Matrix<double>>& d ) -> void {
 		if( iter%((N/BATCH_SIZE)) != 0 || iter == 0 ) return;
 
+		const int once_num = 1000;
 		double tmp_time = MPI_Wtime();
 
 		// calculating answer rate among all train data.
 		int train_ans_num = 0;
-		auto y = nn.apply(train_x);
-		for( int i = 0; i < y.size(); ++i ){
-			int idx, lab;
-			double max_num = 0.0;
-			for( int j = 0; j < 10; ++j ){
-				if( max_num < y[i][0][j] ){
-					max_num = y[i][0][j];
-					idx = j;
+		for( int i = 0; i < train_x.size(); i += once_num ){
+			int size = min(once_num, (int)train_x.size() - i);
+			vector<vector<vector<double>>> tmp_x(size);
+			for( int j = 0; j < size; ++j ) tmp_x[j] = train_x[i+j];
+
+			auto y = nn.apply(tmp_x);
+			for( int j = 0; j < y.size(); ++j ){
+				int idx, lab;
+				double max_num = 0.0;
+				for( int k = 0; k < 10; ++k ){
+					if( max_num < y[j][0][k] ){
+						max_num = y[j][0][k];
+						idx = k;
+					}
 				}
+				if( idx == train_lab[i+j] ) ++train_ans_num;
 			}
-			if( idx == train_lab[i] ) ++train_ans_num;
 		}
 
 		// calculating answer rate among all test data.
 		int test_ans_num = 0;
-		auto Y = nn.apply(X);
-		for( int i = 0; i < Y[0].n; ++i ){
-			int idx, lab;
-			double max_num = 0.0;
-			for( int j = 0; j < 10; ++j ){
-				if( max_num < Y[0](j,i) ){
-					max_num = Y[0](j,i);
-					idx = j;
+		for( int i = 0; i < X[0].n; i += once_num ){
+			int size = min(once_num, X[0].n - i);
+			vector<Matrix<double>> tmp_X(X.size(), Matrix<double>(X[0].m, size));
+			for( int j = 0; j < size; ++j )
+				for( int k = 0; k < X[0].m; ++k )
+					tmp_X[0](k, j) = X[0](k, i+j);
+
+			auto Y = nn.apply(tmp_X);
+			for( int j = 0; j < Y[0].n; ++j ){
+				int idx, lab;
+				double max_num = 0.0;
+				for( int k = 0; k < 10; ++k ){
+					if( max_num < Y[0](k,j) ){
+						max_num = Y[0](k,j);
+						idx = k;
+					}
 				}
-				if( D[0](j, i) == 1.0 ) lab = j;
+				if( idx == test_lab[i+j] ) ++test_ans_num;
 			}
-			if( idx == lab ) ++test_ans_num;
 		}
 
 		// output answer rate each test data batch.
@@ -213,8 +227,8 @@ int main( int argc, char* argv[] )
 			for( int i = 0; i < outer_nprocs; ++i ){
 				if( i == outer_rank ){
 					printf("outer rank : %d\n", outer_rank);
-					printf("  Elapsed time : %.3f, Total time : %.3f\n", MPI_Wtime() - prev_time, MPI_Wtime() - total_time);
-					printf("  Train answer rate : %.2f%%\n", (double)train_ans_num/y.size()*100.0);
+					printf("  Elapsed time : %.3f, Total time : %.3f\n", tmp_time - prev_time, MPI_Wtime() - total_time);
+					printf("  Train answer rate : %.2f%%\n", (double)train_ans_num/train_x.size()*100.0);
 					printf("  Test answer rate  : %.2f%%\n", (double)test_ans_num/X[0].n*100.0);
 				}
 				MPI_Barrier(outer_world);
