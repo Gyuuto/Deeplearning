@@ -94,7 +94,6 @@ int main( int argc, char* argv[] )
 	vector<vector<vector<double>>> train_x;
 	const int N = 10000 / outer_nprocs;
 	ifstream train_image("train-images-idx3-ubyte", ios_base::binary);
-	ifstream train_image("train-images-idx3-ubyte", ios_base::binary);
 	if( !train_image.is_open() ){
 		cerr << "\"train-images-idx3-ubyte\" is not found!" << endl;
 		return 1;
