@@ -127,11 +127,11 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 	Mat nabla_mat(m*n*num_map, prev_num_map);
 	for( i = 0; i < delta[0].n; ++i ){
 		Mat delta_mat(m*n*num_map, my_size);
+#pragma omp parallel for default(none)					\
+	private(j,k,l) shared(i, my_size,offset, delta,delta_mat)
 		for( j = 0; j < num_map; ++j )
 			for( k = 0; k < m*n; ++k ){
 				int s = k%m - (m/2), t = k/m - (n/2);
-#pragma omp parallel for default(none)					\
-	private(l) shared(i,j,k,s,t, my_size, delta,delta_mat)
 				for( l = 0; l < my_size; ++l ){
 					int nx = (l + offset)%ldu - s, ny = (l + offset)/ldu - t;
 					if( nx < 0 || ny < 0 || X_ <= nx || Y_ <= ny ){
@@ -145,34 +145,34 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 		Mat U_mat(my_size, prev_num_map);
 		for( j = 0; j < prev_num_map; ++j )
 #pragma omp parallel for default(none)					\
-	private(k) shared(i,j, my_size, U,U_mat)
+	private(k) shared(i,j, my_size,offset, U_,U_mat)
 			for( k = 0; k < my_size; ++k )
 				U_mat(k, j) = U_[j](offset+k, i);
 
 		nabla_mat += delta_mat*U_mat;
 	}
-	
+
+#pragma omp parallel for default(none)			\
+	private(i,j,k,l) shared(my_size, delta,nabla,nabla_mat)
 	for( i = 0; i < num_map; ++i ){
 		for( j = 0; j < prev_num_map; ++j ){
-#pragma omp parallel for default(none)			\
-	private(k,l) shared(i,j, my_size, nabla,nabla_mat)
 			for( k = 0; k < n; ++k )
 				for( l = 0; l < m; ++l )
 					nabla[i][j](k, l) = nabla_mat(i*m*n + l*n + k, j);
-#ifdef USE_MPI
-			MPI_Allreduce(MPI_IN_PLACE, &nabla[i][j](0,0), m*n, MPI_DOUBLE_PRECISION, MPI_SUM, inner_world);
-#endif
 		}
 	
 		double sum = 0.0;
 		for( j = 0; j < delta[i].n; ++j )
-#pragma omp parallel for reduction(+:sum) default(none)	\
-	private(k) shared(i,j, sum,delta)
 			for( k = 0; k < delta[i].m; ++k )
 				sum += delta[i](k,j);
 		d_bias[i] = sum / delta[i].n;
 	}
-
+#ifdef USE_MPI
+	for( i = 0; i < num_map; ++i )
+		for( j = 0; j < prev_num_map; ++j )
+			MPI_Allreduce(MPI_IN_PLACE, &nabla[i][j](0,0), m*n, MPI_DOUBLE_PRECISION, MPI_SUM, inner_world);
+#endif
+	
 	return nabla;				
 }
 
@@ -198,10 +198,10 @@ std::vector<Convolutional::Mat> Convolutional::calc_delta ( const std::vector<Ma
 	for( int i = 0; i < prev_num_map; ++i ) tmp[i] = Mat(prev_num_unit, U[0].n);
 
 	Mat kernel(m*n*num_map, prev_num_map);
+#pragma omp parallel for default(none) \
+	private(i,j,k,l) shared(kernel)
 	for( i = 0; i < num_map; ++i )
 		for( j = 0; j < prev_num_map; ++j )
-#pragma omp parallel for default(none) \
-	private(k,l) shared(i,j, kernel)
 			for( k = 0; k < m; ++ k )
 				for( l = 0; l < n; ++l )
 					kernel(i*(m*n) + k*m + l, j) = W[i][j](l, k);
@@ -236,15 +236,13 @@ std::vector<Convolutional::Mat> Convolutional::calc_delta ( const std::vector<Ma
 		Mat output_image = input_image * kernel;
 #endif
 
-#pragma omp parallel for default(none) \
-	private(j,k) shared(i, output_image, tmp)
 		for( j = 0; j < prev_num_map; ++j )
+#pragma omp parallel for default(none) \
+	private(k) shared(i,j, output_image, tmp)
 			for( k = 0; k < prev_num_unit; ++k )
 				tmp[j](k, i) = output_image(k, j);
 	}
 
-// #pragma omp parallel for default(none)			\
-// 	private(i,j,k) shared(nx_delta, tmp, U)
 	for( i = 0; i < prev_num_map; ++i )
 		nx_delta[i] = Mat::hadamard(tmp[i], (*prev_func)(U[i], true));
 
@@ -265,7 +263,6 @@ void Convolutional::update_W ( const std::vector<std::vector<Mat>>& dW )
 	}
 }
 
-#include <chrono>
 std::vector<Convolutional::Mat> Convolutional::apply ( const std::vector<Mat>& U, bool use_func )
 {
 	int my_size = num_unit, my_offset = 0;
@@ -287,10 +284,10 @@ std::vector<Convolutional::Mat> Convolutional::apply ( const std::vector<Mat>& U
 	for( int i = 0; i < num_map; ++i ) ret[i] = Mat(num_unit, U[0].n);
 
 	Mat kernel(m*n*prev_num_map, num_map);
+#pragma omp parallel for default(none) \
+	private(i,j,k,l) shared(kernel)
 	for( i = 0; i < num_map; ++i )
 		for( j = 0; j < prev_num_map; ++j )
-#pragma omp parallel for default(none) \
-	private(k,l) shared(i,j, kernel)
 			for( k = 0; k < m; ++ k )
 				for( l = 0; l < n; ++l )
 					kernel(j*(m*n) + k*n + l, i) = W[i][j](l, k);

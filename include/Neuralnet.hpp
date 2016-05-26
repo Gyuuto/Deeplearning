@@ -342,8 +342,8 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 				for( j = 0; j < V.size(); ++j )
 					V[j] = (*f)(V[j], false);
 			}
+
 			auto tmp = layer[i]->apply(V, false);
-			
 			for( j = 0; j < tmp.size(); ++j ){
 				U[i+1][j] = tmp[j];
 			}
@@ -351,12 +351,12 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 		
 		// back propagation calculation
 		auto nabla_w = calc_gradient(U, D);
-				
+		
 		// averaging all gradients of weights of mini-batches
+#pragma omp parallel for default(none) \
+	private(i,j,k), shared(nabla_w)
 		for( i = 0; i < nabla_w.size(); ++i )
 			for( j = 0; j < nabla_w[i].size(); ++j )
-#pragma omp parallel for default(none) \
-	private(k), shared(i,j, nabla_w)
 				for( k = 0; k < nabla_w[i][j].size(); ++k )
 					nabla_w[i][j][k] = 1.0/BATCH_SIZE * nabla_w[i][j][k];
 		
@@ -376,19 +376,19 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 
 			if( W.size() == 0 ) continue;
 
+#pragma omp parallel for default(none) \
+	private(j,k,l,m), shared(i, W, nabla_w)
 			for( j = 0; j < W.size(); ++j )
 				for( k = 0; k < W[j].size(); ++k )
-#pragma omp parallel for default(none) \
-	private(l,m), shared(i,j,k, W, nabla_w)
 					for( l = 0; l < W[j][k].m; ++l )
 						for( m = 1; m < W[j][k].n; ++m )
 							nabla_w[i][j][k](l,m) += LAMBDA*W[j][k](l,m);
 
 			// ADAM
+#pragma omp parallel for default(none) \
+	private(j,k,l,m), shared(i, nabla_w)
 			for( j = 0; j < nabla_w[i].size(); ++j )
 				for( k = 0; k < nabla_w[i][j].size(); ++k )
-#pragma omp parallel for default(none) \
-	private(l,m), shared(i,j,k, nabla_w)
 					for( l = 0; l < nabla_w[i][j][k].m; ++l )
 						for( m = 0; m < nabla_w[i][j][k].n; ++m ){
 							adam_v[i][j][k](l,m) = adam_beta*adam_v[i][j][k](l,m) + (1.0 - adam_beta)*nabla_w[i][j][k](l,m);
@@ -396,11 +396,11 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 						}
 
 			std::vector<std::vector<Mat>> update_W(W.size(), std::vector<Mat>(W[0].size()));
+#pragma omp parallel for default(none) \
+	private(j,k,l,m), shared(i, W,update_W)
 			for( j = 0; j < W.size(); ++j )
 				for( k = 0; k < W[j].size(); ++k ){
 					update_W[j][k] = Mat::zeros(W[j][k].m, W[j][k].n);
-#pragma omp parallel for default(none) \
-	private(l,m), shared(i,j,k, update_W)
 					for( l = 0; l < update_W[j][k].m; ++l )
 						for( m = 0; m < update_W[j][k].n; ++m ){
 							auto v_hat = adam_v[i][j][k](l,m) / (1.0 - adam_beta_);
@@ -410,7 +410,7 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 				}
 			layer[i]->update_W(update_W);
 		}
-		
+
 #ifdef USE_MPI
 		if( UPDATE_ITER != -1 && n % UPDATE_ITER == 0 ){
 			averaging();
