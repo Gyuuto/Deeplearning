@@ -255,7 +255,6 @@ struct Matrix
 	{
 		int m = m1.m, n = m2.n, l = m1.n;
 		Matrix<T> ret(m, n);
-
 #ifdef USE_EIGEN
 		ret.v = m1.v*m2.v;
 #elif USE_BLAS
