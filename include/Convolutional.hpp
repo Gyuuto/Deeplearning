@@ -210,7 +210,7 @@ std::vector<Convolutional::Mat> Convolutional::calc_delta ( const std::vector<Ma
 		Mat input_image(my_size, m*n*num_map);
 
 #pragma omp parallel for default(none) \
-	private(j,k,s,t) shared(i, input_image, my_size, my_offset, delta, X_, Y_)
+	private(j,k,s,t) shared(i, input_image, my_size, my_offset, delta)
 		for( j = 0; j < my_size; ++j ){
 			int x = (j + my_offset)%prev_ldu, y = (j + my_offset)/prev_ldu;
 
@@ -296,7 +296,7 @@ std::vector<Convolutional::Mat> Convolutional::apply ( const std::vector<Mat>& U
 		Mat input_image(my_size, m*n*prev_num_map);
 
 #pragma omp parallel for default(none) \
-	private(j,k,s,t) shared(i, input_image, my_size, my_offset, U, X, Y)
+	private(j,k,s,t) shared(i, input_image, my_size, my_offset, U)
 		for( j = 0; j < my_size; ++j ){
 			int x = (j + my_offset)%prev_ldu, y = (j + my_offset)/prev_ldu;
 			for( s = -m/2; s < (m+1)/2; ++s )
