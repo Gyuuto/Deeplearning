@@ -353,8 +353,6 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 		auto nabla_w = calc_gradient(U, D);
 		
 		// averaging all gradients of weights of mini-batches
-#pragma omp parallel for default(none) \
-	private(i,j,k), shared(nabla_w)
 		for( i = 0; i < nabla_w.size(); ++i )
 			for( j = 0; j < nabla_w[i].size(); ++j )
 				for( k = 0; k < nabla_w[i][j].size(); ++k )
@@ -376,8 +374,6 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 
 			if( W.size() == 0 ) continue;
 
-#pragma omp parallel for default(none) \
-	private(j,k,l,m), shared(i, W, nabla_w)
 			for( j = 0; j < W.size(); ++j )
 				for( k = 0; k < W[j].size(); ++k )
 					for( l = 0; l < W[j][k].m; ++l )
