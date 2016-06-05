@@ -93,7 +93,7 @@ std::vector<std::vector<std::vector<Neuralnet::Mat>>> Neuralnet::calc_gradient (
 	std::vector<std::vector<std::vector<Mat>>> nabla_w(num_layer);
 	for( int i = num_layer-1; i >= 0; --i ){
 		nabla_w[i] = layer[i]->calc_gradient(U[i], delta);
-		
+
 		if( i == 0 ) continue;
 		delta = layer[i]->calc_delta(U[i], delta);
 	}
@@ -348,7 +348,7 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 				U[i+1][j] = tmp[j];
 			}
 		}
-		
+
 		// back propagation calculation
 		auto nabla_w = calc_gradient(U, D);
 		

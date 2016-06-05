@@ -74,7 +74,7 @@ int main( int argc, char* argv[] )
 										  5, 5, 1, shared_ptr<Function>(new ReLU)));
 	layers.emplace_back(new Pooling(10, 28*28, 28,
 									10, 14*14, 14,
-									3, 3, 2, shared_ptr<Function>(new Identity)));
+									2, 2, 2, shared_ptr<Function>(new Identity)));
 	layers.emplace_back(new Convolutional(10, 14*14, 14,
 										  20, 14*14, 14,
 										  5, 5, 1, shared_ptr<Function>(new ReLU)));

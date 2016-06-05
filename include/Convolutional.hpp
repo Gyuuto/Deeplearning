@@ -122,6 +122,7 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 	for( int i = 0; i < prev_num_map; ++i )
 		U_[i] = (*prev_func)(U[i], false);
 
+	double t0 = 0.0, t1 = 0.0;
 	const int Y = prev_num_unit/prev_ldu, X = prev_ldu;
 	const int Y_ = num_unit/ldu, X_ = ldu;
 	int i, j, k, l, s, t, y, x;
@@ -130,9 +131,11 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 		Mat delta_mat = Mat::zeros(m*n*num_map, my_size);
 
 		const int gap = prev_ldu + 2*pad;
+		const int tmp_size = (rank+1)*num_unit/nprocs - rank*num_unit/nprocs; 
+		const int tmp_offset = rank*num_unit/nprocs;
 #pragma omp parallel for default(none) \
 	private(j,k,s,t) shared(i, my_size,offset, delta,delta_mat)
-		for( j = 0; j < num_unit; ++j ){
+		for( j = std::max(0, tmp_offset - m*prev_ldu/2); j < std::min(num_unit, tmp_offset + tmp_size + m*prev_ldu/2); ++j ){
 			int x = j%ldu, y = j/ldu;
 			for( t = 0; t < m; ++t )
 				for( s = 0; s < n; ++s ){
@@ -217,9 +220,11 @@ std::vector<Convolutional::Mat> Convolutional::calc_delta ( const std::vector<Ma
 		Mat input_image = Mat::zeros(my_size, m*n*num_map);
  
 		const int gap = prev_ldu + 2*pad;
+		const int tmp_size = (rank+1)*num_unit/nprocs - rank*num_unit/nprocs; 
+		const int tmp_offset = rank*num_unit/nprocs;
 #pragma omp parallel for default(none) \
 	private(j,k,s,t) shared(i, input_image, my_size, my_offset, delta, X_, Y_)
-		for( j = 0; j < num_unit; ++j ){
+		for( j = std::max(0, tmp_offset - m*prev_ldu/2); j < std::min(num_unit, tmp_offset + tmp_size + m*prev_ldu/2); ++j ){
 			int x = j%ldu, y = j/ldu;
 			for( t = 0; t < m; ++t )
 				for( s = 0; s < n; ++s ){
