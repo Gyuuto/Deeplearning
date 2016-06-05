@@ -352,7 +352,7 @@ std::vector<Convolutional::Mat> Convolutional::apply ( const std::vector<Mat>& U
 	if( use_func )
 		for( i = 0; i < num_map; ++i )
 			ret[i] = (*func)(ret[i], false);
-
+	
 	return ret;
 }
 
