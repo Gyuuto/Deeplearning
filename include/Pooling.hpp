@@ -104,7 +104,7 @@ std::vector<Pooling::Mat> Pooling::calc_delta ( const std::vector<Mat>& U, const
 
 		const int gap = prev_ldu + 2*pad;
 #pragma omp parallel for default(none)			\
-	private(j,k,s,t) shared(i, nx_delta, U_apply,U_diff)
+	private(j,k,s,t) shared(i, my_size,my_offset, nx_delta,delta, U_apply,U_diff)
 		for( j = 0; j < my_size; ++j ){
 			int x = (j + my_offset)%ldu, y = (j + my_offset)/ldu;
 
@@ -168,7 +168,7 @@ std::vector<Pooling::Mat> Pooling::apply ( const std::vector<Mat>& U, bool use_f
 
 		const int gap = prev_ldu + 2*pad;
 #pragma omp parallel for default(none) \
-	private(j,k,s,t) shared(i, U_, ret,new_S)
+	private(j,k,s,t) shared(i, my_size,my_offset, U_, tmp,new_S)
 		for( j = 0; j < my_size; ++j ){
 			int x = (j + my_offset)%ldu, y = (j + my_offset)/ldu;
 
