@@ -105,22 +105,17 @@ std::vector<std::vector<FullyConnected::Mat>> FullyConnected::calc_gradient ( co
 			nabla[i][j] = Mat(W[i][j].m, W[i][j].n);
 	}
 
-	int i, j, k, l;
-	for( i = 0; i < num_map; ++i )
-		for( j = 0; j < prev_num_map; ++j ){
+	for( int i = 0; i < num_map; ++i )
+		for( int j = 0; j < prev_num_map; ++j ){
 			Mat V(U[j].m+1, U[j].n), U_ = (*prev_func)(U[j], false);
-#pragma omp parallel for default(none) \
-	private(k,l) shared(i,j, V, U_)
-			for( k = 0; k < U_.n; ++k ){
+			for( int k = 0; k < U_.n; ++k ){
 				V(0,k) = 1.0;
-				for( l = 0; l < U_.m; ++l ) V(l+1,k) = U_(l, k);
+				for( int l = 0; l < U_.m; ++l ) V(l+1,k) = U_(l, k);
 			}
 
 			Mat tmp_delta(W[i][j].m, delta[i].n);
-#pragma omp parallel for default(none) \
-	private(k,l) shared(i,j, offset, tmp_delta, delta, nabla)
-			for( k = 0; k < tmp_delta.m; ++k )
-				for( l = 0; l < delta[i].n; ++l )
+			for( int k = 0; k < tmp_delta.m; ++k )
+				for( int l = 0; l < delta[i].n; ++l )
 					tmp_delta(k,l) = delta[i](k + offset,l);
 
 			nabla[i][j] = tmp_delta*Mat::transpose(V);
@@ -137,23 +132,18 @@ std::vector<FullyConnected::Mat> FullyConnected::calc_delta ( const std::vector<
 #endif
 	std::vector<Mat> tmp_delta(num_map), tmp(prev_num_map), nx_delta(prev_num_map);
 
-	int i, j, k;
-	for( i = 0; i < num_map; ++i ){
+	for( int i = 0; i < num_map; ++i ){
 		tmp_delta[i] = Mat(W[0][0].m, delta[i].n);
-#pragma omp parallel for default(none) \
-	private(j,k) shared(i, offset, delta, tmp_delta)
-		for( j = 0; j < W[0][0].m; ++j ){
-			for( k = 0; k < delta[i].n; ++k )
+#pragma omp parallel for 
+		for( int j = 0; j < W[0][0].m; ++j ){
+			for( int k = 0; k < delta[i].n; ++k )
 				tmp_delta[i](j, k) = delta[i](offset + j, k);
 		}
 	}
 
-// #pragma omp parallel for default(none) \
-// 	private(i,j) shared(tmp, tmp_delta)
-	for( i = 0; i < prev_num_map; ++i ){
-		tmp[i] = Mat(W[0][0].n, tmp_delta[0].n);
-
-		for( j = 0; j < num_map; ++j ){
+	for( int i = 0; i < prev_num_map; ++i ){
+		tmp[i] = Mat::zeros(W[0][0].n, tmp_delta[0].n);
+		for( int j = 0; j < num_map; ++j ){
 			tmp[i] += Mat::transpose(W[j][i])*tmp_delta[j];
 		}
 	}
@@ -164,12 +154,11 @@ std::vector<FullyConnected::Mat> FullyConnected::calc_delta ( const std::vector<
 					  MPI_DOUBLE_PRECISION, MPI_SUM, inner_world);
 #endif
 	
-	for( i = 0; i < prev_num_map; ++i ){
+	for( int i = 0; i < prev_num_map; ++i ){
 		Mat V(tmp[i].m-1, tmp[i].n), U_ = (*prev_func)(U[i], true);
-#pragma omp parallel for default(none) \
-	private(j,k) shared(i, tmp, V)
-		for( j = 0; j < tmp[i].m-1; ++j )
-			for( k = 0; k < tmp[i].n; ++k )
+#pragma omp parallel for
+		for( int j = 0; j < tmp[i].m-1; ++j )
+			for( int k = 0; k < tmp[i].n; ++k )
 				V(j,k) = tmp[i](j+1,k);
 
 		nx_delta[i] = Mat::hadamard(V, U_);
@@ -189,16 +178,13 @@ std::vector<FullyConnected::Mat> FullyConnected::apply ( const std::vector<Mat>&
 {
 	std::vector<Mat> ret(num_map), tmp_ret(num_map);
 	std::vector<Mat> V(prev_num_map);
-	int i, j, k;
 	
 	for( int i = 0; i < prev_num_map; ++i ){
 		V[i] = Mat(U[i].m+1, U[i].n);
-		
-#pragma omp parallel for default(none) \
-	private(j,k) shared(i, V, U)
-		for( j = 0; j < U[i].n; ++j ){
+#pragma omp parallel for
+		for( int j = 0; j < U[i].n; ++j ){
 			V[i](0,j) = 1.0;
-			for( k = 0; k < U[i].m; ++k )
+			for( int k = 0; k < U[i].m; ++k )
 				V[i](k+1,j) = U[i](k,j);
 		}
 	}

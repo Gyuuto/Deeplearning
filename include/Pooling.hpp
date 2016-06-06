@@ -200,6 +200,8 @@ std::vector<Pooling::Mat> Pooling::apply ( const std::vector<Mat>& U, bool use_f
 #ifdef USE_MPI
 		MPI_Allgatherv(&tmp(0,0), size[rank], MPI_DOUBLE_PRECISION,
 					   &ret[i](0,0), &size[0], &offset[0], MPI_DOUBLE_PRECISION, inner_world);
+		MPI_Allgatherv(MPI_IN_PLACE, size[rank], MPI_DOUBLE_PRECISION,
+					   &new_S[i](0,0), &size[0], &offset[0], MPI_DOUBLE_PRECISION, inner_world);
 #else
 		ret[i] = tmp;
 #endif
