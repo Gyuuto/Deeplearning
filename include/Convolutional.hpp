@@ -146,7 +146,7 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 
 					for( int k = 0; k < num_map; ++k )
 						delta_mat(k*m*n + t*n + s, ny*prev_ldu + nx - offset) = delta[k](j, i);
-				}					
+				}
 		}
 
 		for( int j = 0; j < prev_num_map; ++j )
@@ -159,9 +159,9 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 
 	for( int i = 0; i < num_map; ++i ){
 		for( int j = 0; j < prev_num_map; ++j ){
-			for( int k = 0; k < n; ++k )
-				for( int l = 0; l < m; ++l )
-					nabla[i][j](k, l) = nabla_mat(i*m*n + l*n + k, j);
+			for( int k = 0; k < m; ++k )
+				for( int l = 0; l < n; ++l )
+					nabla[i][j](k, l) = nabla_mat(i*m*n + k*n + l, j);
 		}
 		
 		double sum = 0.0;

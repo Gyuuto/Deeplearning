@@ -119,7 +119,7 @@ std::vector<Pooling::Mat> Pooling::calc_delta ( const std::vector<Mat>& U, const
 
 						if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
 
-						if( val < U_apply(ny*prev_ldu + nx, k) ){
+						if( s_idx == -1 || val < U_apply(ny*prev_ldu + nx, k) ){
 							val = U_apply(ny*prev_ldu + nx, k);
 							s_idx = ny*prev_ldu + nx;
 						}
@@ -183,7 +183,7 @@ std::vector<Pooling::Mat> Pooling::apply ( const std::vector<Mat>& U, bool use_f
 						
 						if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
 
-						if( val < U_(ny*prev_ldu + nx, k) ){
+						if( s_idx == -1 || val < U_(ny*prev_ldu + nx, k) ){
 							val = U_(ny*prev_ldu + nx, k);
 							s_idx = ny*prev_ldu + nx;
 						}
