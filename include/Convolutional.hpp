@@ -137,7 +137,7 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 			int x = j%ldu, y = j/ldu;
 			for( int t = 0; t < m; ++t )
 				for( int s = 0; s < n; ++s ){
-					int idx = stride*x + stride*y*gap + s + t*gap;
+					int idx = stride*x + stride*y*gap + t + s*gap;
 					int nx = idx%gap - pad, ny = idx/gap - pad;
 
 					if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
