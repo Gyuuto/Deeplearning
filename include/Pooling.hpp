@@ -7,7 +7,7 @@ class Pooling : public Layer
 {
 private:
 	int prev_ldu, ldu;
-	int m, n, stride;
+	int m, n, stride, pad;
 	std::vector<Mat> S;
 public:
 	Pooling( int prev_num_map, int prev_num_unit, int prev_ldu,
@@ -52,7 +52,7 @@ Pooling::Pooling( int prev_num_map, int prev_num_unit, int prev_ldu,
 	this->num_unit = num_unit;
 	this->ldu = ldu;
 
-	this->m = m; this->n = n; this->stride = stride;
+	this->m = m; this->n = n; this->stride = stride; this->pad = 0;
 
 	func = f;
 }
@@ -63,6 +63,15 @@ void Pooling::init ( std::mt19937& m, MPI_Comm inner_world, MPI_Comm outer_world
 void Pooling::init ( std::mt19937& m )
 #endif
 {
+	rank = 0; nprocs = 1;
+#ifdef USE_MPI
+	this->inner_world = inner_world;
+	this->outer_world = outer_world;
+
+	MPI_Comm_rank(inner_world, &rank);
+	MPI_Comm_size(inner_world, &nprocs);
+#endif
+	
 	W = std::vector<std::vector<Mat>>();
 }
 
@@ -78,6 +87,12 @@ std::vector<std::vector<Pooling::Mat>> Pooling::calc_gradient ( const std::vecto
 
 std::vector<Pooling::Mat> Pooling::calc_delta ( const std::vector<Mat>& U, const std::vector<Mat>& delta )
 {
+	int my_size = num_unit, my_offset = 0;
+#ifdef USE_MPI
+	my_size = (rank+1)*num_unit/nprocs - rank*num_unit/nprocs;
+	my_offset = rank*num_unit/nprocs;
+#endif
+
 	const int Y = prev_num_unit/prev_ldu, X = prev_ldu;
 	std::vector<Mat> nx_delta(prev_num_map);
 
@@ -85,34 +100,38 @@ std::vector<Pooling::Mat> Pooling::calc_delta ( const std::vector<Mat>& U, const
 	for( i = 0; i < prev_num_map; ++i ){
 		auto U_apply = (*prev_func)(U[i], false);
 		auto U_diff = (*prev_func)(U[i], true);
-		nx_delta[i] = Mat(U[i].m, U[i].n);
+		nx_delta[i] = Mat::zeros(U[i].m, U[i].n);
 
-#pragma omp parallel for default(none) \
-	private(j,k) shared(i, nx_delta)
-		for( j = 0; j < nx_delta[i].m; ++j )
-			for( k = 0; k < nx_delta[i].n; ++k )
-				nx_delta[i](j,k) = 0.0;
-		
+		const int gap = prev_ldu + 2*pad;
 #pragma omp parallel for default(none)			\
-	private(j,s,t,y,x) shared(i, nx_delta, delta, U_apply, U_diff)
-		for( j = 0; j < U_apply.n; ++j )
-			for( y = 0; y < Y; y += stride )
-				for( x = 0; x < X; x += stride ){
-					int idx = x + y*prev_ldu;
-					double val = U_apply(idx,j);
-					
-					for( s = 0; s < m; ++s )
-						for( t = 0; t < n; ++t ){
-							int nx = x + s, ny = y + t;
-							if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
-							
-							if( val < U_apply(nx+ny*prev_ldu,j) ){
-								idx = nx + ny*prev_ldu;
-								val = U_apply(idx,j);
-							}
+	private(j,k,s,t) shared(i, nx_delta, U_apply,U_diff)
+		for( j = 0; j < my_size; ++j ){
+			int x = (j + my_offset)%ldu, y = (j + my_offset)/ldu;
+
+			for( k = 0; k < U_apply.n; ++k ){
+				int s_idx = -1;
+				double val = -1E100;
+				
+				for( s = 0; s < m; ++s )
+					for( t = 0; t < n; ++t ){
+						int idx = stride*x + t + s*gap + stride*y*gap;
+						int nx = idx%gap - pad, ny = idx/gap - pad;
+
+						if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
+
+						if( val < U_apply(ny*prev_ldu + nx, k) ){
+							val = U_apply(ny*prev_ldu + nx, k);
+							s_idx = ny*prev_ldu + nx;
 						}
-					nx_delta[i](idx,j) += delta[i](x/stride + y/stride*ldu,j) * U_diff(idx,j);
-				}
+					}
+				
+				nx_delta[i](s_idx, k) += delta[i](j + my_offset, k) * U_diff(s_idx, k);
+			}
+		}
+
+#ifdef USE_MPI
+		MPI_Allreduce(MPI_IN_PLACE, &nx_delta[i](0,0), U[i].m*U[i].n, MPI_DOUBLE_PRECISION, MPI_SUM, inner_world);
+#endif
 	}
 	
 	return nx_delta;
@@ -125,6 +144,18 @@ void Pooling::update_W ( const std::vector<std::vector<Mat>>& dW )
 
 std::vector<Pooling::Mat> Pooling::apply ( const std::vector<Mat>& U, bool use_func )
 {
+	int my_size = num_unit, my_offset = 0;
+#ifdef USE_MPI
+	std::vector<int> size(nprocs), offset(nprocs);
+	for( int i = 0; i < nprocs; ++i ){
+		size[i] = ((i+1)*my_size/nprocs - i*my_size/nprocs)*U[0].n;
+		offset[i] = i*my_size/nprocs*U[0].n;
+	}
+
+	my_size = size[rank]/U[0].n;
+	my_offset = offset[rank]/U[0].n;
+#endif
+	
 	const int Y = prev_num_unit/prev_ldu, X = prev_ldu;
 	std::vector<Mat> new_S(num_map, Mat(num_unit, U[0].n));
 	std::vector<Mat> ret(num_map);
@@ -133,35 +164,48 @@ std::vector<Pooling::Mat> Pooling::apply ( const std::vector<Mat>& U, bool use_f
 	for( i = 0; i < num_map; ++i ){
 		ret[i] = Mat(num_unit, U[0].n);
 		Mat U_ = (*prev_func)(U[i], false);
+		Mat tmp = Mat::zeros(my_size, U[0].n);
 
+		const int gap = prev_ldu + 2*pad;
 #pragma omp parallel for default(none) \
-	private(j,y,x,s,t) shared(i, new_S, ret, U, U_)
-		for( j = 0; j < U[0].n; ++j ){
-			for( y = 0; y < Y; y += stride )
-				for( x = 0; x < X; x += stride ){
-					int idx = 0;
-					double val = U_(x+prev_ldu*y,j);
+	private(j,k,s,t) shared(i, U_, ret,new_S)
+		for( j = 0; j < my_size; ++j ){
+			int x = (j + my_offset)%ldu, y = (j + my_offset)/ldu;
 
-					for( s = 0; s < m; ++s )
-						for( t = 0; t < n; ++t ){
-							int nx = x+s, ny = y+t;
-							if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
-							if( val < U_(nx + ny*prev_ldu,j) ){
-								val = U_(nx + ny*prev_ldu,j);
-								idx = nx + ny*prev_ldu;
-							}
+			for( k = 0; k < U_.n; ++k ){
+				int s_idx = -1;
+				double val = -1E100;
+
+				for( s = 0; s < m; ++s )
+					for( t = 0; t < n; ++t ){
+						int idx = stride*x + t + s*gap + stride*y*gap;
+						int nx = idx%gap - pad, ny = idx/gap - pad;
+						
+						if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
+
+						if( val < U_(ny*prev_ldu + nx, k) ){
+							val = U_(ny*prev_ldu + nx, k);
+							s_idx = ny*prev_ldu + nx;
 						}
-					ret[i](x/stride + (y/stride)*ldu,j) = val;
-					new_S[i](x/stride + (y/stride)*ldu,j) = idx;
-				}
+					}
+
+				tmp(j, k) = val;
+				new_S[i](j + my_offset, k) = s_idx;
+			}
 		}
+
+		if( use_func )
+			tmp = (*func)(tmp, false);
+
+#ifdef USE_MPI
+		MPI_Allgatherv(&tmp(0,0), size[rank], MPI_DOUBLE_PRECISION,
+					   &ret[i](0,0), &size[0], &offset[0], MPI_DOUBLE_PRECISION, inner_world);
+#else
+		ret[i] = tmp;
+#endif
 	}
 
 	S = new_S;
-	
-	if( use_func )
-		for( int i = 0; i < num_map; ++i )
-			ret[i] = (*func)(ret[i], false);
 
 	return ret;
 }

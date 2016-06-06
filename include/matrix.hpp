@@ -17,6 +17,10 @@ extern "C"{
 	void dgemm_(char* transa, char* transb, int* m, int* n, int* k,
 				double* alpha, double* A, int* lda, double* B, int* ldb,
 				double* beta, double* C, int* ldc);
+
+	void sgemm_(char* transa, char* transb, int* m, int* n, int* k,
+				float* alpha, float* A, int* lda, float* B, int* ldb,
+				float* beta, float* C, int* ldc);
 	};
 #endif
 
@@ -41,7 +45,7 @@ struct Matrix
 #endif
 	}
 
-	Matrix( const std::vector<double>& v ):m(v.size()), n(1)
+	Matrix( const std::vector<T>& v ):m(v.size()), n(1)
 	{
 #ifdef USE_EIGEN
 		this->v = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>(m, n);
@@ -107,10 +111,10 @@ struct Matrix
 		return ret;
 	}
 	
-	static double norm_fro ( const Matrix<T>& mat )
+	static T norm_fro ( const Matrix<T>& mat )
 	{
 		int m = mat.m, n = mat.n;
-		double ret = 0.0;
+		T ret = 0.0;
 
 		for( int i = 0; i < m; ++i )
 			for( int j = 0; j < n; ++j )
@@ -119,7 +123,7 @@ struct Matrix
 		return sqrt(ret);
 	}
 
-	const double& operator () ( int i, int j ) const
+	const T& operator () ( int i, int j ) const
 	{
 #ifdef USE_EIGEN
 		return v(i, j);
@@ -128,7 +132,7 @@ struct Matrix
 #endif
 	}
 
-	double& operator () ( int i, int j )
+	T& operator () ( int i, int j )
 	{
 #ifdef USE_EIGEN
 		return v(i, j);
@@ -255,12 +259,11 @@ struct Matrix
 	{
 		int m = m1.m, n = m2.n, l = m1.n;
 		Matrix<T> ret(m, n);
-
 #ifdef USE_EIGEN
 		ret.v = m1.v*m2.v;
 #elif USE_BLAS
-		double ONE = 1.0, ZERO = 0.0;
-		std::vector<double> tmp_m1(m1.m*m1.n), tmp_m2(m2.m*m2.n), tmp_ret(m*n);
+		T ONE = 1.0, ZERO = 0.0;
+		std::vector<T> tmp_m1(m1.m*m1.n), tmp_m2(m2.m*m2.n), tmp_ret(m*n);
 
 		int i, j;
 #pragma omp parallel for default(none) \
@@ -272,6 +275,7 @@ struct Matrix
 
 		int lda = m1.m, ldb = m2.m;
 		dgemm_("N", "N", &m, &n, &l, &ONE, &tmp_m1[0], &lda, &tmp_m2[0], &ldb, &ZERO, &tmp_ret[0], &lda);
+		// sgemm_("N", "N", &m, &n, &l, &ONE, &tmp_m1[0], &lda, &tmp_m2[0], &ldb, &ZERO, &tmp_ret[0], &lda);
 
 #pragma omp parallel for default(none) \
 	private(i,j) shared(ret, tmp_ret, m, n)
@@ -282,7 +286,7 @@ struct Matrix
 	private(i,j,k) shared(m,n,l,m1,m2,ret)
 		for( i = 0; i < m; ++i )
 			for( j = 0; j < n; ++j ){
-				double sum = 0.0;
+				T sum = 0.0;
 				for( k = 0; k < l; ++k )
 					sum += m1(i,k)*m2(k,j);
 				ret(i,j) = sum;
