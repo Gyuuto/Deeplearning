@@ -320,15 +320,11 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 	for( int n = 0; n <= MAX_ITER; ++n ){
 		// assign data to mini-batch
 		for( i = 0; i < X.size(); ++i )
-#pragma omp parallel for default(none) \
-	private(j,k), shared(i, U, X, idx, num_data, cnt)
 			for( j = 0; j < BATCH_SIZE; ++j )
 				for( k = 0; k < U[0][i].m; ++k )
 					U[0][i](k,j) = X[i](k, idx[cnt+j]%num_data);
 		
 		for( i = 0; i < Y.size(); ++i )
-#pragma omp parallel for default(none) \
-	private(j,k), shared(i, D, Y, idx, num_data, cnt)
 			for( j = 0; j < BATCH_SIZE; ++j )
 				for( k = 0; k < D[i].m; ++k )
 					D[i](k,j) = Y[i](k, idx[cnt+j]%num_data);

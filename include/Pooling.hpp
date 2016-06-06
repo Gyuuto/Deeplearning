@@ -104,7 +104,7 @@ std::vector<Pooling::Mat> Pooling::calc_delta ( const std::vector<Mat>& U, const
 
 		const int gap = prev_ldu + 2*pad;
 #pragma omp parallel for default(none)			\
-	private(j,k,s,t) shared(i, nx_delta, U_apply,U_diff)
+	private(j,k,s,t) shared(i, my_size,my_offset, nx_delta,delta, U_apply,U_diff)
 		for( j = 0; j < my_size; ++j ){
 			int x = (j + my_offset)%ldu, y = (j + my_offset)/ldu;
 
@@ -119,7 +119,7 @@ std::vector<Pooling::Mat> Pooling::calc_delta ( const std::vector<Mat>& U, const
 
 						if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
 
-						if( val < U_apply(ny*prev_ldu + nx, k) ){
+						if( s_idx == -1 || val < U_apply(ny*prev_ldu + nx, k) ){
 							val = U_apply(ny*prev_ldu + nx, k);
 							s_idx = ny*prev_ldu + nx;
 						}
@@ -168,7 +168,7 @@ std::vector<Pooling::Mat> Pooling::apply ( const std::vector<Mat>& U, bool use_f
 
 		const int gap = prev_ldu + 2*pad;
 #pragma omp parallel for default(none) \
-	private(j,k,s,t) shared(i, U_, ret,new_S)
+	private(j,k,s,t) shared(i, my_size,my_offset, U_, tmp,new_S)
 		for( j = 0; j < my_size; ++j ){
 			int x = (j + my_offset)%ldu, y = (j + my_offset)/ldu;
 
@@ -183,7 +183,7 @@ std::vector<Pooling::Mat> Pooling::apply ( const std::vector<Mat>& U, bool use_f
 						
 						if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
 
-						if( val < U_(ny*prev_ldu + nx, k) ){
+						if( s_idx == -1 || val < U_(ny*prev_ldu + nx, k) ){
 							val = U_(ny*prev_ldu + nx, k);
 							s_idx = ny*prev_ldu + nx;
 						}
@@ -200,6 +200,8 @@ std::vector<Pooling::Mat> Pooling::apply ( const std::vector<Mat>& U, bool use_f
 #ifdef USE_MPI
 		MPI_Allgatherv(&tmp(0,0), size[rank], MPI_DOUBLE_PRECISION,
 					   &ret[i](0,0), &size[0], &offset[0], MPI_DOUBLE_PRECISION, inner_world);
+		MPI_Allgatherv(MPI_IN_PLACE, size[rank], MPI_DOUBLE_PRECISION,
+					   &new_S[i](0,0), &size[0], &offset[0], MPI_DOUBLE_PRECISION, inner_world);
 #else
 		ret[i] = tmp;
 #endif

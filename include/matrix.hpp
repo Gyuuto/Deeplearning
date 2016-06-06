@@ -17,11 +17,10 @@ extern "C"{
 	void dgemm_(char* transa, char* transb, int* m, int* n, int* k,
 				double* alpha, double* A, int* lda, double* B, int* ldb,
 				double* beta, double* C, int* ldc);
-
 	void sgemm_(char* transa, char* transb, int* m, int* n, int* k,
 				float* alpha, float* A, int* lda, float* B, int* ldb,
 				float* beta, float* C, int* ldc);
-	};
+};
 #endif
 
 template<class T>
@@ -81,17 +80,21 @@ struct Matrix
 
 	static Matrix<T> transpose( const Matrix<T>& mat )
 	{
-		int i, j;
 		int m = mat.m, n = mat.n;
 		Matrix<T> ret(n, m);
 
-#pragma omp parallel for default(none) \
-	private(i,j) shared(m,n,mat,ret)
-		for( i = 0; i < n; ++i ){
-			for( j = 0; j < m; ++j ){
-				ret(i,j) = mat(j,i);
-			}
+#pragma omp parallel for
+		for( int i = 0; i < n*m; ++i ){
+			int idx1 = i/m, idx2 = i%m;
+			ret(idx1,idx2) = mat(idx2,idx1);
 		}
+// #pragma omp parallel for default(none) \
+// 	private(i,j) shared(m,n,mat,ret)
+// 		for( i = 0; i < n; ++i ){
+// 			for( j = 0; j < m; ++j ){
+// 				ret(i,j) = mat(j,i);
+// 			}
+// 		}
 
 		return ret;
 	}
@@ -171,7 +174,6 @@ struct Matrix
 			for( j = 0; j < n; ++j )
 				(*this)(i,j) -= m1(i,j);
 #endif
-
 		return *this;
 	}
 
@@ -182,7 +184,6 @@ struct Matrix
 #else
 		*this = *this*m1;
 #endif
-
 		return *this;
 	}
 
@@ -198,7 +199,6 @@ struct Matrix
 			for( j = 0; j < this->n; ++j )
 				*this(i,j) *= c;
 #endif
-
 		return *this;
 	}
 	
@@ -214,7 +214,6 @@ struct Matrix
 			for( j = 0; j < this->n; ++j )
 				*this(i,j) /= c;
 #endif
-
 		return *this;
 	}
 
@@ -263,30 +262,24 @@ struct Matrix
 		ret.v = m1.v*m2.v;
 #elif USE_BLAS
 		T ONE = 1.0, ZERO = 0.0;
-		std::vector<T> tmp_m1(m1.m*m1.n), tmp_m2(m2.m*m2.n), tmp_ret(m*n);
 
-		int i, j;
-#pragma omp parallel for default(none) \
-	private(i,j) shared(tmp_m1, m1)
-		for( i = 0; i < m1.m; ++i ) for( j = 0; j < m1.n; ++j ) tmp_m1[i+m1.m*j] = m1(i,j);
-#pragma omp parallel for default(none) \
-	private(i,j) shared(tmp_m2, m2)
-		for( i = 0; i < m2.m; ++i ) for( j = 0; j < m2.n; ++j ) tmp_m2[i+m2.m*j] = m2(i,j);
-
-		int lda = m1.m, ldb = m2.m;
-		dgemm_("N", "N", &m, &n, &l, &ONE, &tmp_m1[0], &lda, &tmp_m2[0], &ldb, &ZERO, &tmp_ret[0], &lda);
-		// sgemm_("N", "N", &m, &n, &l, &ONE, &tmp_m1[0], &lda, &tmp_m2[0], &ldb, &ZERO, &tmp_ret[0], &lda);
-
-#pragma omp parallel for default(none) \
-	private(i,j) shared(ret, tmp_ret, m, n)
-		for( i = 0; i < m; ++i ) for( j = 0; j < n; ++j ) ret(i,j) = tmp_ret[i+m*j];
+		if( m != 0 && n != 0 && l != 0 ){
+			dgemm_("N", "N", &n, &m, &l, &ONE,
+				   const_cast<double*>(&m2(0,0)), &n,
+				   const_cast<double*>(&m1(0,0)), &l,
+				   &ZERO, &ret(0,0), &n);
+			// sgemm_("N", "N", &n, &m, &l, &ONE,
+			// 	   const_cast<float*>(&m2(0,0)), &n,
+			// 	   const_cast<float*>(&m1(0,0)), &l,
+			// 	   &ZERO, &ret(0,0), &n);
+		}
 #else
 		int i, j, k;
 #pragma omp parallel for default(none)	\
 	private(i,j,k) shared(m,n,l,m1,m2,ret)
 		for( i = 0; i < m; ++i )
 			for( j = 0; j < n; ++j ){
-				T sum = 0.0;
+				double sum = 0.0;
 				for( k = 0; k < l; ++k )
 					sum += m1(i,k)*m2(k,j);
 				ret(i,j) = sum;
