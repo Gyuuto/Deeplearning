@@ -54,6 +54,33 @@ Pooling::Pooling( int prev_num_map, int prev_num_unit, int prev_ldu,
 
 	this->m = m; this->n = n; this->stride = stride; this->pad = 0;
 
+	int rank = 0;
+#ifdef USE_MPI
+	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+#endif
+	if( num_unit%ldu != 0 )
+		if( rank == 0 ){
+			printf("WARNING : Wrong leading dimension of output on Pooling layer.\n");
+			printf("          Layer details : output size[%d x %d], filter size[%d x %d], stride %d, padding %d, number of map %d.\n", num_unit/ldu, ldu, m, n, stride, pad, num_map);
+		}
+	if( prev_num_unit%prev_ldu != 0 )
+		if( rank == 0 ){
+			printf("WARNING : Wrong leading dimension of input on Pooling layer.\n");
+			printf("          Layer details : output size[%d x %d], filter size[%d x %d], stride %d, padding %d, number of map %d.\n", num_unit/ldu, ldu, m, n, stride, pad, num_map);
+		}
+	if( ldu != (prev_ldu + 2*pad - n)/stride + 1 )
+		if( rank == 0 ){
+			printf("WARNING : Wrong output image width on Pooling layer.\n");
+			printf("          Estimate width = %d.\n", (prev_ldu + 2*pad - n)/stride + 1);
+			printf("          Layer details : output size[%d x %d], filter size[%d x %d], stride %d, padding %d, number of map %d.\n", num_unit/ldu, ldu, m, n, stride, pad, num_map);
+		}
+	if( num_unit/ldu != (prev_num_unit/prev_ldu + 2*pad - m)/stride + 1 )
+		if( rank == 0 ){
+			printf("WARNING : Wrong output image height on Pooling layer.\n");
+			printf("          Estimate height = %d.\n", (prev_num_unit/prev_ldu + 2*pad - m)/stride + 1);
+			printf("          Layer details : output size[%d x %d], filter size[%d x %d], stride %d, padding %d, number of map %d.\n", num_unit/ldu, ldu, m, n, stride, pad, num_map);
+		}
+
 	func = f;
 }
 

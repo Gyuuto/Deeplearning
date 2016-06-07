@@ -57,10 +57,36 @@ Convolutional::Convolutional( int prev_num_map, int prev_num_unit, int prev_ldu,
 
 	this->m = m; this->n = n; this->stride = stride; this->pad = m/2;
 
+	int rank = 0;
+#ifdef USE_MPI
+	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+#endif
+	if( num_unit%ldu != 0 )
+		if( rank == 0 ){
+			printf("WARNING : Wrong leading dimension of output on Convolution layer.\n");
+			printf("          Layer details : output size[%d x %d], filter size[%d x %d], stride %d, padding %d, number of map %d.\n", num_unit/ldu, ldu, m, n, stride, pad, num_map);
+		}
+	if( prev_num_unit%prev_ldu != 0 )
+		if( rank == 0 ){
+			printf("WARNING : Wrong leading dimension of input on Convolution layer.\n");
+			printf("          Layer details : output size[%d x %d], filter size[%d x %d], stride %d, padding %d, number of map %d.\n", num_unit/ldu, ldu, m, n, stride, pad, num_map);
+		}
+	if( ldu != (prev_ldu + 2*pad - n)/stride + 1 )
+		if( rank == 0 ){
+			printf("WARNING : Wrong output image width on Convolution layer.\n");
+			printf("          Estimate width = %d.\n", (prev_ldu + 2*pad - n)/stride + 1);
+			printf("          Layer details : output size[%d x %d], filter size[%d x %d], stride %d, padding %d, number of map %d.\n", num_unit/ldu, ldu, m, n, stride, pad, num_map);
+		}
+	if( num_unit/ldu != (prev_num_unit/prev_ldu + 2*pad - m)/stride + 1 )
+		if( rank == 0 ){
+			printf("WARNING : Wrong output image height on Convolution layer.\n");
+			printf("          Estimate height = %d.\n", (prev_num_unit/prev_ldu + 2*pad - m)/stride + 1);
+			printf("          Layer details : output size[%d x %d], filter size[%d x %d], stride %d, padding %d, number of map %d.\n", num_unit/ldu, ldu, m, n, stride, pad, num_map);
+		}
+	
 	func = f;
 
 	beta_ = 1.0; gamma_ = 1.0;
-
 	for( int i = 0; i < num_map; ++i ){
 		W.emplace_back(prev_num_map);
 		for( int j = 0; j < prev_num_map; ++j ){
@@ -262,11 +288,11 @@ std::vector<Convolutional::Mat> Convolutional::calc_delta ( const std::vector<Ma
 void Convolutional::update_W ( const std::vector<std::vector<Mat>>& dW )
 {
 	const double a_beta = 0.9, a_gamma = 0.999, a_eps = 1.0E-8;
+	beta_ *= a_beta; gamma_ *= a_gamma;
 	for( int i = 0; i < num_map; ++i ){
 		for( int j = 0; j < prev_num_map; ++j )
 			W[i][j] = W[i][j] + dW[i][j];
 
-		beta_ *= a_beta; gamma_ *= a_gamma;
 		v[i] = a_beta*v[i] + (1.0 - a_beta)*d_bias[i];
 		r[i] = a_gamma*r[i] + (1.0 - a_gamma)*d_bias[i]*d_bias[i];
 		bias[i] -= 0.001*v[i]/(1.0 - beta_)/(sqrt(r[i]/(1.0 - gamma_)+a_eps));
