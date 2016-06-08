@@ -217,10 +217,10 @@ void Neuralnet::add_layer( const std::shared_ptr<Layer>& layer )
 #endif
 		if( rank == 0 ){
 			if( layer->get_prev_num_map() != prev_num_map )
-				printf("WARNING : Wrong prev_num_map on  layer %lu.\n  Estimate prev_num_map = %d\n",
+				printf("WARNING : Wrong prev_num_map on layer %lu.\n  Estimate prev_num_map = %d.\n",
 					   this->layer.size() + 1, prev_num_map);
 			if( layer->get_prev_num_unit() != prev_num_unit )
-				printf("WARNING : Wrong prev_num_unit on layer %lu.\n  Estimate prev_num_unit = %d\n",
+				printf("WARNING : Wrong prev_num_unit on layer %lu.\n  Estimate prev_num_unit = %d.\n",
 					   this->layer.size() + 1, prev_num_unit);
 		}
 	}
