@@ -5,6 +5,8 @@
 #include <cmath>
 #include <cstring>
 
+#include <chrono>
+
 #include "../include/Neuralnet.hpp"
 #include "../include/Layer.hpp"
 #include "../include/FullyConnected.hpp"
@@ -171,12 +173,12 @@ int main( int argc, char* argv[] )
 	}
 
 	// checking error function.
-	double prev_time, total_time;
+	chrono::time_point<chrono::system_clock> prev_time, total_time;
 	auto check_error = [&](const Neuralnet& nn, const int iter, const std::vector<Matrix<double>>& x, const std::vector<Matrix<double>>& d ) -> void {
 		if( iter%((N/BATCH_SIZE)) != 0 || iter == 0 ) return;
 
 		const int once_num = 1000;
-		double tmp_time = MPI_Wtime();
+		auto tmp_time = chrono::system_clock::now();
 
 		// calculating answer rate among all train data.
 		int train_ans_num = 0;
@@ -188,6 +190,7 @@ int main( int argc, char* argv[] )
 			auto y = nn.apply(tmp_x);
 			for( int j = 0; j < y.size(); ++j ){
 				int idx, lab;
+
 				double max_num = 0.0;
 				for( int k = 0; k < 10; ++k ){
 					if( max_num < y[j][0][k] ){
@@ -226,15 +229,18 @@ int main( int argc, char* argv[] )
 		if( inner_rank == 0 ){
 			for( int i = 0; i < outer_nprocs; ++i ){
 				if( i == outer_rank ){
-					printf("outer rank : %d\n", outer_rank);
-					printf("  Elapsed time : %.3f, Total time : %.3f\n", tmp_time - prev_time, MPI_Wtime() - total_time);
+					printf("outer rank : %d, iter : %d\n", outer_rank, iter);
+					printf("  Elapsed time : %.3f, Total time : %.3f\n",
+						   chrono::duration_cast<chrono::milliseconds>(tmp_time - prev_time).count()/1e3,
+						   chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now() - total_time).count()/1e3);
 					printf("  Train answer rate : %.2f%%\n", (double)train_ans_num/train_x.size()*100.0);
 					printf("  Test answer rate  : %.2f%%\n", (double)test_ans_num/X[0].n*100.0);
 				}
 				MPI_Barrier(outer_world);
 			}
-			prev_time = MPI_Wtime();
+			prev_time = chrono::system_clock::now();
 		}
+		nn.print_cost(x, d);
 		if( world_rank == 0 ) puts("");
 	};
 
@@ -244,8 +250,8 @@ int main( int argc, char* argv[] )
 	net.set_BATCHSIZE(BATCH_SIZE);
 	net.set_UPDATEITER(N/BATCH_SIZE*2);
 	// learning the neuralnet in 20 EPOCH and output error defined above in each epoch.
-	prev_time = total_time = MPI_Wtime();
-	net.learning(train_x, d, N/BATCH_SIZE*10, check_error);
+	prev_time = total_time = chrono::system_clock::now();
+	net.learning(train_x, d, N/BATCH_SIZE*1, check_error);
 
 	MPI_Finalize();
 }
