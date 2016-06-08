@@ -240,7 +240,6 @@ int main( int argc, char* argv[] )
 			}
 			prev_time = chrono::system_clock::now();
 		}
-		nn.print_cost(x, d);
 		if( world_rank == 0 ) puts("");
 	};
 
@@ -251,7 +250,7 @@ int main( int argc, char* argv[] )
 	net.set_UPDATEITER(N/BATCH_SIZE*2);
 	// learning the neuralnet in 20 EPOCH and output error defined above in each epoch.
 	prev_time = total_time = chrono::system_clock::now();
-	net.learning(train_x, d, N/BATCH_SIZE*1, check_error);
+	net.learning(train_x, d, N/BATCH_SIZE*20, check_error);
 
 	MPI_Finalize();
 }
