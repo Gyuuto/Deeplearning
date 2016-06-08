@@ -76,7 +76,6 @@ void Convolutional::init ( std::mt19937& m, MPI_Comm inner_world, MPI_Comm outer
 void Convolutional::init ( std::mt19937& m )
 #endif
 {
-	rank = 0; nprocs = 1;
 #ifdef USE_MPI
 	this->inner_world = inner_world;
 	this->outer_world = outer_world;
@@ -130,8 +129,13 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 		Mat U_mat(my_size, prev_num_map);
 
 		const int gap = prev_ldu + 2*pad;
+#ifdef USE_MPI
 		const int tmp_size = (rank+1)*num_unit/nprocs - rank*num_unit/nprocs; 
 		const int tmp_offset = rank*num_unit/nprocs;
+#else
+		const int tmp_size = num_unit;
+		const int tmp_offset = 0;
+#endif
 #pragma omp parallel for
 		for( int j = std::max(0, tmp_offset - m*prev_ldu/2); j < std::min(num_unit, tmp_offset + tmp_size + m*prev_ldu/2); ++j ){
 			int x = j%ldu, y = j/ldu;
@@ -149,11 +153,11 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 				}
 		}
 
-		for( int j = 0; j < prev_num_map; ++j )
 #pragma omp parallel for
-			for( int k = 0; k < my_size; ++k ){
+		for( int k = 0; k < my_size; ++k )
+			for( int j = 0; j < prev_num_map; ++j )
 				U_mat(k, j) = U_[j](offset + k, i);
-			}
+
 		nabla_mat += delta_mat*U_mat;
 	}
 
@@ -165,8 +169,8 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 		}
 		
 		double sum = 0.0;
-		for( int j = 0; j < delta[i].n; ++j )
-			for( int k = 0; k < delta[i].m; ++k )
+		for( int k = 0; k < delta[i].m; ++k )
+			for( int j = 0; j < delta[i].n; ++j )
 				sum += delta[i](k,j);
 		d_bias[i] = sum / delta[i].n;
 	}
@@ -205,14 +209,19 @@ std::vector<Convolutional::Mat> Convolutional::calc_delta ( const std::vector<Ma
 		for( int j = 0; j < prev_num_map; ++j )
 			for( int k = 0; k < m; ++ k )
 				for( int l = 0; l < n; ++l )
-					kernel(i*(m*n) + k*n + l, j) = W[i][j](l, k);
+					kernel(i*(m*n) + l*n + k, j) = W[i][j](k, l);
 
 	for( int i = 0; i < delta[0].n; ++i ){
 		Mat input_image = Mat::zeros(my_size, m*n*num_map);
  
 		const int gap = prev_ldu + 2*pad;
+#ifdef USE_MPI
 		const int tmp_size = (rank+1)*num_unit/nprocs - rank*num_unit/nprocs; 
 		const int tmp_offset = rank*num_unit/nprocs;
+#else
+		const int tmp_size = num_unit;
+		const int tmp_offset = 0;
+#endif
 #pragma omp parallel for
 		for( int j = std::max(0, tmp_offset - m*prev_ldu/2); j < std::min(num_unit, tmp_offset + tmp_size + m*prev_ldu/2); ++j ){
 			int x = j%ldu, y = j/ldu;
@@ -288,7 +297,7 @@ std::vector<Convolutional::Mat> Convolutional::apply ( const std::vector<Mat>& U
 		for( int j = 0; j < prev_num_map; ++j )
 			for( int k = 0; k < m; ++ k )
 				for( int l = 0; l < n; ++l )
-					kernel(j*(m*n) + k*n + l, i) = W[i][j](l, k);
+					kernel(j*(m*n) + l*n + k, i) = W[i][j](k, l);
 			
 	for( int i = 0; i < U[0].n; ++i ){
 		Mat input_image = Mat::zeros(my_size, m*n*prev_num_map);

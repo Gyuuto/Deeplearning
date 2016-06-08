@@ -63,7 +63,6 @@ void Pooling::init ( std::mt19937& m, MPI_Comm inner_world, MPI_Comm outer_world
 void Pooling::init ( std::mt19937& m )
 #endif
 {
-	rank = 0; nprocs = 1;
 #ifdef USE_MPI
 	this->inner_world = inner_world;
 	this->outer_world = outer_world;
