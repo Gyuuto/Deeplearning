@@ -15,10 +15,10 @@
 #elif USE_BLAS
 extern "C"{
 	void dgemm_(char* transa, char* transb, int* m, int* n, int* k,
-				double* alpha, double* A, int* lda, double* B, int* ldb,
+				double* alpha, const double* A, int* lda, const double* B, int* ldb,
 				double* beta, double* C, int* ldc);
 	void sgemm_(char* transa, char* transb, int* m, int* n, int* k,
-				float* alpha, float* A, int* lda, float* B, int* ldb,
+				float* alpha, const float* A, int* lda, const float* B, int* ldb,
 				float* beta, float* C, int* ldc);
 };
 #endif
@@ -265,12 +265,10 @@ struct Matrix
 
 		if( m != 0 && n != 0 && l != 0 ){
 			dgemm_("N", "N", &n, &m, &l, &ONE,
-				   const_cast<double*>(&m2(0,0)), &n,
-				   const_cast<double*>(&m1(0,0)), &l,
+				   &m2(0,0), &n, &m1(0,0), &l,
 				   &ZERO, &ret(0,0), &n);
 			// sgemm_("N", "N", &n, &m, &l, &ONE,
-			// 	   const_cast<float*>(&m2(0,0)), &n,
-			// 	   const_cast<float*>(&m1(0,0)), &l,
+			// 	   &m2(0,0), &n, &m1(0,0), &l,
 			// 	   &ZERO, &ret(0,0), &n);
 		}
 #else
