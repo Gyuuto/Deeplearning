@@ -103,9 +103,6 @@ void Convolutional::init ( std::mt19937& mt, MPI_Comm inner_world, MPI_Comm oute
 void Convolutional::init ( std::mt19937& mt )
 #endif
 {
-	int my_size, my_offset;
-	const int Y = prev_num_unit/prev_ldu, X = prev_ldu;
-	const int gap = prev_ldu + 2*pad;
 #ifdef USE_MPI
 	this->inner_world = inner_world;
 	this->outer_world = outer_world;
@@ -115,28 +112,79 @@ void Convolutional::init ( std::mt19937& mt )
 
 #endif
 
+	// calculate indices of feed forward
+	{
+		int my_size, my_offset;
+		const int Y = prev_num_unit/prev_ldu, X = prev_ldu;
+		const int gap = prev_ldu + 2*pad;
 #ifdef USE_MPI
-	my_size = (rank+1)*num_unit/nprocs - rank*num_unit/nprocs;
-	my_offset = rank*num_unit/nprocs;
+		my_size = (rank+1)*num_unit/nprocs - rank*num_unit/nprocs;
+		my_offset = rank*num_unit/nprocs;
 #else
-	my_size = num_unit; my_offset = 0;
+		my_size = num_unit; my_offset = 0;
 #endif
-	feed_idx.resize(my_size*m*n);
-	for( int i = 0; i < my_size; ++i ){
-		int x = (i + my_offset)%ldu, y = (i + my_offset)/ldu;
-		for( int s = 0; s < n; ++s )
-			for( int t = 0; t < m; ++t ){
-				int idx = stride*x + s + t*gap + stride*y*gap;
-				int nx = idx%gap - pad, ny = idx/gap - pad;
+		feed_idx.resize(my_size*m*n);
+#pragma omp parallel for
+		for( int i = 0; i < my_size; ++i ){
+			int x = (i + my_offset)%ldu, y = (i + my_offset)/ldu;
+			for( int s = 0; s < n; ++s )
+				for( int t = 0; t < m; ++t ){
+					int idx = stride*x + s + t*gap + stride*y*gap;
+					int nx = idx%gap - pad, ny = idx/gap - pad;
 
-				if( nx < 0 || nx >= X || ny < 0 || ny >= Y ){
-					feed_idx[i*m*n + t*n + s] = -1;
-					continue;
+					if( nx < 0 || nx >= X || ny < 0 || ny >= Y ){
+						feed_idx[i*m*n + t*n + s] = -1;
+						continue;
+					}
+					feed_idx[i*m*n + t*n + s] = ny*prev_ldu + nx;
 				}
-				feed_idx[i*m*n + t*n + s] = ny*prev_ldu + nx;
-			}
+		}
 	}
-	
+
+	// calculate indices of delta
+	{
+		int my_size, my_offset;
+
+		const int X = prev_ldu, Y = prev_num_unit/prev_ldu;
+		const int gap = prev_ldu + 2*pad;
+#ifdef USE_MPI
+		my_size = (rank+1)*prev_num_unit/nprocs - rank*prev_num_unit/nprocs;
+		my_offset = rank*prev_num_unit/nprocs;
+
+		const int tmp_size = (rank+1)*num_unit/nprocs - rank*num_unit/nprocs; 
+		const int tmp_offset = rank*num_unit/nprocs;
+#else
+		my_size = prev_num_unit;
+		my_offset = 0;
+
+		const int tmp_size = num_unit;
+		const int tmp_offset = 0;
+#endif
+		int l_idx = std::max(0, tmp_offset - m*prev_ldu/2);
+		int r_idx = std::min(num_unit, tmp_offset + tmp_size + m*prev_ldu/2);
+		delta_idx.resize((r_idx - l_idx)*m*n);
+#pragma omp parallel for
+		for( int i = l_idx; i < r_idx; ++i ){
+			int x = i%ldu, y = i/ldu;
+			for( int t = 0; t < m; ++t )
+				for( int s = 0; s < n; ++s ){
+					int idx = stride*x + s + t*gap + stride*y*gap;
+					int nx = idx%gap - pad, ny = idx/gap - pad;
+
+					if( nx < 0 || nx >= X || ny < 0 || ny >= Y ){
+						delta_idx[(i-l_idx)*m*n + t*n + s] = -1;
+						continue;
+					}
+					if( ny*prev_ldu + nx < my_offset + my_size <= ny*prev_ldu + nx ){
+						delta_idx[(i-l_idx)*m*n + t*n + s] = -1;
+						continue;
+					}
+					
+					delta_idx[(i-l_idx)*m*n + t*n + s] = ny*prev_ldu + nx - my_offset;
+				}
+		}
+	}
+
 	const double r = sqrt(6.0/(num_unit + prev_num_unit));
 	std::normal_distribution<double> d_rand(0.0, 1.0E-1);
 
@@ -275,8 +323,10 @@ std::vector<Convolutional::Mat> Convolutional::calc_delta ( const std::vector<Ma
 		const int tmp_size = num_unit;
 		const int tmp_offset = 0;
 #endif
+		int l_idx = std::max(0, tmp_offset - m*prev_ldu/2);
+		int r_idx = std::min(num_unit, tmp_offset + tmp_size + m*prev_ldu/2);
 #pragma omp parallel for
-		for( int j = std::max(0, tmp_offset - m*prev_ldu/2); j < std::min(num_unit, tmp_offset + tmp_size + m*prev_ldu/2); ++j ){
+		for( int j = l_idx; j < r_idx; ++j ){
 			int x = j%ldu, y = j/ldu;
 			for( int t = 0; t < m; ++t )
 				for( int s = 0; s < n; ++s ){
@@ -288,8 +338,13 @@ std::vector<Convolutional::Mat> Convolutional::calc_delta ( const std::vector<Ma
 						continue;
 
 					for( int k = 0; k < num_map; ++k )
-						input_image(ny*prev_ldu + nx - my_offset, m*n*k + t*n + s) += delta[k](j, i);
+						input_image(ny*prev_ldu + nx - my_offset, m*n*k + t*n + s) = delta[k](j, i);
 				}
+			// for( int k = 0; k < num_map; ++k )
+			// 	for( int t = 0; t < m; ++ t )
+			// 		for( int s = 0; s < n; ++s )
+			// 			if( delta_idx[(j-l_idx)*n*m + t*n + s] != -1 )
+			// 				input_image(delta_idx[(j-l_idx)*n*m + t*n + s], m*n*k + t*n + s) = delta[k](j, i);
 		}
 			
 #ifdef USE_MPI
@@ -355,25 +410,13 @@ std::vector<Convolutional::Mat> Convolutional::apply ( const std::vector<Mat>& U
 	for( int i = 0; i < U[0].n; ++i ){
 		Mat input_image = Mat::zeros(my_size, m*n*prev_num_map);
 
-		const int gap = prev_ldu + 2*pad;
 #pragma omp parallel for
 		for( int j = 0; j < my_size; ++j ){
-			int x = (j + my_offset)%ldu, y = (j + my_offset)/ldu;
-			for( int s = 0; s < n; ++s )
-				for( int t = 0; t < m; ++t ){
-					int idx = stride*x + s + t*gap + stride*y*gap;
-					int nx = idx%gap - pad, ny = idx/gap - pad;
-
-					if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
-
-					for( int k = 0; k < prev_num_map; ++k )
-						input_image(j, m*n*k + t*n + s) = U[k](ny*prev_ldu + nx, i);
-				}
-			// for( int s = 0; s < m; ++ s )
-			// 	for( int t = 0; t < n; ++ t )
-			// 		if( feed_idx[j*m*n + s*n + t] != -1 )
-			// 			for( int k = 0; k < prev_num_map; ++k )
-			// 				input_image(j, m*n*k + s*n + t) = U[k](feed_idx[j*m*n + s*n + t], i);
+			for( int k = 0; k < prev_num_map; ++k )
+				for( int s = 0; s < m; ++ s )
+					for( int t = 0; t < n; ++ t )
+						if( feed_idx[j*m*n + s*n + t] != -1 )
+							input_image(j, m*n*k + s*n + t) = U[k](feed_idx[j*m*n + s*n + t], i);
 		}
 
 #ifdef USE_MPI
