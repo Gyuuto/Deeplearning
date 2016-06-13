@@ -9,6 +9,10 @@
 #include <memory>
 #include <random>
 
+#ifdef DEBUG
+#include <chrono>
+#endif
+
 #include "Layer.hpp"
 #include "Convolutional.hpp"
 #include "Function.hpp"
@@ -90,12 +94,36 @@ std::vector<std::vector<std::vector<Neuralnet::Mat>>> Neuralnet::calc_gradient (
 		delta[i] = Mat::hadamard((*loss)((*f)(U[num_layer][i], false), d[i], true),
 								 (*f)(U[num_layer][i], true));
 
+#ifdef DEBUG
+	int rank = 0;
+#ifdef USE_MPI
+	MPI_Comm_rank(inner_world, &rank);
+#endif
+#endif
 	std::vector<std::vector<std::vector<Mat>>> nabla_w(num_layer);
 	for( int i = num_layer-1; i >= 0; --i ){
+#ifdef DEBUG
+		auto beg1 = std::chrono::system_clock::now();
+#endif
 		nabla_w[i] = layer[i]->calc_gradient(U[i], delta);
+#ifdef DEBUG
+		auto end1 = std::chrono::system_clock::now();
+#endif
 
-		if( i == 0 ) continue;
+		if( i == 0 ){
+#ifdef DEBUG
+			if( rank == 0 ) printf("  layer %d, calc grad : %3lld\n", i, std::chrono::duration_cast<std::chrono::milliseconds>(end1 - beg1).count());
+#endif
+			continue;
+		}
+#ifdef DEBUG
+		auto beg2 = std::chrono::system_clock::now();
+#endif
 		delta = layer[i]->calc_delta(U[i], delta);
+#ifdef DEBUG
+		auto end2 = std::chrono::system_clock::now();
+		if( rank == 0 ) printf("  layer %d, calc grad : %3lld, calc delta %3lld\n", i, std::chrono::duration_cast<std::chrono::milliseconds>(end1 - beg1).count(), std::chrono::duration_cast<std::chrono::milliseconds>(end2 - beg2).count());
+#endif
 	}
 	return nabla_w;
 }
@@ -322,15 +350,21 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 		for( i = 0; i < X.size(); ++i )
 			for( j = 0; j < BATCH_SIZE; ++j )
 				for( k = 0; k < U[0][i].m; ++k )
-					U[0][i](k,j) = X[i](k, idx[cnt+j]%num_data);
+					U[0][i](k,j) = X[i](k, idx[(cnt+j)%num_data]);
 		
 		for( i = 0; i < Y.size(); ++i )
 			for( j = 0; j < BATCH_SIZE; ++j )
 				for( k = 0; k < D[i].m; ++k )
-					D[i](k,j) = Y[i](k, idx[cnt+j]%num_data);
+					D[i](k,j) = Y[i](k, idx[(cnt+j)%num_data]);
 
+#ifdef DEBUG
+		auto beg = std::chrono::system_clock::now();
+#endif
 		// feed forward calculation
 		for( i = 0; i < num_layer; ++i ) {
+#ifdef DEBUG
+			auto beg = std::chrono::system_clock::now();
+#endif
 			auto V = U[i];
 			if( i != 0 ){
 				std::shared_ptr<Function> f = layer[i-1]->get_function();
@@ -343,18 +377,35 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 			for( j = 0; j < tmp.size(); ++j ){
 				U[i+1][j] = tmp[j];
 			}
+#ifdef DEBUG
+			auto end = std::chrono::system_clock::now();
+			if( myrank == 0 ) printf("  layer %d : %3lld\n", i, std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
+#endif
 		}
+#ifdef DEBUG
+		auto end = std::chrono::system_clock::now();
+		if( myrank == 0 ) printf("Feed : %3lld %d\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count(), n);
+#endif
 
 		// back propagation calculation
+#ifdef DEBUG
+		beg = std::chrono::system_clock::now();
+#endif
 		auto nabla_w = calc_gradient(U, D);
-		
+#ifdef DEBUG
+		end = std::chrono::system_clock::now();
+		if( myrank == 0 ) printf("Back : %3lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
+#endif
+
 		// averaging all gradients of weights of mini-batches
 		for( i = 0; i < nabla_w.size(); ++i )
 			for( j = 0; j < nabla_w[i].size(); ++j )
 				for( k = 0; k < nabla_w[i][j].size(); ++k )
 					nabla_w[i][j][k] = 1.0/BATCH_SIZE * nabla_w[i][j][k];
 		
-		// check_gradient(cnt, idx, x, y, nabla_w);
+#ifdef CHECK_GRAD
+		check_gradient(cnt, idx, x, y, nabla_w);
+#endif
 		cnt += BATCH_SIZE;
 		if( cnt >= num_data ){
 			std::shuffle( idx.begin(), idx.end(), mt );
