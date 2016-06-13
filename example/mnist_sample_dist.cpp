@@ -35,12 +35,41 @@ void normalize ( vector<vector<vector<double>>>& image, vector<vector<double>>& 
 int main( int argc, char* argv[] )
 {
 	// define mini-batch size.
-	const int BATCH_SIZE = 50;
-
-	// parallelism for model parallel.
 	int INNER = 1;
+	int N = 60000, M = 10000;
+	int BATCH_SIZE = 32, NUM_EPOCH = 20, UPDATE_EPOCH = 1;
+	double EPS = 1.0E-3, LAMBDA = 0.0;
+	
 	for( int i = 1; i < argc; ++i ){
-		if( strcmp(argv[i], "--inner") == 0 ){
+		if( i+1 < argc && strcmp(argv[i], "--N") == 0 ){
+			sscanf(argv[i+1], "%d", &N);
+			++i;
+		}
+		else if( i+1 < argc && strcmp(argv[i], "--M") == 0 ){
+			sscanf(argv[i+1], "%d", &M);
+			++i;
+		}
+		else if( i+1 < argc && strcmp(argv[i], "--batch") == 0 ){
+			sscanf(argv[i+1], "%d", &BATCH_SIZE);
+			++i;
+		}
+		else if( i+1 < argc && strcmp(argv[i], "--num_epoch") == 0 ){
+			sscanf(argv[i+1], "%d", &NUM_EPOCH);
+			++i;
+		}
+		else if( i+1 < argc && strcmp(argv[i], "--update_epoch") == 0 ){
+			sscanf(argv[i+1], "%d", &UPDATE_EPOCH);
+			++i;
+		}
+		else if( i+1 < argc && strcmp(argv[i], "--eps") == 0 ){
+			sscanf(argv[i+1], "%lf", &EPS);
+			++i;
+		}
+		else if( i+1 < argc && strcmp(argv[i], "--lambda") == 0 ){
+			sscanf(argv[i+1], "%d", &LAMBDA);
+			++i;
+		}
+		else if( i+1 < argc && strcmp(argv[i], "--inner") == 0 ){
 			sscanf(argv[i+1], "%d", &INNER);
 			++i;
 		}
@@ -94,7 +123,6 @@ int main( int argc, char* argv[] )
 	// read a test data of MNIST(http://yann.lecun.com/exdb/mnist/).
 	vector<int> train_lab;
 	vector<vector<vector<double>>> train_x;
-	const int N = 60000 / outer_nprocs;
 	ifstream train_image("train-images-idx3-ubyte", ios_base::binary);
 	if( !train_image.is_open() ){
 		cerr << "\"train-images-idx3-ubyte\" is not found!" << endl;
@@ -106,6 +134,7 @@ int main( int argc, char* argv[] )
 		return 1;
 	}
 
+	N = N / outer_nprocs;
 	train_image.seekg(4*4 + 28*28*outer_rank * N, ios_base::beg);
 	train_label.seekg(4*2 + outer_rank * N, ios_base::beg);
 	for( int i = 0; i < N; ++i ){
@@ -134,7 +163,6 @@ int main( int argc, char* argv[] )
 	// read a train data of MNIST.
 	vector<int> test_lab;
 	vector<vector<vector<double>>> test_x;
-	const int M = 10000;
 	ifstream test_image("t10k-images-idx3-ubyte", ios_base::binary);
 	if( !test_image.is_open() ){
 		cerr << "\"t10k-images-idx3-ubyte\" is not found!" << endl;
@@ -179,7 +207,9 @@ int main( int argc, char* argv[] )
 
 		const int once_num = 1000;
 		auto tmp_time = chrono::system_clock::now();
-
+		MPI_Allreduce(MPI_IN_PLACE, &cnt_flop, 1, MPI_LONG_LONG_INT, MPI_SUM, MPI_COMM_WORLD);
+		double flops = (double)cnt_flop / (std::chrono::duration_cast<std::chrono::milliseconds>(tmp_time - prev_time).count()/1e3) / 1e9;
+		
 		// calculating answer rate among all train data.
 		int train_ans_num = 0;
 		for( int i = 0; i < train_x.size(); i += once_num ){
@@ -240,17 +270,19 @@ int main( int argc, char* argv[] )
 			}
 			prev_time = chrono::system_clock::now();
 		}
-		if( world_rank == 0 ) puts("");
+		if( world_rank == 0 )
+			printf("  %.3f[GFLOPS]\n\n", flops);
+		cnt_flop = 0;
 	};
 
 	// set a hyper parameter.
-	net.set_EPS(1.0E-3);
-	net.set_LAMBDA(0.0);
+	net.set_EPS(EPS);
+	net.set_LAMBDA(LAMBDA);
 	net.set_BATCHSIZE(BATCH_SIZE);
-	net.set_UPDATEITER(N/BATCH_SIZE*2);
+	net.set_UPDATEITER(N/BATCH_SIZE*UPDATE_EPOCH);
 	// learning the neuralnet in 20 EPOCH and output error defined above in each epoch.
 	prev_time = total_time = chrono::system_clock::now();
-	net.learning(train_x, d, N/BATCH_SIZE*20, check_error);
+	net.learning(train_x, d, N/BATCH_SIZE*NUM_EPOCH, check_error);
 
 	MPI_Finalize();
 }

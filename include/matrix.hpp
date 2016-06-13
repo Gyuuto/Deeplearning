@@ -23,6 +23,7 @@ extern "C"{
 };
 #endif
 
+long long cnt_flop = 0;
 template<class T>
 struct Matrix
 {
@@ -157,6 +158,7 @@ struct Matrix
 			for( j = 0; j < n; ++j )
 				(*this)(i,j) += m1(i,j);
 #endif
+		cnt_flop += m*n;
 
 		return *this;
 	}
@@ -174,6 +176,8 @@ struct Matrix
 			for( j = 0; j < n; ++j )
 				(*this)(i,j) -= m1(i,j);
 #endif
+		cnt_flop += m*n;
+
 		return *this;
 	}
 
@@ -199,6 +203,8 @@ struct Matrix
 			for( j = 0; j < this->n; ++j )
 				*this(i,j) *= c;
 #endif
+		cnt_flop += this->m*this->n;
+
 		return *this;
 	}
 	
@@ -214,6 +220,8 @@ struct Matrix
 			for( j = 0; j < this->n; ++j )
 				*this(i,j) /= c;
 #endif
+		cnt_flop += this->m*this->n;
+
 		return *this;
 	}
 
@@ -231,8 +239,9 @@ struct Matrix
 		for( i = 0; i < m; ++i )
 			for( j = 0; j < n; ++j )
 				ret(i,j) = m1(i,j) + m2(i,j);
-		
 #endif
+		cnt_flop += m*n;
+
 		return ret;
 	}
 	
@@ -249,8 +258,9 @@ struct Matrix
 		for( i = 0; i < m; ++i )
 			for( j = 0; j < n; ++j )
 				ret(i,j) = m1(i,j) - m2(i,j);
-		
 #endif
+		cnt_flop += m*n;
+
 		return ret;
 	}
 
@@ -284,6 +294,8 @@ struct Matrix
 			}
 		
 #endif
+		cnt_flop += m*n*l;
+
 		return ret;
 	}
 
@@ -302,8 +314,9 @@ struct Matrix
 			for( j = 0; j < n; ++j ){
 				ret(i,j) = c*m1(i,j);
 			}
-		
 #endif
+		cnt_flop += m*n;
+
 		return ret;
 	}
 

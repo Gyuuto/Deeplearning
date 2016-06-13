@@ -9,6 +9,8 @@ private:
 	int prev_ldu, ldu;
 	int m, n, stride, pad;
 
+	std::vector<int> feed_idx, delta_idx, grad_idx;
+
 	Vec r, v;
 	double beta_, gamma_;
 public:
@@ -19,9 +21,9 @@ public:
 				   const std::shared_ptr<Function>& f );
 
 #ifdef USE_MPI
-	void init( std::mt19937& m, MPI_Comm inner_world, MPI_Comm outer_world );
+	void init( std::mt19937& mt, MPI_Comm inner_world, MPI_Comm outer_world );
 #else
-	void init( std::mt19937& m );
+	void init( std::mt19937& mt );
 #endif
 	void finalize();
 	
@@ -93,23 +95,48 @@ Convolutional::Convolutional( int prev_num_map, int prev_num_unit, int prev_ldu,
 			W[i][j] = Mat(this->m, this->n);
 		}
 	}
-
 }
 
 #ifdef USE_MPI
-void Convolutional::init ( std::mt19937& m, MPI_Comm inner_world, MPI_Comm outer_world )
+void Convolutional::init ( std::mt19937& mt, MPI_Comm inner_world, MPI_Comm outer_world )
 #else
-void Convolutional::init ( std::mt19937& m )
+void Convolutional::init ( std::mt19937& mt )
 #endif
 {
+	int my_size, my_offset;
+	const int Y = prev_num_unit/prev_ldu, X = prev_ldu;
+	const int gap = prev_ldu + 2*pad;
 #ifdef USE_MPI
 	this->inner_world = inner_world;
 	this->outer_world = outer_world;
 
 	MPI_Comm_rank(inner_world, &rank);
 	MPI_Comm_size(inner_world, &nprocs);
+
 #endif
 
+#ifdef USE_MPI
+	my_size = (rank+1)*num_unit/nprocs - rank*num_unit/nprocs;
+	my_offset = rank*num_unit/nprocs;
+#else
+	my_size = num_unit; my_offset = 0;
+#endif
+	feed_idx.resize(my_size*m*n);
+	for( int i = 0; i < my_size; ++i ){
+		int x = (i + my_offset)%ldu, y = (i + my_offset)/ldu;
+		for( int s = 0; s < n; ++s )
+			for( int t = 0; t < m; ++t ){
+				int idx = stride*x + s + t*gap + stride*y*gap;
+				int nx = idx%gap - pad, ny = idx/gap - pad;
+
+				if( nx < 0 || nx >= X || ny < 0 || ny >= Y ){
+					feed_idx[i*m*n + t*n + s] = -1;
+					continue;
+				}
+				feed_idx[i*m*n + t*n + s] = ny*prev_ldu + nx;
+			}
+	}
+	
 	const double r = sqrt(6.0/(num_unit + prev_num_unit));
 	std::normal_distribution<double> d_rand(0.0, 1.0E-1);
 
@@ -119,7 +146,7 @@ void Convolutional::init ( std::mt19937& m )
 		for( int j = 0; j < prev_num_map; ++j ){
 			for( int k = 0; k < W[i][j].m; ++k )
 				for( int l = 0; l < W[i][j].m; ++l )
-					W[i][j](k,l) = d_rand(m);
+					W[i][j](k,l) = d_rand(mt);
 		}				
 	}
 }
@@ -342,6 +369,11 @@ std::vector<Convolutional::Mat> Convolutional::apply ( const std::vector<Mat>& U
 					for( int k = 0; k < prev_num_map; ++k )
 						input_image(j, m*n*k + t*n + s) = U[k](ny*prev_ldu + nx, i);
 				}
+			// for( int s = 0; s < m; ++ s )
+			// 	for( int t = 0; t < n; ++ t )
+			// 		if( feed_idx[j*m*n + s*n + t] != -1 )
+			// 			for( int k = 0; k < prev_num_map; ++k )
+			// 				input_image(j, m*n*k + s*n + t) = U[k](feed_idx[j*m*n + s*n + t], i);
 		}
 
 #ifdef USE_MPI
