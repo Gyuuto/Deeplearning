@@ -9,6 +9,7 @@
 
 #include "../include/Neuralnet.hpp"
 #include "../include/Layer.hpp"
+#include "../include/Dropout.hpp"
 #include "../include/FullyConnected.hpp"
 #include "../include/Convolutional.hpp"
 #include "../include/Pooling.hpp"
@@ -113,6 +114,7 @@ int main( int argc, char* argv[] )
 									20, 7*7, 7,
 									2, 2, 2, shared_ptr<Function>(new Identity)));
 	layers.emplace_back(new FullyConnected(20, 7*7, 1, 512, shared_ptr<Function>(new ReLU)));
+	layers.emplace_back(new Dropout(1, 512, 0.5, shared_ptr<Function>(new Identity)));
 	layers.emplace_back(new FullyConnected(1, 512, 1, 10, shared_ptr<Function>(new Softmax)));
 
 	// this neuralnet has 7 layers, input, Conv1, MaxPool, Conv2, MaxPool, Fc1 and Fc2;
@@ -203,7 +205,7 @@ int main( int argc, char* argv[] )
 	// checking error function.
 	chrono::time_point<chrono::system_clock> prev_time, total_time;
 	auto check_error = [&](const Neuralnet& nn, const int iter, const std::vector<Matrix<double>>& x, const std::vector<Matrix<double>>& d ) -> void {
-		if( iter%((N/BATCH_SIZE)) != 0 || iter == 0 ) return;
+		if( (iter+1)%((N/BATCH_SIZE)) != 0 ) return;
 
 		const int once_num = 1000;
 		auto tmp_time = chrono::system_clock::now();
@@ -284,5 +286,17 @@ int main( int argc, char* argv[] )
 	prev_time = total_time = chrono::system_clock::now();
 	net.learning(train_x, d, N/BATCH_SIZE*NUM_EPOCH, check_error);
 
+	if( world_rank == 0 ){
+		for( int i = 0; i < layers.size(); ++i ){
+			printf("Layer : %d\n", i);
+			printf("    Apply %8.3f[s], init %8.3f[s], gemm %8.3f[s], replacement %8.3f[s]\n",
+				   layers[i]->t_apply, layers[i]->t_apply_init, layers[i]->t_apply_gemm, layers[i]->t_apply_repl);
+			printf("    Delta %8.3f[s], init %8.3f[s], gemm %8.3f[s], replacement %8.3f[s]\n",
+				   layers[i]->t_delta, layers[i]->t_delta_init, layers[i]->t_delta_gemm, layers[i]->t_delta_repl);
+			printf("    Grad  %8.3f[s], init %8.3f[s], gemm %8.3f[s], replacement %8.3f[s]\n",
+				   layers[i]->t_grad, layers[i]->t_grad_init, layers[i]->t_grad_gemm, layers[i]->t_grad_repl);
+		}
+	}
+	
 	MPI_Finalize();
 }
