@@ -109,7 +109,7 @@ std::vector<Dropout::Mat> Dropout::calc_delta ( const std::vector<Mat>& U, const
 		auto U_diff = (*prev_func)(U[i], true);
 		nx_delta[i] = Mat(num_unit, delta[i].n);
 
-#pragma omp parallel for
+#pragma omp parallel for schedule(auto)
 		for( int j = 0; j < my_size; ++j ){
 			for( int k = 0; k < delta[i].n; ++k )
 				nx_delta[i](my_offset + j, k) = delta[i](my_offset + j, k) * U_diff(my_offset + j, k) * mask(j, i);
@@ -151,7 +151,7 @@ std::vector<Dropout::Mat> Dropout::apply ( const std::vector<Mat>& U, bool use_f
 	for( int i = 0; i < prev_num_map; ++i ){
 		ret[i] = Mat(num_unit, U[i].n);
 		tmp_ret[i] = Mat(my_size, U[i].n);
-#pragma omp parallel for
+#pragma omp parallel for schedule(auto)
 		for( int j = 0; j < my_size; ++j )
 			for( int k = 0; k < U[i].n; ++k )
 				tmp_ret[i](j,k) = U[i](my_offset+j,k)*(use_func ? dropout_p : mask(my_offset+j,i));

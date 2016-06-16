@@ -343,25 +343,24 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 	double assign, forward, back, update;
 	assign = forward = back = update = 0.0;
 	
-	int i, j, k, l, m;
 	int cnt = 0;
-	for( int n = 0; n <= MAX_ITER; ++n ){
+	for( int n = 0; n < MAX_ITER; ++n ){
 		// assign data to mini-batch
-		for( i = 0; i < X.size(); ++i )
-			for( j = 0; j < BATCH_SIZE; ++j )
-				for( k = 0; k < U[0][i].m; ++k )
+		for( int i = 0; i < X.size(); ++i )
+			for( int j = 0; j < BATCH_SIZE; ++j )
+				for( int k = 0; k < U[0][i].m; ++k )
 					U[0][i](k,j) = X[i](k, idx[(cnt+j)%num_data]);
 		
-		for( i = 0; i < Y.size(); ++i )
-			for( j = 0; j < BATCH_SIZE; ++j )
-				for( k = 0; k < D[i].m; ++k )
+		for( int i = 0; i < Y.size(); ++i )
+			for( int j = 0; j < BATCH_SIZE; ++j )
+				for( int k = 0; k < D[i].m; ++k )
 					D[i](k,j) = Y[i](k, idx[(cnt+j)%num_data]);
 
 #ifdef DEBUG
 		auto beg = std::chrono::system_clock::now();
 #endif
 		// feed forward calculation
-		for( i = 0; i < num_layer; ++i ) {
+		for( int i = 0; i < num_layer; ++i ) {
 #ifdef DEBUG
 			auto beg = std::chrono::system_clock::now();
 #endif
@@ -369,12 +368,12 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 			if( i != 0 ){
 				std::shared_ptr<Function> f = layer[i-1]->get_function();
 				
-				for( j = 0; j < V.size(); ++j )
+				for( int j = 0; j < V.size(); ++j )
 					V[j] = (*f)(V[j], false);
 			}
 
 			auto tmp = layer[i]->apply(V, false);
-			for( j = 0; j < tmp.size(); ++j ){
+			for( int j = 0; j < tmp.size(); ++j ){
 				U[i+1][j] = tmp[j];
 			}
 #ifdef DEBUG
@@ -398,9 +397,9 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 #endif
 
 		// averaging all gradients of weights of mini-batches
-		for( i = 0; i < nabla_w.size(); ++i )
-			for( j = 0; j < nabla_w[i].size(); ++j )
-				for( k = 0; k < nabla_w[i][j].size(); ++k )
+		for( int i = 0; i < nabla_w.size(); ++i )
+			for( int j = 0; j < nabla_w[i].size(); ++j )
+				for( int k = 0; k < nabla_w[i][j].size(); ++k )
 					nabla_w[i][j][k] = 1.0/BATCH_SIZE * nabla_w[i][j][k];
 		
 #ifdef CHECK_GRAD
@@ -415,37 +414,36 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 		// update W
 		adam_beta_ *= adam_beta;
 		adam_gamma_ *= adam_gamma;
-		for( i = 0; i < num_layer; ++i ){
+		for( int i = 0; i < num_layer; ++i ){
 			// L2 norm regularization
 			auto W = layer[i]->get_W();
 
 			if( W.size() == 0 ) continue;
 
-			for( j = 0; j < W.size(); ++j )
-				for( k = 0; k < W[j].size(); ++k )
-					for( l = 0; l < W[j][k].m; ++l )
-						for( m = 1; m < W[j][k].n; ++m )
+#pragma omp parallel for schedule(auto)
+			for( int j = 0; j < W.size(); ++j )
+				for( int k = 0; k < W[j].size(); ++k )
+					for( int l = 0; l < W[j][k].m; ++l )
+						for( int m = 1; m < W[j][k].n; ++m )
 							nabla_w[i][j][k](l,m) += LAMBDA*W[j][k](l,m);
 
 			// ADAM
-#pragma omp parallel for default(none) \
-	private(j,k,l,m), shared(i, nabla_w)
-			for( j = 0; j < nabla_w[i].size(); ++j )
-				for( k = 0; k < nabla_w[i][j].size(); ++k )
-					for( l = 0; l < nabla_w[i][j][k].m; ++l )
-						for( m = 0; m < nabla_w[i][j][k].n; ++m ){
+#pragma omp parallel for schedule(auto)
+			for( int j = 0; j < nabla_w[i].size(); ++j )
+				for( int k = 0; k < nabla_w[i][j].size(); ++k )
+					for( int l = 0; l < nabla_w[i][j][k].m; ++l )
+						for( int m = 0; m < nabla_w[i][j][k].n; ++m ){
 							adam_v[i][j][k](l,m) = adam_beta*adam_v[i][j][k](l,m) + (1.0 - adam_beta)*nabla_w[i][j][k](l,m);
 							adam_r[i][j][k](l,m) = adam_gamma*adam_r[i][j][k](l,m) + (1.0 - adam_gamma)*(nabla_w[i][j][k](l,m)*nabla_w[i][j][k](l,m));
 						}
 
 			std::vector<std::vector<Mat>> update_W(W.size(), std::vector<Mat>(W[0].size()));
-#pragma omp parallel for default(none) \
-	private(j,k,l,m), shared(i, W,update_W)
-			for( j = 0; j < W.size(); ++j )
-				for( k = 0; k < W[j].size(); ++k ){
+#pragma omp parallel for schedule(auto)
+			for( int j = 0; j < W.size(); ++j )
+				for( int k = 0; k < W[j].size(); ++k ){
 					update_W[j][k] = Mat::zeros(W[j][k].m, W[j][k].n);
-					for( l = 0; l < update_W[j][k].m; ++l )
-						for( m = 0; m < update_W[j][k].n; ++m ){
+					for( int l = 0; l < update_W[j][k].m; ++l )
+						for( int m = 0; m < update_W[j][k].n; ++m ){
 							auto v_hat = adam_v[i][j][k](l,m) / (1.0 - adam_beta_);
 							auto r_hat = adam_r[i][j][k](l,m) / (1.0 - adam_gamma_);
 							update_W[j][k](l,m) = -EPS*v_hat/(sqrt(r_hat)+adam_eps);
