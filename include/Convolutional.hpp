@@ -443,26 +443,6 @@ std::vector<Convolutional::Mat> Convolutional::apply ( const std::vector<Mat>& U
 	auto end = std::chrono::system_clock::now();
 	t_apply_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 			
-<<<<<<< HEAD
-	for( i = 0; i < U[0].n; ++i ){
-		Mat input_image(my_size, m*n*prev_num_map);
-
-#pragma omp parallel for default(none) \
-	private(j,k,s,t) shared(i, input_image, my_size, my_offset, U)
-		for( j = 0; j < my_size; ++j ){
-			int x = (j + my_offset)%prev_ldu, y = (j + my_offset)/prev_ldu;
-			for( s = -m/2; s < (m+1)/2; ++s )
-				for( t = -n/2; t < (n+1)/2; ++t ){
-					int nx = x + s, ny = y + t;
-					if( nx < 0 || nx >= X || ny < 0 || ny >= Y ){
-						for( k = 0; k < prev_num_map; ++k )
-							input_image(j, m*n*k + (t+(n/2))*n + s+(m/2)) = 0.0;
-						continue;
-					}
-					for( k = 0; k < prev_num_map; ++k )
-						input_image(j, m*n*k + (t+(n/2))*m + s+(m/2)) = U[k](ny*prev_ldu + nx, i);
-				}
-=======
 	for( int i = 0; i < U[0].n; ++i ){
 		auto beg = std::chrono::system_clock::now();
 		Mat input_image = Mat::zeros(my_size, m*n*prev_num_map);
@@ -474,7 +454,6 @@ std::vector<Convolutional::Mat> Convolutional::apply ( const std::vector<Mat>& U
 					for( int t = 0; t < n; ++ t )
 						if( feed_idx[j*m*n + s*n + t] != -1 )
 							input_image(j, m*n*k + s*n + t) = U[k](feed_idx[j*m*n + s*n + t], i);
->>>>>>> ed1f7ee00615d6e0cafe826dff40f046eacf87e1
 		}
 		auto end = std::chrono::system_clock::now();
 		t_apply_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
