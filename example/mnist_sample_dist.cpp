@@ -67,7 +67,7 @@ int main( int argc, char* argv[] )
 			++i;
 		}
 		else if( i+1 < argc && strcmp(argv[i], "--lambda") == 0 ){
-			sscanf(argv[i+1], "%d", &LAMBDA);
+			sscanf(argv[i+1], "%lf", &LAMBDA);
 			++i;
 		}
 		else if( i+1 < argc && strcmp(argv[i], "--inner") == 0 ){
