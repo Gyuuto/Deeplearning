@@ -15,11 +15,15 @@
 #elif USE_BLAS
 extern "C"{
 	void dgemm_(char* transa, char* transb, int* m, int* n, int* k,
-				double* alpha, double* A, int* lda, double* B, int* ldb,
+				double* alpha, const double* A, int* lda, const double* B, int* ldb,
 				double* beta, double* C, int* ldc);
-	};
+	void sgemm_(char* transa, char* transb, int* m, int* n, int* k,
+				float* alpha, const float* A, int* lda, const float* B, int* ldb,
+				float* beta, float* C, int* ldc);
+};
 #endif
 
+long long cnt_flop = 0;
 template<class T>
 struct Matrix
 {
@@ -41,7 +45,7 @@ struct Matrix
 #endif
 	}
 
-	Matrix( const std::vector<double>& v ):m(v.size()), n(1)
+	Matrix( const std::vector<T>& v ):m(v.size()), n(1)
 	{
 #ifdef USE_EIGEN
 		this->v = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>(m, n);
@@ -77,17 +81,21 @@ struct Matrix
 
 	static Matrix<T> transpose( const Matrix<T>& mat )
 	{
-		int i, j;
 		int m = mat.m, n = mat.n;
 		Matrix<T> ret(n, m);
 
-#pragma omp parallel for default(none) \
-	private(i,j) shared(m,n,mat,ret)
-		for( i = 0; i < n; ++i ){
-			for( j = 0; j < m; ++j ){
-				ret(i,j) = mat(j,i);
-			}
+#pragma omp parallel for schedule(auto)
+		for( int i = 0; i < n*m; ++i ){
+			int idx1 = i/m, idx2 = i%m;
+			ret(idx1,idx2) = mat(idx2,idx1);
 		}
+// #pragma omp parallel for default(none) \
+// 	private(i,j) shared(m,n,mat,ret)
+// 		for( i = 0; i < n; ++i ){
+// 			for( j = 0; j < m; ++j ){
+// 				ret(i,j) = mat(j,i);
+// 			}
+// 		}
 
 		return ret;
 	}
@@ -95,22 +103,20 @@ struct Matrix
 	static Matrix<T> hadamard ( const Matrix<T>& m1, const Matrix<T>& m2 )
 	{
 		int m = m1.m, n = m1.n;
-
-		int i, j;
 		Matrix<T> ret(m, n);
-#pragma omp parallel for default(none) \
-	private(i,j) shared(m,n,m1,m2,ret)
-		for( i = 0; i < m; ++i )
-			for( j = 0; j < n; ++j )
+
+#pragma omp parallel for schedule(auto)
+		for( int i = 0; i < m; ++i )
+			for( int j = 0; j < n; ++j )
 				ret(i,j) = m1(i,j)*m2(i,j);
 
 		return ret;
 	}
 	
-	static double norm_fro ( const Matrix<T>& mat )
+	static T norm_fro ( const Matrix<T>& mat )
 	{
 		int m = mat.m, n = mat.n;
-		double ret = 0.0;
+		T ret = 0.0;
 
 		for( int i = 0; i < m; ++i )
 			for( int j = 0; j < n; ++j )
@@ -119,7 +125,7 @@ struct Matrix
 		return sqrt(ret);
 	}
 
-	const double& operator () ( int i, int j ) const
+	const T& operator () ( int i, int j ) const
 	{
 #ifdef USE_EIGEN
 		return v(i, j);
@@ -128,7 +134,7 @@ struct Matrix
 #endif
 	}
 
-	double& operator () ( int i, int j )
+	T& operator () ( int i, int j )
 	{
 #ifdef USE_EIGEN
 		return v(i, j);
@@ -143,13 +149,12 @@ struct Matrix
 #ifdef USE_EIGEN
 		this->v += m1.v;
 #else
-		int i, j;
-#pragma omp parallel for default(none) \
-	private(i,j) shared(m,n,m1)
-		for( i = 0; i < m; ++i )
-			for( j = 0; j < n; ++j )
+#pragma omp parallel for schedule(auto)
+		for( int i = 0; i < m; ++i )
+			for( int j = 0; j < n; ++j )
 				(*this)(i,j) += m1(i,j);
 #endif
+		cnt_flop += m*n;
 
 		return *this;
 	}
@@ -160,13 +165,12 @@ struct Matrix
 #ifdef USE_EIGEN
 		this->v -= m1.v;
 #else
-		int i, j;
-#pragma omp parallel for default(none) \
-	private(i,j) shared(m,n,m1)
-		for( i = 0; i < m; ++i )
-			for( j = 0; j < n; ++j )
+#pragma omp parallel for schedule(auto)
+		for( int i = 0; i < m; ++i )
+			for( int j = 0; j < n; ++j )
 				(*this)(i,j) -= m1(i,j);
 #endif
+		cnt_flop += m*n;
 
 		return *this;
 	}
@@ -178,7 +182,6 @@ struct Matrix
 #else
 		*this = *this*m1;
 #endif
-
 		return *this;
 	}
 
@@ -187,13 +190,12 @@ struct Matrix
 #ifdef USE_EIGEN
 		this->v *= c;
 #else
-		int i, j;
-#pragma omp parallel for default(none) \
-	private(i,j) shared(c)
-		for( i = 0; i < this->m; ++i )
-			for( j = 0; j < this->n; ++j )
+#pragma omp parallel for schedule(auto)
+		for( int i = 0; i < this->m; ++i )
+			for( int j = 0; j < this->n; ++j )
 				*this(i,j) *= c;
 #endif
+		cnt_flop += this->m*this->n;
 
 		return *this;
 	}
@@ -203,13 +205,12 @@ struct Matrix
 #ifdef USE_EIGEN
 		this->v /= c;
 #else
-		int i, j;
-#pragma omp parallel for default(none) \
-	private(i,j) shared(c)
-		for( i = 0; i < this->m; ++i )
-			for( j = 0; j < this->n; ++j )
+#pragma omp parallel for schedule(auto)
+		for( int i = 0; i < this->m; ++i )
+			for( int j = 0; j < this->n; ++j )
 				*this(i,j) /= c;
 #endif
+		cnt_flop += this->m*this->n;
 
 		return *this;
 	}
@@ -222,14 +223,13 @@ struct Matrix
 #ifdef USE_EIGEN
 		ret.v = m1.v + m2.v;
 #else
-		int i, j;
-#pragma omp parallel for default(none) \
-	private(i,j) shared(m,n,m1,m2,ret)
-		for( i = 0; i < m; ++i )
-			for( j = 0; j < n; ++j )
+#pragma omp parallel for schedule(auto)
+		for( int i = 0; i < m; ++i )
+			for( int j = 0; j < n; ++j )
 				ret(i,j) = m1(i,j) + m2(i,j);
-		
 #endif
+		cnt_flop += m*n;
+
 		return ret;
 	}
 	
@@ -240,14 +240,13 @@ struct Matrix
 #ifdef USE_EIGEN
 		ret.v = m1.v - m2.v;
 #else
-		int i, j;
-#pragma omp parallel for default(none)			\
-	private(i,j) shared(m,n,m1,m2,ret)
-		for( i = 0; i < m; ++i )
-			for( j = 0; j < n; ++j )
+#pragma omp parallel for schedule(auto)
+		for( int i = 0; i < m; ++i )
+			for( int j = 0; j < n; ++j )
 				ret(i,j) = m1(i,j) - m2(i,j);
-		
 #endif
+		cnt_flop += m*n;
+
 		return ret;
 	}
 
@@ -258,36 +257,29 @@ struct Matrix
 #ifdef USE_EIGEN
 		ret.v = m1.v*m2.v;
 #elif USE_BLAS
-		double ONE = 1.0, ZERO = 0.0;
-		std::vector<double> tmp_m1(m1.m*m1.n), tmp_m2(m2.m*m2.n), tmp_ret(m*n);
+		T ONE = 1.0, ZERO = 0.0;
 
-		int i, j;
-#pragma omp parallel for default(none) \
-	private(i,j) shared(tmp_m1, m1)
-		for( i = 0; i < m1.m; ++i ) for( j = 0; j < m1.n; ++j ) tmp_m1[i+m1.m*j] = m1(i,j);
-#pragma omp parallel for default(none) \
-	private(i,j) shared(tmp_m2, m2)
-		for( i = 0; i < m2.m; ++i ) for( j = 0; j < m2.n; ++j ) tmp_m2[i+m2.m*j] = m2(i,j);
-
-		int lda = m1.m, ldb = m2.m;
-		dgemm_("N", "N", &m, &n, &l, &ONE, &tmp_m1[0], &lda, &tmp_m2[0], &ldb, &ZERO, &tmp_ret[0], &lda);
-
-#pragma omp parallel for default(none) \
-	private(i,j) shared(ret, tmp_ret, m, n)
-		for( i = 0; i < m; ++i ) for( j = 0; j < n; ++j ) ret(i,j) = tmp_ret[i+m*j];
+		if( m != 0 && n != 0 && l != 0 ){
+			dgemm_("N", "N", &n, &m, &l, &ONE,
+				   &m2(0,0), &n, &m1(0,0), &l,
+				   &ZERO, &ret(0,0), &n);
+			// sgemm_("N", "N", &n, &m, &l, &ONE,
+			// 	   &m2(0,0), &n, &m1(0,0), &l,
+			// 	   &ZERO, &ret(0,0), &n);
+		}
 #else
-		int i, j, k;
-#pragma omp parallel for default(none)	\
-	private(i,j,k) shared(m,n,l,m1,m2,ret)
-		for( i = 0; i < m; ++i )
-			for( j = 0; j < n; ++j ){
+#pragma omp parallel for schedule(auto)
+		for( int i = 0; i < m; ++i )
+			for( int j = 0; j < n; ++j ){
 				double sum = 0.0;
-				for( k = 0; k < l; ++k )
+				for( int k = 0; k < l; ++k )
 					sum += m1(i,k)*m2(k,j);
 				ret(i,j) = sum;
 			}
 		
 #endif
+		cnt_flop += m*n*l;
+
 		return ret;
 	}
 
@@ -298,16 +290,14 @@ struct Matrix
 #ifdef USE_EIGEN
 		ret.v = c*m1.v;
 #else
-		int i, j;
-
-#pragma omp parallel for default(none) \
-	private(i,j) shared(m,n,c,m1,ret)
-		for( i = 0; i < m; ++i )
-			for( j = 0; j < n; ++j ){
+#pragma omp parallel for schedule(auto)
+		for( int i = 0; i < m; ++i )
+			for( int j = 0; j < n; ++j ){
 				ret(i,j) = c*m1(i,j);
 			}
-		
 #endif
+		cnt_flop += m*n;
+
 		return ret;
 	}
 

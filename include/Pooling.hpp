@@ -7,7 +7,7 @@ class Pooling : public Layer
 {
 private:
 	int prev_ldu, ldu;
-	int m, n, stride;
+	int m, n, stride, pad;
 	std::vector<Mat> S;
 public:
 	Pooling( int prev_num_map, int prev_num_unit, int prev_ldu,
@@ -52,7 +52,39 @@ Pooling::Pooling( int prev_num_map, int prev_num_unit, int prev_ldu,
 	this->num_unit = num_unit;
 	this->ldu = ldu;
 
-	this->m = m; this->n = n; this->stride = stride;
+	t_apply = t_delta = t_grad = 0.0;
+	t_apply_init = t_apply_gemm = t_apply_repl = 0.0;
+	t_delta_init = t_delta_gemm = t_delta_repl = 0.0;
+	t_grad_init = t_grad_gemm = t_grad_repl = 0.0;
+
+	this->m = m; this->n = n; this->stride = stride; this->pad = 0;
+
+	int rank = 0;
+#ifdef USE_MPI
+	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+#endif
+	if( num_unit%ldu != 0 )
+		if( rank == 0 ){
+			printf("WARNING : Wrong leading dimension of output on Pooling layer.\n");
+			printf("          Layer details : output size[%d x %d], filter size[%d x %d], stride %d, padding %d, number of map %d.\n", num_unit/ldu, ldu, m, n, stride, pad, num_map);
+		}
+	if( prev_num_unit%prev_ldu != 0 )
+		if( rank == 0 ){
+			printf("WARNING : Wrong leading dimension of input on Pooling layer.\n");
+			printf("          Layer details : output size[%d x %d], filter size[%d x %d], stride %d, padding %d, number of map %d.\n", num_unit/ldu, ldu, m, n, stride, pad, num_map);
+		}
+	if( ldu != (prev_ldu + 2*pad - n)/stride + 1 )
+		if( rank == 0 ){
+			printf("WARNING : Wrong output image width on Pooling layer.\n");
+			printf("          Estimate width = %d.\n", (prev_ldu + 2*pad - n)/stride + 1);
+			printf("          Layer details : output size[%d x %d], filter size[%d x %d], stride %d, padding %d, number of map %d.\n", num_unit/ldu, ldu, m, n, stride, pad, num_map);
+		}
+	if( num_unit/ldu != (prev_num_unit/prev_ldu + 2*pad - m)/stride + 1 )
+		if( rank == 0 ){
+			printf("WARNING : Wrong output image height on Pooling layer.\n");
+			printf("          Estimate height = %d.\n", (prev_num_unit/prev_ldu + 2*pad - m)/stride + 1);
+			printf("          Layer details : output size[%d x %d], filter size[%d x %d], stride %d, padding %d, number of map %d.\n", num_unit/ldu, ldu, m, n, stride, pad, num_map);
+		}
 
 	func = f;
 }
@@ -63,6 +95,14 @@ void Pooling::init ( std::mt19937& m, MPI_Comm inner_world, MPI_Comm outer_world
 void Pooling::init ( std::mt19937& m )
 #endif
 {
+#ifdef USE_MPI
+	this->inner_world = inner_world;
+	this->outer_world = outer_world;
+
+	MPI_Comm_rank(inner_world, &rank);
+	MPI_Comm_size(inner_world, &nprocs);
+#endif
+	
 	W = std::vector<std::vector<Mat>>();
 }
 
@@ -78,42 +118,59 @@ std::vector<std::vector<Pooling::Mat>> Pooling::calc_gradient ( const std::vecto
 
 std::vector<Pooling::Mat> Pooling::calc_delta ( const std::vector<Mat>& U, const std::vector<Mat>& delta )
 {
+	auto tot_beg = std::chrono::system_clock::now();
+	auto beg = tot_beg;
+
+	int my_size = num_unit, my_offset = 0;
+#ifdef USE_MPI
+	my_size = (rank+1)*num_unit/nprocs - rank*num_unit/nprocs;
+	my_offset = rank*num_unit/nprocs;
+#endif
+
 	const int Y = prev_num_unit/prev_ldu, X = prev_ldu;
 	std::vector<Mat> nx_delta(prev_num_map);
+	auto end = std::chrono::system_clock::now();
+	t_delta_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
-	int i, j, k, x, y, s, t;
-	for( i = 0; i < prev_num_map; ++i ){
+	beg = std::chrono::system_clock::now();
+	for( int i = 0; i < prev_num_map; ++i ){
 		auto U_apply = (*prev_func)(U[i], false);
 		auto U_diff = (*prev_func)(U[i], true);
-		nx_delta[i] = Mat(U[i].m, U[i].n);
+		nx_delta[i] = Mat::zeros(U[i].m, U[i].n);
 
-#pragma omp parallel for default(none) \
-	private(j,k) shared(i, nx_delta)
-		for( j = 0; j < nx_delta[i].m; ++j )
-			for( k = 0; k < nx_delta[i].n; ++k )
-				nx_delta[i](j,k) = 0.0;
-		
-#pragma omp parallel for default(none)			\
-	private(j,s,t,y,x) shared(i, nx_delta, delta, U_apply, U_diff)
-		for( j = 0; j < U_apply.n; ++j )
-			for( y = 0; y < Y; y += stride )
-				for( x = 0; x < X; x += stride ){
-					int idx = x + y*prev_ldu;
-					double val = U_apply(idx,j);
-					
-					for( s = 0; s < m; ++s )
-						for( t = 0; t < n; ++t ){
-							int nx = x + s, ny = y + t;
-							if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
-							
-							if( val < U_apply(nx+ny*prev_ldu,j) ){
-								idx = nx + ny*prev_ldu;
-								val = U_apply(idx,j);
-							}
+		const int gap = prev_ldu + 2*pad;
+#pragma omp parallel for schedule(auto) firstprivate(gap, my_size, my_offset)
+		for( int j = 0; j < my_size; ++j ){
+			int x = (j + my_offset)%ldu, y = (j + my_offset)/ldu;
+
+			for( int k = 0; k < U_apply.n; ++k ){
+				int s_idx = -1;
+				double val = -1E100;
+				
+				for( int s = 0; s < m; ++s )
+					for( int t = 0; t < n; ++t ){
+						int idx = stride*x + t + s*gap + stride*y*gap;
+						int nx = idx%gap - pad, ny = idx/gap - pad;
+
+						if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
+
+						if( s_idx == -1 || val < U_apply(ny*prev_ldu + nx, k) ){
+							val = U_apply(ny*prev_ldu + nx, k);
+							s_idx = ny*prev_ldu + nx;
 						}
-					nx_delta[i](idx,j) += delta[i](x/stride + y/stride*ldu,j) * U_diff(idx,j);
-				}
+					}
+				
+				nx_delta[i](s_idx, k) += delta[i](j + my_offset, k) * U_diff(s_idx, k);
+			}
+		}
+
+#ifdef USE_MPI
+		MPI_Allreduce(MPI_IN_PLACE, &nx_delta[i](0,0), U[i].m*U[i].n, MPI_DOUBLE_PRECISION, MPI_SUM, inner_world);
+#endif
 	}
+	end = std::chrono::system_clock::now();
+	t_delta_gemm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+	t_delta += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
 	
 	return nx_delta;
 }
@@ -125,43 +182,77 @@ void Pooling::update_W ( const std::vector<std::vector<Mat>>& dW )
 
 std::vector<Pooling::Mat> Pooling::apply ( const std::vector<Mat>& U, bool use_func )
 {
+	auto tot_beg = std::chrono::system_clock::now();
+	auto beg = tot_beg;
+
+	int my_size = num_unit, my_offset = 0;
+#ifdef USE_MPI
+	std::vector<int> size(nprocs), offset(nprocs);
+	for( int i = 0; i < nprocs; ++i ){
+		size[i] = ((i+1)*my_size/nprocs - i*my_size/nprocs)*U[0].n;
+		offset[i] = i*my_size/nprocs*U[0].n;
+	}
+
+	my_size = size[rank]/U[0].n;
+	my_offset = offset[rank]/U[0].n;
+#endif
+	
 	const int Y = prev_num_unit/prev_ldu, X = prev_ldu;
 	std::vector<Mat> new_S(num_map, Mat(num_unit, U[0].n));
 	std::vector<Mat> ret(num_map);
+	auto end = std::chrono::system_clock::now();
+	t_apply_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
-	int i,j,k,y,x,s,t;
-	for( i = 0; i < num_map; ++i ){
+	beg = std::chrono::system_clock::now();
+	for( int i = 0; i < num_map; ++i ){
 		ret[i] = Mat(num_unit, U[0].n);
 		Mat U_ = (*prev_func)(U[i], false);
+		Mat tmp = Mat::zeros(my_size, U[0].n);
 
-#pragma omp parallel for default(none) \
-	private(j,y,x,s,t) shared(i, new_S, ret, U, U_)
-		for( j = 0; j < U[0].n; ++j ){
-			for( y = 0; y < Y; y += stride )
-				for( x = 0; x < X; x += stride ){
-					int idx = 0;
-					double val = U_(x+prev_ldu*y,j);
+		const int gap = prev_ldu + 2*pad;
+#pragma omp parallel for schedule(auto) firstprivate(gap, my_size, my_offset)
+		for( int j = 0; j < my_size; ++j ){
+			int x = (j + my_offset)%ldu, y = (j + my_offset)/ldu;
 
-					for( s = 0; s < m; ++s )
-						for( t = 0; t < n; ++t ){
-							int nx = x+s, ny = y+t;
-							if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
-							if( val < U_(nx + ny*prev_ldu,j) ){
-								val = U_(nx + ny*prev_ldu,j);
-								idx = nx + ny*prev_ldu;
-							}
+			for( int k = 0; k < U_.n; ++k ){
+				int s_idx = -1;
+				double val = -1E100;
+
+				for( int s = 0; s < m; ++s )
+					for( int t = 0; t < n; ++t ){
+						int idx = stride*x + t + s*gap + stride*y*gap;
+						int nx = idx%gap - pad, ny = idx/gap - pad;
+						
+						if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
+
+						if( s_idx == -1 || val < U_(ny*prev_ldu + nx, k) ){
+							val = U_(ny*prev_ldu + nx, k);
+							s_idx = ny*prev_ldu + nx;
 						}
-					ret[i](x/stride + (y/stride)*ldu,j) = val;
-					new_S[i](x/stride + (y/stride)*ldu,j) = idx;
-				}
+					}
+
+				tmp(j, k) = val;
+				new_S[i](j + my_offset, k) = s_idx;
+			}
 		}
+
+		if( use_func )
+			tmp = (*func)(tmp, false);
+
+#ifdef USE_MPI
+		MPI_Allgatherv(&tmp(0,0), size[rank], MPI_DOUBLE_PRECISION,
+					   &ret[i](0,0), &size[0], &offset[0], MPI_DOUBLE_PRECISION, inner_world);
+		MPI_Allgatherv(MPI_IN_PLACE, size[rank], MPI_DOUBLE_PRECISION,
+					   &new_S[i](0,0), &size[0], &offset[0], MPI_DOUBLE_PRECISION, inner_world);
+#else
+		ret[i] = tmp;
+#endif
 	}
 
 	S = new_S;
-	
-	if( use_func )
-		for( int i = 0; i < num_map; ++i )
-			ret[i] = (*func)(ret[i], false);
+	end = std::chrono::system_clock::now();
+	t_apply_gemm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+	t_apply += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
 
 	return ret;
 }

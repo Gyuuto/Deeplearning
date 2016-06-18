@@ -4,7 +4,9 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <algorithm>
 #include <random>
+#include <chrono>
 
 #ifdef USE_MPI
 #include <mpi.h>
@@ -30,6 +32,11 @@ protected:
 	std::vector<std::vector<Mat>> W;
 	std::shared_ptr<Function> func, prev_func;
 public:
+	double t_apply, t_delta, t_grad;
+	double t_apply_init, t_apply_gemm, t_apply_repl;
+	double t_delta_init, t_delta_gemm, t_delta_repl;
+	double t_grad_init, t_grad_gemm, t_grad_repl;
+
 	Layer(){}
 
 #ifdef USE_MPI

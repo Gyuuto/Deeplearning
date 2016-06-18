@@ -5,8 +5,11 @@
 #include <cmath>
 #include <cstring>
 
+#include <chrono>
+
 #include "../include/Neuralnet.hpp"
 #include "../include/Layer.hpp"
+#include "../include/Dropout.hpp"
 #include "../include/FullyConnected.hpp"
 #include "../include/Convolutional.hpp"
 #include "../include/Pooling.hpp"
@@ -33,12 +36,41 @@ void normalize ( vector<vector<vector<double>>>& image, vector<vector<double>>& 
 int main( int argc, char* argv[] )
 {
 	// define mini-batch size.
-	const int BATCH_SIZE = 50;
-
-	// parallelism for model parallel.
 	int INNER = 1;
+	int N = 60000, M = 10000;
+	int BATCH_SIZE = 32, NUM_EPOCH = 20, UPDATE_EPOCH = 1;
+	double EPS = 1.0E-3, LAMBDA = 0.0;
+	
 	for( int i = 1; i < argc; ++i ){
-		if( strcmp(argv[i], "--inner") == 0 ){
+		if( i+1 < argc && strcmp(argv[i], "--N") == 0 ){
+			sscanf(argv[i+1], "%d", &N);
+			++i;
+		}
+		else if( i+1 < argc && strcmp(argv[i], "--M") == 0 ){
+			sscanf(argv[i+1], "%d", &M);
+			++i;
+		}
+		else if( i+1 < argc && strcmp(argv[i], "--batch") == 0 ){
+			sscanf(argv[i+1], "%d", &BATCH_SIZE);
+			++i;
+		}
+		else if( i+1 < argc && strcmp(argv[i], "--num_epoch") == 0 ){
+			sscanf(argv[i+1], "%d", &NUM_EPOCH);
+			++i;
+		}
+		else if( i+1 < argc && strcmp(argv[i], "--update_epoch") == 0 ){
+			sscanf(argv[i+1], "%d", &UPDATE_EPOCH);
+			++i;
+		}
+		else if( i+1 < argc && strcmp(argv[i], "--eps") == 0 ){
+			sscanf(argv[i+1], "%lf", &EPS);
+			++i;
+		}
+		else if( i+1 < argc && strcmp(argv[i], "--lambda") == 0 ){
+			sscanf(argv[i+1], "%d", &LAMBDA);
+			++i;
+		}
+		else if( i+1 < argc && strcmp(argv[i], "--inner") == 0 ){
 			sscanf(argv[i+1], "%d", &INNER);
 			++i;
 		}
@@ -74,7 +106,7 @@ int main( int argc, char* argv[] )
 										  5, 5, 1, shared_ptr<Function>(new ReLU)));
 	layers.emplace_back(new Pooling(10, 28*28, 28,
 									10, 14*14, 14,
-									3, 3, 2, shared_ptr<Function>(new Identity)));
+									2, 2, 2, shared_ptr<Function>(new Identity)));
 	layers.emplace_back(new Convolutional(10, 14*14, 14,
 										  20, 14*14, 14,
 										  5, 5, 1, shared_ptr<Function>(new ReLU)));
@@ -82,6 +114,7 @@ int main( int argc, char* argv[] )
 									20, 7*7, 7,
 									2, 2, 2, shared_ptr<Function>(new Identity)));
 	layers.emplace_back(new FullyConnected(20, 7*7, 1, 512, shared_ptr<Function>(new ReLU)));
+	layers.emplace_back(new Dropout(1, 512, 0.5, shared_ptr<Function>(new Identity)));
 	layers.emplace_back(new FullyConnected(1, 512, 1, 10, shared_ptr<Function>(new Softmax)));
 
 	// this neuralnet has 7 layers, input, Conv1, MaxPool, Conv2, MaxPool, Fc1 and Fc2;
@@ -92,7 +125,6 @@ int main( int argc, char* argv[] )
 	// read a test data of MNIST(http://yann.lecun.com/exdb/mnist/).
 	vector<int> train_lab;
 	vector<vector<vector<double>>> train_x;
-	const int N = 60000 / outer_nprocs;
 	ifstream train_image("train-images-idx3-ubyte", ios_base::binary);
 	if( !train_image.is_open() ){
 		cerr << "\"train-images-idx3-ubyte\" is not found!" << endl;
@@ -104,6 +136,7 @@ int main( int argc, char* argv[] )
 		return 1;
 	}
 
+	N = N / outer_nprocs;
 	train_image.seekg(4*4 + 28*28*outer_rank * N, ios_base::beg);
 	train_label.seekg(4*2 + outer_rank * N, ios_base::beg);
 	for( int i = 0; i < N; ++i ){
@@ -132,7 +165,6 @@ int main( int argc, char* argv[] )
 	// read a train data of MNIST.
 	vector<int> test_lab;
 	vector<vector<vector<double>>> test_x;
-	const int M = 10000;
 	ifstream test_image("t10k-images-idx3-ubyte", ios_base::binary);
 	if( !test_image.is_open() ){
 		cerr << "\"t10k-images-idx3-ubyte\" is not found!" << endl;
@@ -171,13 +203,15 @@ int main( int argc, char* argv[] )
 	}
 
 	// checking error function.
-	double prev_time, total_time;
+	chrono::time_point<chrono::system_clock> prev_time, total_time;
 	auto check_error = [&](const Neuralnet& nn, const int iter, const std::vector<Matrix<double>>& x, const std::vector<Matrix<double>>& d ) -> void {
-		if( iter%((N/BATCH_SIZE)) != 0 || iter == 0 ) return;
+		if( (iter+1)%((N/BATCH_SIZE)) != 0 ) return;
 
 		const int once_num = 1000;
-		double tmp_time = MPI_Wtime();
-
+		auto tmp_time = chrono::system_clock::now();
+		MPI_Allreduce(MPI_IN_PLACE, &cnt_flop, 1, MPI_LONG_LONG_INT, MPI_SUM, MPI_COMM_WORLD);
+		double flops = (double)cnt_flop / (std::chrono::duration_cast<std::chrono::milliseconds>(tmp_time - prev_time).count()/1e3) / 1e9;
+		
 		// calculating answer rate among all train data.
 		int train_ans_num = 0;
 		for( int i = 0; i < train_x.size(); i += once_num ){
@@ -188,6 +222,7 @@ int main( int argc, char* argv[] )
 			auto y = nn.apply(tmp_x);
 			for( int j = 0; j < y.size(); ++j ){
 				int idx, lab;
+
 				double max_num = 0.0;
 				for( int k = 0; k < 10; ++k ){
 					if( max_num < y[j][0][k] ){
@@ -226,26 +261,42 @@ int main( int argc, char* argv[] )
 		if( inner_rank == 0 ){
 			for( int i = 0; i < outer_nprocs; ++i ){
 				if( i == outer_rank ){
-					printf("outer rank : %d\n", outer_rank);
-					printf("  Elapsed time : %.3f, Total time : %.3f\n", tmp_time - prev_time, MPI_Wtime() - total_time);
+					printf("outer rank : %d, iter : %d\n", outer_rank, iter);
+					printf("  Elapsed time : %.3f, Total time : %.3f\n",
+						   chrono::duration_cast<chrono::milliseconds>(tmp_time - prev_time).count()/1e3,
+						   chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now() - total_time).count()/1e3);
 					printf("  Train answer rate : %.2f%%\n", (double)train_ans_num/train_x.size()*100.0);
 					printf("  Test answer rate  : %.2f%%\n", (double)test_ans_num/X[0].n*100.0);
 				}
 				MPI_Barrier(outer_world);
 			}
-			prev_time = MPI_Wtime();
+			prev_time = chrono::system_clock::now();
 		}
-		if( world_rank == 0 ) puts("");
+		if( world_rank == 0 )
+			printf("  %.3f[GFLOPS]\n\n", flops);
+		cnt_flop = 0;
 	};
 
 	// set a hyper parameter.
-	net.set_EPS(1.0E-3);
-	net.set_LAMBDA(0.0);
+	net.set_EPS(EPS);
+	net.set_LAMBDA(LAMBDA);
 	net.set_BATCHSIZE(BATCH_SIZE);
-	net.set_UPDATEITER(N/BATCH_SIZE*2);
+	net.set_UPDATEITER(N/BATCH_SIZE*UPDATE_EPOCH);
 	// learning the neuralnet in 20 EPOCH and output error defined above in each epoch.
-	prev_time = total_time = MPI_Wtime();
-	net.learning(train_x, d, N/BATCH_SIZE*10, check_error);
+	prev_time = total_time = chrono::system_clock::now();
+	net.learning(train_x, d, N/BATCH_SIZE*NUM_EPOCH, check_error);
 
+	if( world_rank == 0 ){
+		for( int i = 0; i < layers.size(); ++i ){
+			printf("Layer : %d\n", i);
+			printf("    Apply %8.3f[s], init %8.3f[s], gemm %8.3f[s], replacement %8.3f[s]\n",
+				   layers[i]->t_apply, layers[i]->t_apply_init, layers[i]->t_apply_gemm, layers[i]->t_apply_repl);
+			printf("    Delta %8.3f[s], init %8.3f[s], gemm %8.3f[s], replacement %8.3f[s]\n",
+				   layers[i]->t_delta, layers[i]->t_delta_init, layers[i]->t_delta_gemm, layers[i]->t_delta_repl);
+			printf("    Grad  %8.3f[s], init %8.3f[s], gemm %8.3f[s], replacement %8.3f[s]\n",
+				   layers[i]->t_grad, layers[i]->t_grad_init, layers[i]->t_grad_gemm, layers[i]->t_grad_repl);
+		}
+	}
+	
 	MPI_Finalize();
 }

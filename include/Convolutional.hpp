@@ -7,7 +7,9 @@ class Convolutional : public Layer
 {
 private:
 	int prev_ldu, ldu;
-	int m, n, stride;
+	int m, n, stride, pad;
+
+	std::vector<int> feed_idx, delta_idx;
 
 	Vec r, v;
 	double beta_, gamma_;
@@ -19,9 +21,9 @@ public:
 				   const std::shared_ptr<Function>& f );
 
 #ifdef USE_MPI
-	void init( std::mt19937& m, MPI_Comm inner_world, MPI_Comm outer_world );
+	void init( std::mt19937& mt, MPI_Comm inner_world, MPI_Comm outer_world );
 #else
-	void init( std::mt19937& m );
+	void init( std::mt19937& mt );
 #endif
 	void finalize();
 	
@@ -55,25 +57,55 @@ Convolutional::Convolutional( int prev_num_map, int prev_num_unit, int prev_ldu,
 	this->num_unit = num_unit;
 	this->ldu = ldu;	
 
-	this->m = m; this->n = n; this->stride = stride;
+	t_apply = t_delta = t_grad = 0.0;
+	t_apply_init = t_apply_gemm = t_apply_repl = 0.0;
+	t_delta_init = t_delta_gemm = t_delta_repl = 0.0;
+	t_grad_init = t_grad_gemm = t_grad_repl = 0.0;
 
+	this->m = m; this->n = n; this->stride = stride; this->pad = m/2;
+
+	int rank = 0;
+#ifdef USE_MPI
+	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+#endif
+	if( num_unit%ldu != 0 )
+		if( rank == 0 ){
+			printf("WARNING : Wrong leading dimension of output on Convolution layer.\n");
+			printf("          Layer details : output size[%d x %d], filter size[%d x %d], stride %d, padding %d, number of map %d.\n", num_unit/ldu, ldu, m, n, stride, pad, num_map);
+		}
+	if( prev_num_unit%prev_ldu != 0 )
+		if( rank == 0 ){
+			printf("WARNING : Wrong leading dimension of input on Convolution layer.\n");
+			printf("          Layer details : output size[%d x %d], filter size[%d x %d], stride %d, padding %d, number of map %d.\n", num_unit/ldu, ldu, m, n, stride, pad, num_map);
+		}
+	if( ldu != (prev_ldu + 2*pad - n)/stride + 1 )
+		if( rank == 0 ){
+			printf("WARNING : Wrong output image width on Convolution layer.\n");
+			printf("          Estimate width = %d.\n", (prev_ldu + 2*pad - n)/stride + 1);
+			printf("          Layer details : output size[%d x %d], filter size[%d x %d], stride %d, padding %d, number of map %d.\n", num_unit/ldu, ldu, m, n, stride, pad, num_map);
+		}
+	if( num_unit/ldu != (prev_num_unit/prev_ldu + 2*pad - m)/stride + 1 )
+		if( rank == 0 ){
+			printf("WARNING : Wrong output image height on Convolution layer.\n");
+			printf("          Estimate height = %d.\n", (prev_num_unit/prev_ldu + 2*pad - m)/stride + 1);
+			printf("          Layer details : output size[%d x %d], filter size[%d x %d], stride %d, padding %d, number of map %d.\n", num_unit/ldu, ldu, m, n, stride, pad, num_map);
+		}
+	
 	func = f;
 
 	beta_ = 1.0; gamma_ = 1.0;
-
 	for( int i = 0; i < num_map; ++i ){
 		W.emplace_back(prev_num_map);
 		for( int j = 0; j < prev_num_map; ++j ){
 			W[i][j] = Mat(this->m, this->n);
 		}
 	}
-
 }
 
 #ifdef USE_MPI
-void Convolutional::init ( std::mt19937& m, MPI_Comm inner_world, MPI_Comm outer_world )
+void Convolutional::init ( std::mt19937& mt, MPI_Comm inner_world, MPI_Comm outer_world )
 #else
-void Convolutional::init ( std::mt19937& m )
+void Convolutional::init ( std::mt19937& mt )
 #endif
 {
 #ifdef USE_MPI
@@ -82,7 +114,79 @@ void Convolutional::init ( std::mt19937& m )
 
 	MPI_Comm_rank(inner_world, &rank);
 	MPI_Comm_size(inner_world, &nprocs);
+
 #endif
+
+	// calculate indices of feed forward
+	{
+		int my_size, my_offset;
+		const int Y = prev_num_unit/prev_ldu, X = prev_ldu;
+		const int gap = prev_ldu + 2*pad;
+#ifdef USE_MPI
+		my_size = (rank+1)*num_unit/nprocs - rank*num_unit/nprocs;
+		my_offset = rank*num_unit/nprocs;
+#else
+		my_size = num_unit; my_offset = 0;
+#endif
+		feed_idx.resize(my_size*m*n);
+#pragma omp parallel for schedule(auto)
+		for( int i = 0; i < my_size; ++i ){
+			int x = (i + my_offset)%ldu, y = (i + my_offset)/ldu;
+			for( int s = 0; s < n; ++s )
+				for( int t = 0; t < m; ++t ){
+					int idx = stride*x + s + t*gap + stride*y*gap;
+					int nx = idx%gap - pad, ny = idx/gap - pad;
+
+					if( nx < 0 || nx >= X || ny < 0 || ny >= Y ){
+						feed_idx[i*m*n + t*n + s] = -1;
+						continue;
+					}
+					feed_idx[i*m*n + t*n + s] = ny*prev_ldu + nx;
+				}
+		}
+	}
+
+	{
+		int my_size, my_offset;
+#ifdef USE_MPI
+		my_size = (rank+1)*prev_num_unit/nprocs - rank*prev_num_unit/nprocs;
+		my_offset = rank*prev_num_unit/nprocs;
+#else
+		my_size = prev_num_unit; my_offset = 0;
+#endif
+
+		const int X = prev_ldu, Y = prev_num_unit/prev_ldu;
+		const int gap = prev_ldu + 2*pad;
+#ifdef USE_MPI
+		const int tmp_size = (rank+1)*num_unit/nprocs - rank*num_unit/nprocs; 
+		const int tmp_offset = rank*num_unit/nprocs;
+#else
+		const int tmp_size = num_unit;
+		const int tmp_offset = 0;
+#endif
+		int l_idx = std::max(0, tmp_offset - m*prev_ldu/2);
+		int r_idx = std::min(num_unit, tmp_offset + tmp_size + m*prev_ldu/2);
+		delta_idx.resize(m*n*(r_idx - l_idx));
+#pragma omp parallel for schedule(auto)
+		for( int j = l_idx; j < r_idx; ++j ){
+			int x = j%ldu, y = j/ldu;
+			for( int t = 0; t < m; ++t )
+				for( int s = 0; s < n; ++s ){
+					int idx = stride*x + s + t*gap + stride*y*gap;
+					int nx = idx%gap - pad, ny = idx/gap - pad;
+
+					if( nx < 0 || nx >= X || ny < 0 || ny >= Y ){
+						delta_idx[(j-l_idx)*m*n + t*n + s] = -1;
+						continue;
+					}
+					if( ny*prev_ldu + nx < my_offset || my_offset + my_size <= ny*prev_ldu + nx ){
+						delta_idx[(j-l_idx)*m*n + t*n + s] = -1;
+						continue;
+					}
+					delta_idx[(j-l_idx)*m*n + t*n + s] = ny*prev_ldu + nx - my_offset;
+				}
+		}
+	}
 
 	const double r = sqrt(6.0/(num_unit + prev_num_unit));
 	std::normal_distribution<double> d_rand(0.0, 1.0E-1);
@@ -93,7 +197,7 @@ void Convolutional::init ( std::mt19937& m )
 		for( int j = 0; j < prev_num_map; ++j ){
 			for( int k = 0; k < W[i][j].m; ++k )
 				for( int l = 0; l < W[i][j].m; ++l )
-					W[i][j](k,l) = d_rand(m);
+					W[i][j](k,l) = d_rand(mt);
 		}				
 	}
 }
@@ -104,7 +208,10 @@ void Convolutional::finalize ()
 
 std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( const std::vector<Mat>& U, const std::vector<Mat>& delta )
 {
-	int offset = 0, my_size = delta[0].m;
+	auto tot_beg = std::chrono::system_clock::now();
+	auto beg = tot_beg;
+
+	int offset = 0, my_size = U[0].m;
 #ifdef USE_MPI
 	offset = rank*my_size/nprocs;
 	my_size = (rank+1)*my_size/nprocs - rank*my_size/nprocs;
@@ -120,64 +227,83 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 	std::vector<Mat> U_(prev_num_map);
 	for( int i = 0; i < prev_num_map; ++i )
 		U_[i] = (*prev_func)(U[i], false);
+	auto end = std::chrono::system_clock::now();
+	t_grad_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
 	const int Y = prev_num_unit/prev_ldu, X = prev_ldu;
 	const int Y_ = num_unit/ldu, X_ = ldu;
-	int i, j, k, l, s, t, y, x;
-	Mat nabla_mat(m*n*num_map, prev_num_map);
-	for( i = 0; i < delta[0].n; ++i ){
-		Mat delta_mat(m*n*num_map, my_size);
-#pragma omp parallel for default(none)					\
-	private(j,k,l) shared(i, my_size,offset, delta,delta_mat)
-		for( j = 0; j < num_map; ++j )
-			for( k = 0; k < m*n; ++k ){
-				int s = k%m - (m/2), t = k/m - (n/2);
-				for( l = 0; l < my_size; ++l ){
-					int nx = (l + offset)%ldu - s, ny = (l + offset)/ldu - t;
-					if( nx < 0 || ny < 0 || X_ <= nx || Y_ <= ny ){
-						delta_mat(j*m*n + k, l) = 0.0;
-						continue;
-					}
-					delta_mat(j*m*n + k, l) = delta[j](ny*ldu + nx, i);
-				}
-			}
+	Mat nabla_mat = Mat::zeros(m*n*num_map, prev_num_map);
 
+	for( int i = 0; i < delta[0].n; ++i ){
+		auto beg = std::chrono::system_clock::now();
+		Mat delta_mat = Mat::zeros(m*n*num_map, my_size);
 		Mat U_mat(my_size, prev_num_map);
-		for( j = 0; j < prev_num_map; ++j )
-#pragma omp parallel for default(none)					\
-	private(k) shared(i,j, my_size,offset, U_,U_mat)
-			for( k = 0; k < my_size; ++k )
-				U_mat(k, j) = U_[j](offset+k, i);
 
+		const int gap = prev_ldu + 2*pad;
+#ifdef USE_MPI
+		const int tmp_size = (rank+1)*num_unit/nprocs - rank*num_unit/nprocs; 
+		const int tmp_offset = rank*num_unit/nprocs;
+#else
+		const int tmp_size = num_unit;
+		const int tmp_offset = 0;
+#endif
+		int l_idx = std::max(0, tmp_offset - m*prev_ldu/2);
+		int r_idx = std::min(num_unit, tmp_offset + tmp_size + m*prev_ldu/2);
+
+#pragma omp parallel for schedule(auto) firstprivate(l_idx, r_idx)
+		for( int j = l_idx; j < r_idx; ++j ){
+			for( int t = 0; t < m; ++ t )
+				for( int s = 0; s < n; ++s )
+					if( delta_idx[(j-l_idx)*m*n + t*n + s] != -1 )
+						for( int k = 0; k < num_map; ++k )
+							delta_mat(k*m*n + s*m + t, delta_idx[(j-l_idx)*m*n + t*n + s]) = delta[k](j, i);
+		}
+
+#pragma omp parallel for schedule(auto) firstprivate(my_size, offset)
+		for( int k = 0; k < my_size; ++k )
+			for( int j = 0; j < prev_num_map; ++j )
+				U_mat(k, j) = U_[j](offset + k, i);
+		auto end = std::chrono::system_clock::now();
+		t_grad_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+		beg = std::chrono::system_clock::now();
 		nabla_mat += delta_mat*U_mat;
+		end = std::chrono::system_clock::now();
+		t_grad_gemm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 	}
 
-#pragma omp parallel for default(none)			\
-	private(i,j,k,l) shared(my_size, delta,nabla,nabla_mat)
-	for( i = 0; i < num_map; ++i ){
-		for( j = 0; j < prev_num_map; ++j ){
-			for( k = 0; k < n; ++k )
-				for( l = 0; l < m; ++l )
-					nabla[i][j](k, l) = nabla_mat(i*m*n + l*n + k, j);
+	beg = std::chrono::system_clock::now();
+	for( int i = 0; i < num_map; ++i ){
+		for( int j = 0; j < prev_num_map; ++j ){
+			for( int k = 0; k < m; ++k )
+				for( int l = 0; l < n; ++l )
+					nabla[i][j](k, l) = nabla_mat(i*m*n + k*n + l, j);
 		}
-	
+		
 		double sum = 0.0;
-		for( j = 0; j < delta[i].n; ++j )
-			for( k = 0; k < delta[i].m; ++k )
+		for( int k = 0; k < delta[i].m; ++k )
+			for( int j = 0; j < delta[i].n; ++j )
 				sum += delta[i](k,j);
 		d_bias[i] = sum / delta[i].n;
 	}
+	end = std::chrono::system_clock::now();
+	t_grad_repl += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+	
 #ifdef USE_MPI
-	for( i = 0; i < num_map; ++i )
-		for( j = 0; j < prev_num_map; ++j )
+	for( int i = 0; i < num_map; ++i )
+		for( int j = 0; j < prev_num_map; ++j )
 			MPI_Allreduce(MPI_IN_PLACE, &nabla[i][j](0,0), m*n, MPI_DOUBLE_PRECISION, MPI_SUM, inner_world);
 #endif
-	
+	end = std::chrono::system_clock::now();
+	t_grad += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
+
 	return nabla;				
 }
 
 std::vector<Convolutional::Mat> Convolutional::calc_delta ( const std::vector<Mat>& U, const std::vector<Mat>& delta )
 {
+	auto tot_beg = std::chrono::system_clock::now();
+	auto beg = tot_beg;
+
 	int my_size = prev_num_unit, my_offset = 0;
 #ifdef USE_MPI
 	std::vector<int> size(nprocs), offset(nprocs);
@@ -194,39 +320,57 @@ std::vector<Convolutional::Mat> Convolutional::calc_delta ( const std::vector<Ma
 	const int X_ = ldu, Y_ = num_unit/ldu;
 	std::vector<Mat> tmp(prev_num_map), nx_delta(prev_num_map);
 
-	int i, j, k, l, x, y, s, t;
 	for( int i = 0; i < prev_num_map; ++i ) tmp[i] = Mat(prev_num_unit, U[0].n);
 
 	Mat kernel(m*n*num_map, prev_num_map);
-#pragma omp parallel for default(none) \
-	private(i,j,k,l) shared(kernel)
-	for( i = 0; i < num_map; ++i )
-		for( j = 0; j < prev_num_map; ++j )
-			for( k = 0; k < m; ++ k )
-				for( l = 0; l < n; ++l )
-					kernel(i*(m*n) + k*m + l, j) = W[i][j](l, k);
+#pragma omp parallel for schedule(auto)
+	for( int i = 0; i < num_map; ++i )
+		for( int j = 0; j < prev_num_map; ++j )
+			for( int k = 0; k < m; ++ k )
+				for( int l = 0; l < n; ++l )
+					kernel(i*(m*n) + l*n + k, j) = W[i][j](k, l);
+	auto end = std::chrono::system_clock::now();
+	t_delta_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+	
+	for( int i = 0; i < delta[0].n; ++i ){
+		auto beg = std::chrono::system_clock::now();;
+		Mat input_image = Mat::zeros(my_size, m*n*num_map);
+ 
+		const int gap = prev_ldu + 2*pad;
+#ifdef USE_MPI
+		const int tmp_size = (rank+1)*num_unit/nprocs - rank*num_unit/nprocs; 
+		const int tmp_offset = rank*num_unit/nprocs;
+#else
+		const int tmp_size = num_unit;
+		const int tmp_offset = 0;
+#endif
+		int l_idx = std::max(0, tmp_offset - m*prev_ldu/2);
+		int r_idx = std::min(num_unit, tmp_offset + tmp_size + m*prev_ldu/2);
+#pragma omp parallel for schedule(auto) firstprivate(l_idx, r_idx)
+		for( int j = l_idx; j < r_idx; ++j ){
+			// int x = j%ldu, y = j/ldu;
+			// for( int t = 0; t < m; ++t )
+			// 	for( int s = 0; s < n; ++s ){
+			// 		int idx = stride*x + s + t*gap + stride*y*gap;
+			// 		int nx = idx%gap - pad, ny = idx/gap - pad;
 
-	for( i = 0; i < delta[0].n; ++i ){
-		Mat input_image(my_size, m*n*num_map);
+			// 		if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
+			// 		if( ny*prev_ldu + nx < my_offset || my_offset + my_size <= ny*prev_ldu + nx )
+			// 			continue;
 
-#pragma omp parallel for default(none) \
-	private(j,k,s,t) shared(i, input_image, my_size, my_offset, delta)
-		for( j = 0; j < my_size; ++j ){
-			int x = (j + my_offset)%prev_ldu, y = (j + my_offset)/prev_ldu;
-
-			for( s = -m/2; s < (m+1)/2; s += stride )
-				for( t = -n/2; t < (n+1)/2; t += stride ){
-					int nx = x - s, ny = y - t;
-					if( nx < 0 || nx >= X_ || ny < 0 || ny >= Y_ ){
-						for( k = 0; k < num_map; ++k )
-							input_image(j, m*n*k + (t+(n/2))*n + s+(m/2)) = 0.0;
-						continue;
-					}
-					for( k = 0; k < num_map; ++k )
-						input_image(j, m*n*k + (t+(n/2))*n + s+(m/2)) = delta[k](ny*ldu + nx, i);
-				}
+			// 		for( int k = 0; k < num_map; ++k )
+			// 			input_image(ny*prev_ldu + nx - my_offset, m*n*k + t*n + s) = delta[k](j, i);
+			// 	}
+			for( int t = 0; t < m; ++t )
+				for( int s = 0; s < n; ++s )
+					if( delta_idx[(j-l_idx)*m*n + t*n + s] != -1 )
+						for( int k = 0; k < num_map; ++k )
+							input_image(delta_idx[(j-l_idx)*m*n + t*n + s], m*n*k + t*n + s) = delta[k](j, i);
 		}
+		auto end = std::chrono::system_clock::now();
+		t_delta_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
+		beg = std::chrono::system_clock::now();
 #ifdef USE_MPI
 		Mat tmp_output_image = input_image * kernel;
 		Mat output_image(prev_num_unit, prev_num_map);
@@ -235,16 +379,21 @@ std::vector<Convolutional::Mat> Convolutional::calc_delta ( const std::vector<Ma
 #else
 		Mat output_image = input_image * kernel;
 #endif
+		end = std::chrono::system_clock::now();
+		t_delta_gemm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
-		for( j = 0; j < prev_num_map; ++j )
-#pragma omp parallel for default(none) \
-	private(k) shared(i,j, output_image, tmp)
-			for( k = 0; k < prev_num_unit; ++k )
+		beg = std::chrono::system_clock::now();
+		for( int j = 0; j < prev_num_map; ++j )
+			for( int k = 0; k < prev_num_unit; ++k )
 				tmp[j](k, i) = output_image(k, j);
+		end = std::chrono::system_clock::now();
+		t_delta_repl += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 	}
 
-	for( i = 0; i < prev_num_map; ++i )
+	for( int i = 0; i < prev_num_map; ++i )
 		nx_delta[i] = Mat::hadamard(tmp[i], (*prev_func)(U[i], true));
+	end = std::chrono::system_clock::now();
+	t_delta += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
 
 	return nx_delta;
 }
@@ -252,11 +401,11 @@ std::vector<Convolutional::Mat> Convolutional::calc_delta ( const std::vector<Ma
 void Convolutional::update_W ( const std::vector<std::vector<Mat>>& dW )
 {
 	const double a_beta = 0.9, a_gamma = 0.999, a_eps = 1.0E-8;
+	beta_ *= a_beta; gamma_ *= a_gamma;
 	for( int i = 0; i < num_map; ++i ){
 		for( int j = 0; j < prev_num_map; ++j )
 			W[i][j] = W[i][j] + dW[i][j];
 
-		beta_ *= a_beta; gamma_ *= a_gamma;
 		v[i] = a_beta*v[i] + (1.0 - a_beta)*d_bias[i];
 		r[i] = a_gamma*r[i] + (1.0 - a_gamma)*d_bias[i]*d_bias[i];
 		bias[i] -= 0.001*v[i]/(1.0 - beta_)/(sqrt(r[i]/(1.0 - gamma_)+a_eps));
@@ -265,6 +414,9 @@ void Convolutional::update_W ( const std::vector<std::vector<Mat>>& dW )
 
 std::vector<Convolutional::Mat> Convolutional::apply ( const std::vector<Mat>& U, bool use_func )
 {
+	auto tot_beg = std::chrono::system_clock::now();
+	auto beg = tot_beg;
+
 	int my_size = num_unit, my_offset = 0;
 #ifdef USE_MPI
 	std::vector<int> size(nprocs), offset(nprocs);
@@ -280,18 +432,18 @@ std::vector<Convolutional::Mat> Convolutional::apply ( const std::vector<Mat>& U
 	const int Y = prev_num_unit/prev_ldu, X = prev_ldu;
 	std::vector<Mat> ret(num_map);
 
-	int i, j, k, l, y, x, s, t;
 	for( int i = 0; i < num_map; ++i ) ret[i] = Mat(num_unit, U[0].n);
 
 	Mat kernel(m*n*prev_num_map, num_map);
-#pragma omp parallel for default(none) \
-	private(i,j,k,l) shared(kernel)
-	for( i = 0; i < num_map; ++i )
-		for( j = 0; j < prev_num_map; ++j )
-			for( k = 0; k < m; ++ k )
-				for( l = 0; l < n; ++l )
-					kernel(j*(m*n) + k*n + l, i) = W[i][j](l, k);
+	for( int i = 0; i < num_map; ++i )
+		for( int j = 0; j < prev_num_map; ++j )
+			for( int k = 0; k < m; ++ k )
+				for( int l = 0; l < n; ++l )
+					kernel(j*(m*n) + l*n + k, i) = W[i][j](k, l);
+	auto end = std::chrono::system_clock::now();
+	t_apply_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 			
+<<<<<<< HEAD
 	for( i = 0; i < U[0].n; ++i ){
 		Mat input_image(my_size, m*n*prev_num_map);
 
@@ -310,8 +462,24 @@ std::vector<Convolutional::Mat> Convolutional::apply ( const std::vector<Mat>& U
 					for( k = 0; k < prev_num_map; ++k )
 						input_image(j, m*n*k + (t+(n/2))*m + s+(m/2)) = U[k](ny*prev_ldu + nx, i);
 				}
-		}
+=======
+	for( int i = 0; i < U[0].n; ++i ){
+		auto beg = std::chrono::system_clock::now();
+		Mat input_image = Mat::zeros(my_size, m*n*prev_num_map);
 
+#pragma omp parallel for schedule(auto)
+		for( int j = 0; j < my_size; ++j ){
+			for( int k = 0; k < prev_num_map; ++k )
+				for( int s = 0; s < m; ++ s )
+					for( int t = 0; t < n; ++ t )
+						if( feed_idx[j*m*n + s*n + t] != -1 )
+							input_image(j, m*n*k + s*n + t) = U[k](feed_idx[j*m*n + s*n + t], i);
+>>>>>>> ed1f7ee00615d6e0cafe826dff40f046eacf87e1
+		}
+		auto end = std::chrono::system_clock::now();
+		t_apply_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+
+		beg = std::chrono::system_clock::now();
 #ifdef USE_MPI
 		Mat tmp_output_image = input_image * kernel;
 		Mat output_image(num_unit, num_map);
@@ -320,26 +488,29 @@ std::vector<Convolutional::Mat> Convolutional::apply ( const std::vector<Mat>& U
 #else
 		Mat output_image = input_image * kernel;
 #endif
+		end = std::chrono::system_clock::now();
+		t_apply_gemm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
-		for( j = 0; j < num_map; ++j )
-#pragma omp parallel for default(none) \
-	private(k) shared(i,j, output_image, ret)
-			for( k = 0; k < num_unit; ++k )
+		beg = std::chrono::system_clock::now();
+#pragma omp parallel for schedule(auto)
+		for( int k = 0; k < num_unit; ++k )
+			for( int j = 0; j < num_map; ++j )
 				ret[j](k, i) = output_image(k, j);
+		end = std::chrono::system_clock::now();
+		t_apply_repl += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 	}
 	
-	for( i = 0; i < num_map; ++i )
-#pragma omp parallel for default(none)	\
-	private(j,k) shared(i, ret)
-		for( j = 0; j < ret[i].m; ++j )
-			for( k = 0; k < ret[i].n; ++k )
+	for( int i = 0; i < num_map; ++i )
+		for( int j = 0; j < ret[i].m; ++j )
+			for( int k = 0; k < ret[i].n; ++k )
 				ret[i](j,k) += bias[i];
 
-
 	if( use_func )
-		for( i = 0; i < num_map; ++i )
+		for( int i = 0; i < num_map; ++i )
 			ret[i] = (*func)(ret[i], false);
-
+	end = std::chrono::system_clock::now();
+	t_apply += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
+	
 	return ret;
 }
 

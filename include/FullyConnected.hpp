@@ -44,6 +44,11 @@ FullyConnected::FullyConnected( int prev_num_map, int prev_num_unit, int num_map
 	this->num_map = num_map;
 	this->num_unit = num_unit;
 
+	t_apply = t_delta = t_grad = 0.0;
+	t_apply_init = t_apply_gemm = t_apply_repl = 0.0;
+	t_delta_init = t_delta_gemm = t_delta_repl = 0.0;
+	t_grad_init = t_grad_gemm = t_grad_repl = 0.0;
+
 	func = f;
 }
 
@@ -93,6 +98,9 @@ void FullyConnected::finalize ()
 
 std::vector<std::vector<FullyConnected::Mat>> FullyConnected::calc_gradient ( const std::vector<Mat>& U, const std::vector<Mat>& delta )
 {
+	auto tot_beg = std::chrono::system_clock::now();
+	auto beg = tot_beg;
+
 	int offset = 0;
 #ifdef USE_MPI
 	offset = rank*num_unit/nprocs;
@@ -104,56 +112,58 @@ std::vector<std::vector<FullyConnected::Mat>> FullyConnected::calc_gradient ( co
 		for( int j = 0; j < prev_num_map; ++j )
 			nabla[i][j] = Mat(W[i][j].m, W[i][j].n);
 	}
-
-	int i, j, k, l;
-	for( i = 0; i < num_map; ++i )
-		for( j = 0; j < prev_num_map; ++j ){
+	auto end = std::chrono::system_clock::now();
+	t_grad_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+	
+	beg = std::chrono::system_clock::now();
+	for( int i = 0; i < num_map; ++i )
+		for( int j = 0; j < prev_num_map; ++j ){
 			Mat V(U[j].m+1, U[j].n), U_ = (*prev_func)(U[j], false);
-#pragma omp parallel for default(none) \
-	private(k,l) shared(i,j, V, U_)
-			for( k = 0; k < U_.n; ++k ){
+			for( int k = 0; k < U_.n; ++k ){
 				V(0,k) = 1.0;
-				for( l = 0; l < U_.m; ++l ) V(l+1,k) = U_(l, k);
+				for( int l = 0; l < U_.m; ++l ) V(l+1,k) = U_(l, k);
 			}
 
 			Mat tmp_delta(W[i][j].m, delta[i].n);
-#pragma omp parallel for default(none) \
-	private(k,l) shared(i,j, offset, tmp_delta, delta, nabla)
-			for( k = 0; k < tmp_delta.m; ++k )
-				for( l = 0; l < delta[i].n; ++l )
+			for( int k = 0; k < tmp_delta.m; ++k )
+				for( int l = 0; l < delta[i].n; ++l )
 					tmp_delta(k,l) = delta[i](k + offset,l);
 
 			nabla[i][j] = tmp_delta*Mat::transpose(V);
 		}
+	end = std::chrono::system_clock::now();
+	t_grad_gemm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+	t_grad += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
 
 	return nabla;
 }
 
 std::vector<FullyConnected::Mat> FullyConnected::calc_delta ( const std::vector<Mat>& U, const std::vector<Mat>& delta )
 {
+	auto tot_beg = std::chrono::system_clock::now();
+	auto beg = tot_beg;
+
 	int offset = 0;
 #ifdef USE_MPI
 	offset = rank*num_unit/nprocs;
 #endif
 	std::vector<Mat> tmp_delta(num_map), tmp(prev_num_map), nx_delta(prev_num_map);
 
-	int i, j, k;
-	for( i = 0; i < num_map; ++i ){
+	for( int i = 0; i < num_map; ++i ){
 		tmp_delta[i] = Mat(W[0][0].m, delta[i].n);
-#pragma omp parallel for default(none) \
-	private(j,k) shared(i, offset, delta, tmp_delta)
-		for( j = 0; j < W[0][0].m; ++j ){
-			for( k = 0; k < delta[i].n; ++k )
+#pragma omp parallel for schedule(auto)
+		for( int j = 0; j < W[0][0].m; ++j ){
+			for( int k = 0; k < delta[i].n; ++k )
 				tmp_delta[i](j, k) = delta[i](offset + j, k);
 		}
 	}
+	auto end = std::chrono::system_clock::now();
+	t_delta_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
-// #pragma omp parallel for default(none) \
-// 	private(i,j) shared(tmp, tmp_delta)
-	for( i = 0; i < prev_num_map; ++i ){
-		tmp[i] = Mat(W[0][0].n, tmp_delta[0].n);
-
-		for( j = 0; j < num_map; ++j ){
+	beg = std::chrono::system_clock::now();
+	for( int i = 0; i < prev_num_map; ++i ){
+		tmp[i] = Mat::zeros(W[0][0].n, tmp_delta[0].n);
+		for( int j = 0; j < num_map; ++j ){
 			tmp[i] += Mat::transpose(W[j][i])*tmp_delta[j];
 		}
 	}
@@ -164,16 +174,18 @@ std::vector<FullyConnected::Mat> FullyConnected::calc_delta ( const std::vector<
 					  MPI_DOUBLE_PRECISION, MPI_SUM, inner_world);
 #endif
 	
-	for( i = 0; i < prev_num_map; ++i ){
+	for( int i = 0; i < prev_num_map; ++i ){
 		Mat V(tmp[i].m-1, tmp[i].n), U_ = (*prev_func)(U[i], true);
-#pragma omp parallel for default(none) \
-	private(j,k) shared(i, tmp, V)
-		for( j = 0; j < tmp[i].m-1; ++j )
-			for( k = 0; k < tmp[i].n; ++k )
+#pragma omp parallel for schedule(auto)
+		for( int j = 0; j < tmp[i].m-1; ++j )
+			for( int k = 0; k < tmp[i].n; ++k )
 				V(j,k) = tmp[i](j+1,k);
 
 		nx_delta[i] = Mat::hadamard(V, U_);
 	}
+	end = std::chrono::system_clock::now();
+	t_delta_gemm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+	t_delta += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
 
 	return nx_delta;
 }
@@ -187,22 +199,25 @@ void FullyConnected::update_W ( const std::vector<std::vector<Mat>>& dW )
 
 std::vector<FullyConnected::Mat> FullyConnected::apply ( const std::vector<Mat>& U, bool use_func )
 {
+	auto tot_beg = std::chrono::system_clock::now();
+	auto beg = tot_beg;
+
 	std::vector<Mat> ret(num_map), tmp_ret(num_map);
 	std::vector<Mat> V(prev_num_map);
-	int i, j, k;
 	
 	for( int i = 0; i < prev_num_map; ++i ){
 		V[i] = Mat(U[i].m+1, U[i].n);
-		
-#pragma omp parallel for default(none) \
-	private(j,k) shared(i, V, U)
-		for( j = 0; j < U[i].n; ++j ){
+#pragma omp parallel for schedule(auto)
+		for( int j = 0; j < U[i].n; ++j ){
 			V[i](0,j) = 1.0;
-			for( k = 0; k < U[i].m; ++k )
+			for( int k = 0; k < U[i].m; ++k )
 				V[i](k+1,j) = U[i](k,j);
 		}
 	}
+	auto end = std::chrono::system_clock::now();
+	t_apply_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
+	beg = std::chrono::system_clock::now();
 	for( int i = 0; i < num_map; ++i ){
 		tmp_ret[i] = Mat(W[0][0].m, V[0].n);
 		ret[i] = Mat(num_unit, V[0].n);
@@ -223,10 +238,14 @@ std::vector<FullyConnected::Mat> FullyConnected::apply ( const std::vector<Mat>&
 #else
 	ret = tmp_ret;
 #endif
+
 	
 	if( use_func )
 		for( int i = 0; i < num_map; ++i )
 			ret[i] = (*func)(ret[i], false);
+	end = std::chrono::system_clock::now();
+	t_apply_gemm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+	t_apply += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
 	
 	return ret;
 }

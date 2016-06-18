@@ -38,20 +38,16 @@ public:
 		auto y = x;
 
 		if( isdiff ){
-			int i, j;
-#pragma omp parallel for default(none)			\
-	private(i,j) shared(y)
-			for( i = 0; i < y.m; ++i )
-				for( j = 0; j < y.n; ++j )
+#pragma omp parallel for schedule(auto)
+			for( int i = 0; i < y.m; ++i )
+				for( int j = 0; j < y.n; ++j )
 					y(i,j) = (y(i,j) <= 0.0 ? 0.0 : 1.0);
 		
 		}
 		else{
-			int i, j;
-#pragma omp parallel for default(none)			\
-	private(i,j) shared(y)
-			for( i = 0; i < y.m; ++i )
-				for( j = 0; j < y.n; ++j )
+#pragma omp parallel for schedule(auto)
+			for( int i = 0; i < y.m; ++i )
+				for( int j = 0; j < y.n; ++j )
 					y(i,j) = std::max(0.0, y(i,j));
 		}
 
@@ -69,21 +65,17 @@ public:
 		auto y = x;
 
 		if( isdiff ){
-			int i, j;
-#pragma omp parallel for default(none)			\
-	private(i,j) shared(y)
-			for( i = 0; i < y.m; ++i )
-				for( j = 0; j < y.n; ++j ){
+#pragma omp parallel for schedule(auto)
+			for( int i = 0; i < y.m; ++i )
+				for( int j = 0; j < y.n; ++j ){
 					double tmp = 1.0 + std::exp(-alpha*y(i,j));
 					y(i,j) = alpha*std::exp(-alpha*y(i,j)) / (tmp*tmp);
 				}
 		}
 		else{
-			int i, j;
-#pragma omp parallel for default(none) \
-	private(i,j) shared(y)
-			for( i = 0; i < y.m; ++i )
-				for( j = 0; j < y.n; ++j )
+#pragma omp parallel for schedule(auto)
+			for( int i = 0; i < y.m; ++i )
+				for( int j = 0; j < y.n; ++j )
 					y(i,j) = 1.0 / (1.0 + std::exp(-alpha*y(i,j)));
 		}
 		
@@ -98,21 +90,17 @@ public:
 		auto y = x;
 
 		if( isdiff ){
-			int i, j;
-#pragma omp parallel for default(none)			\
-	private(i,j) shared(y)
-			for( i = 0; i < y.m; ++i )
-				for( j = 0; j < y.n; ++j ){
+#pragma omp parallel for schedule(auto)
+			for( int i = 0; i < y.m; ++i )
+				for( int j = 0; j < y.n; ++j ){
 					double tmp = std::tanh(y(i,j));
 					y(i,j) = 1.0 - tmp*tmp;
 				}
 		}
 		else{
-			int i, j;
-#pragma omp parallel for default(none) \
-	private(i,j) shared(y)
-			for( i = 0; i < y.m; ++i )
-				for( j = 0; j < y.n; ++j )
+#pragma omp parallel for schedule(auto)
+			for( int i = 0; i < y.m; ++i )
+				for( int j = 0; j < y.n; ++j )
 					y(i,j) = std::tanh(y(i,j));
 		}
 			
@@ -126,11 +114,9 @@ class Softsign : public Function
 		auto y = x;
 
 		if( isdiff ){
-			int i, j;
-#pragma omp parallel for default(none)			\
-	private(i,j) shared(y)
-			for( i = 0; i < y.m; ++i )
-				for( j = 0; j < y.n; ++j ){
+#pragma omp parallel for schedule(auto)
+			for( int i = 0; i < y.m; ++i )
+				for( int j = 0; j < y.n; ++j ){
 					double tmp = 1.0 + std::abs(y(i,j));
 					double y_diff = 0.0;
 					if( y(i,j) > 1.0E-10 ) y_diff = 1.0;
@@ -139,11 +125,9 @@ class Softsign : public Function
 				}
 		}
 		else{
-			int i, j;
-#pragma omp parallel for default(none) \
-	private(i,j) shared(y)
-			for( i = 0; i < y.m; ++i )
-				for( j = 0; j < y.n; ++j )
+#pragma omp parallel for schedule(auto)
+			for( int i = 0; i < y.m; ++i )
+				for( int j = 0; j < y.n; ++j )
 					y(i,j) = y(i,j) / (1.0 + std::abs(y(i,j)));
 		}
 			
@@ -157,21 +141,17 @@ class Softplus : public Function
 		auto y = x;
 
 		if( isdiff ){
-			int i, j;
-#pragma omp parallel for default(none)			\
-	private(i,j) shared(y)
-			for( i = 0; i < y.m; ++i )
-				for( j = 0; j < y.n; ++j ){
+#pragma omp parallel for schedule(auto)
+			for( int i = 0; i < y.m; ++i )
+				for( int j = 0; j < y.n; ++j ){
 					double tmp = std::exp(y(i,j));
 					y(i,j) = tmp / (1.0 + tmp);
 				}
 		}
 		else{
-			int i, j;
-#pragma omp parallel for default(none) \
-	private(i,j) shared(y)
-			for( i = 0; i < y.m; ++i )
-				for( j = 0; j < y.n; ++j )
+#pragma omp parallel for schedule(auto)
+			for( int i = 0; i < y.m; ++i )
+				for( int j = 0; j < y.n; ++j )
 					y(i,j) = std::log(1.0 + std::exp(y(i,j)));
 		}
 			
@@ -186,20 +166,16 @@ class Polynomial : public Function
 		auto y = x;
 
 		if( isdiff ){
-			int i, j;
-#pragma omp parallel for default(none)			\
-	private(i,j) shared(y)
-			for( i = 0; i < y.m; ++i )
-				for( j = 0; j < y.n; ++j ){
+#pragma omp parallel for schedule(auto)
+			for( int i = 0; i < y.m; ++i )
+				for( int j = 0; j < y.n; ++j ){
 					y(i,j) = n*std::pow(y(i,j), n-1);
 				}
 		}
 		else{
-			int i, j;
-#pragma omp parallel for default(none) \
-	private(i,j) shared(y)
-			for( i = 0; i < y.m; ++i )
-				for( j = 0; j < y.n; ++j )
+#pragma omp parallel for schedule(auto)
+			for( int i = 0; i < y.m; ++i )
+				for( int j = 0; j < y.n; ++j )
 					y(i,j) = std::pow(y(i,j), n);
 		}
 			
@@ -214,20 +190,16 @@ class TruncatedPower : public Function
 		auto y = x;
 
 		if( isdiff ){
-			int i, j;
-#pragma omp parallel for default(none)			\
-	private(i,j) shared(y)
-			for( i = 0; i < y.m; ++i )
-				for( j = 0; j < y.n; ++j ){
+#pragma omp parallel for schedule(auto)
+			for( int i = 0; i < y.m; ++i )
+				for( int j = 0; j < y.n; ++j ){
 					y(i,j) = (y(i,j) < 0.0 ? 0.0 : n*std::pow(y(i,j), n-1));
 				}
 		}
 		else{
-			int i, j;
-#pragma omp parallel for default(none) \
-	private(i,j) shared(y)
-			for( i = 0; i < y.m; ++i )
-				for( j = 0; j < y.n; ++j )
+#pragma omp parallel for schedule(auto)
+			for( int i = 0; i < y.m; ++i )
+				for( int j = 0; j < y.n; ++j )
 					y(i,j) = (y(i,j) < 0.0 ? 0.0 : std::pow(y(i,j), n));
 		}
 			
@@ -241,11 +213,9 @@ class Abs : public Function
 		auto y = x;
 
 		if( isdiff ){
-			int i, j;
-#pragma omp parallel for default(none)			\
-	private(i,j) shared(y)
-			for( i = 0; i < y.m; ++i )
-				for( j = 0; j < y.n; ++j ){
+#pragma omp parallel for schedule(auto)
+			for( int i = 0; i < y.m; ++i )
+				for( int j = 0; j < y.n; ++j ){
 					double y_diff = 0.0;
 					if( y(i,j) > 1.0E-10 ) y_diff = 1.0;
 					else if( y(i,j) < -1.0E-10 ) y_diff = -1.0;
@@ -253,11 +223,9 @@ class Abs : public Function
 				}
 		}
 		else{
-			int i, j;
-#pragma omp parallel for default(none) \
-	private(i,j) shared(y)
-			for( i = 0; i < y.m; ++i )
-				for( j = 0; j < y.n; ++j )
+#pragma omp parallel for schedule(auto)
+			for( int i = 0; i < y.m; ++i )
+				for( int j = 0; j < y.n; ++j )
 					y(i,j) = std::abs(y(i,j));
 		}
 			
@@ -285,11 +253,9 @@ public:
 			}
 			
 			Matrix<double> y(x.m, x.n);
-			int i, j;
-#pragma omp parallel for default(none)			\
-	private(i, j), shared(x, y, sum, max_val)
-			for( i = 0; i < y.m; ++i )
-				for( j = 0; j < y.n; ++j )
+#pragma omp parallel for schedule(auto)
+			for( int i = 0; i < y.m; ++i )
+				for( int j = 0; j < y.n; ++j )
 					y(i,j) = std::exp(x(i,j) - max_val(0,j)) / sum(0,j);
 			
 			return y;
@@ -306,11 +272,9 @@ public:
 	inline Matrix<double> operator() ( const Matrix<double>& x, const Matrix<double>& d, const bool& isdiff ){
 		if( isdiff ){
 			auto y = x;
-			int i, j;
-#pragma omp parallel for default(none)			\
-	private(i,j), shared(y, d)
-			for( i = 0; i < y.m; ++i )
-				for( j = 0; j < y.n; ++j )
+#pragma omp parallel for schedule(auto)
+			for( int i = 0; i < y.m; ++i )
+				for( int j = 0; j < y.n; ++j )
 					y(i,j) -= d(i,j);
 			return y;
 		}
@@ -318,11 +282,9 @@ public:
 			Matrix<double> y(1, 1);
 			double y_ = 0.0;
 
-			int i, j;
-#pragma omp parallel for default(none) reduction(+:y_)	\
-	private(i,j), shared(x, d, y)
-			for( i = 0; i < x.m; ++i )
-				for( j = 0; j < x.n; ++j ){
+#pragma omp parallel for schedule(auto) reduction(+:y_)
+			for( int i = 0; i < x.m; ++i )
+				for( int j = 0; j < x.n; ++j ){
 					double tmp = x(i,j) - d(i,j);
 					y_ += tmp*tmp;
 				}
@@ -338,12 +300,10 @@ public:
 	inline Matrix<double> operator() ( const Matrix<double>& x, const Matrix<double>& d, const bool& isdiff ){
 		if( isdiff ){
 			Matrix<double> y(x.m, x.n);
-			int i, j;
 
-#pragma omp parallel for default(none)	\
-	private(i, j), shared(y, x, d)
-			for( i = 0; i < x.m; ++i )
-				for( j = 0; j < x.n; ++j )
+#pragma omp parallel for schedule(auto)
+			for( int i = 0; i < x.m; ++i )
+				for( int j = 0; j < x.n; ++j )
 					y(i,j) = x(i,j) - d(i,j);
 
 			return y;
@@ -352,11 +312,9 @@ public:
 			double y_ = 0.0;
 			Matrix<double> y(1,1);
 
-			int i, j;
-#pragma omp parallel for default(none) reduction(+:y_)	\
-	private(i,j), shared(d, x)
-			for( i = 0; i < x.m; ++i )
-				for( j = 0; j < x.n; ++j )
+#pragma omp parallel for schedule(auto) reduction(+:y_)
+			for( int i = 0; i < x.m; ++i )
+				for( int j = 0; j < x.n; ++j )
 					y_ -= d(i,j)*std::log(x(i,j));
 
 			y(0,0) = y_;
