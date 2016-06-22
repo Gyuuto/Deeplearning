@@ -109,8 +109,8 @@ std::vector<std::vector<FullyConnected::Mat>> FullyConnected::calc_gradient ( co
 	std::vector<std::vector<Mat>> nabla(num_map);
 	for( int i = 0; i < num_map; ++i ){
 		nabla[i] = std::vector<Mat>(prev_num_map);
-		for( int j = 0; j < prev_num_map; ++j )
-			nabla[i][j] = Mat(W[i][j].m, W[i][j].n);
+		// for( int j = 0; j < prev_num_map; ++j )
+		// 	nabla[i][j] = Mat(W[i][j].m, W[i][j].n);
 	}
 	auto end = std::chrono::system_clock::now();
 	t_grad_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
@@ -123,7 +123,7 @@ std::vector<std::vector<FullyConnected::Mat>> FullyConnected::calc_gradient ( co
 				V(0,k) = 1.0;
 				for( int l = 0; l < U_.m; ++l ) V(l+1,k) = U_(l, k);
 			}
-
+			
 			Mat tmp_delta(W[i][j].m, delta[i].n);
 			for( int k = 0; k < tmp_delta.m; ++k )
 				for( int l = 0; l < delta[i].n; ++l )
@@ -219,7 +219,7 @@ std::vector<FullyConnected::Mat> FullyConnected::apply ( const std::vector<Mat>&
 
 	beg = std::chrono::system_clock::now();
 	for( int i = 0; i < num_map; ++i ){
-		tmp_ret[i] = Mat(W[0][0].m, V[0].n);
+		tmp_ret[i] = Mat::zeros(W[0][0].m, V[0].n);
 		ret[i] = Mat(num_unit, V[0].n);
 		for( int j = 0; j < prev_num_map; ++j )
 			tmp_ret[i] += W[i][j]*V[j];

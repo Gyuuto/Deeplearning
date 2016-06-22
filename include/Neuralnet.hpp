@@ -269,8 +269,8 @@ void Neuralnet::add_layer( const std::shared_ptr<Layer>& layer )
 	adam_r.push_back(std::vector<std::vector<Mat>>(w.size()));
 	for( int j = 0; j < w.size(); ++j ){
 		for( int k = 0; k < w[j].size(); ++k ){
-			adam_v[idx][j].emplace_back(w[j][k].m, w[j][k].n);
-			adam_r[idx][j].emplace_back(w[j][k].m, w[j][k].n);
+			adam_v[idx][j].push_back(Mat::zeros(w[j][k].m, w[j][k].n));
+			adam_r[idx][j].push_back(Mat::zeros(w[j][k].m, w[j][k].n));
 		}
 	}
 }
@@ -438,10 +438,10 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 						}
 
 			std::vector<std::vector<Mat>> update_W(W.size(), std::vector<Mat>(W[0].size()));
-#pragma omp parallel for schedule(auto)
 			for( int j = 0; j < W.size(); ++j )
 				for( int k = 0; k < W[j].size(); ++k ){
-					update_W[j][k] = Mat::zeros(W[j][k].m, W[j][k].n);
+					update_W[j][k] = Mat(W[j][k].m, W[j][k].n);
+#pragma omp parallel for schedule(auto)
 					for( int l = 0; l < update_W[j][k].m; ++l )
 						for( int m = 0; m < update_W[j][k].n; ++m ){
 							auto v_hat = adam_v[i][j][k](l,m) / (1.0 - adam_beta_);
@@ -476,7 +476,7 @@ std::vector<Neuralnet::Mat> Neuralnet::apply ( const std::vector<Mat>& X ) const
 
 	std::vector<Mat> ret(U.size());
 	for( int i = 0; i < U.size(); ++i ){
-		ret[i] = Mat::zeros(U[i].m, U[i].n);
+		ret[i] = Mat(U[i].m, U[i].n);
 		for( int j = 0; j < U[i].m; ++j )
 			for( int k = 0; k < U[i].n; ++k )
 				ret[i](j,k) = U[i](j,k);

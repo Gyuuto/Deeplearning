@@ -207,7 +207,7 @@ std::vector<Pooling::Mat> Pooling::apply ( const std::vector<Mat>& U, bool use_f
 	for( int i = 0; i < num_map; ++i ){
 		ret[i] = Mat(num_unit, U[0].n);
 		Mat U_ = (*prev_func)(U[i], false);
-		Mat tmp = Mat::zeros(my_size, U[0].n);
+		Mat tmp(my_size, U[0].n);
 
 		const int gap = prev_ldu + 2*pad;
 #pragma omp parallel for schedule(auto) firstprivate(gap, my_size, my_offset)

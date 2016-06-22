@@ -31,17 +31,19 @@ struct Matrix
 #ifdef USE_EIGEN
 	Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> v;
 #else
-	std::vector<T> v;
+	// std::vector<T> v;
+	double* v;
 #endif
 	
-	Matrix(){}
+	Matrix(): m(0), n(0), v(NULL) { }
 	Matrix( const int& m, const int& n ) :m(m), n(n)
 	{
 #ifdef USE_EIGEN
 		v = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>(m, n);
 		for( int i = 0; i < m; ++i ) for( int j = 0; j < n; ++j ) v(i,j) = T();
 #else
-		v = std::vector<T>(m*n, T());
+		// v = std::vector<T>(m*n, T());
+		v = new double[m*n];
 #endif
 	}
 
@@ -51,7 +53,9 @@ struct Matrix
 		this->v = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>(m, n);
 		for( int i = 0; i < m; ++i ) this->v(i, 0) = v[i];
 #else
-		this->v = std::vector<T>(v.size(), T());
+		// this->v = std::vector<T>(v.size(), T());
+		// for( int i = 0; i < m; ++i ) this->v[i] = v[i];
+		this->v = new double[m*n];
 		for( int i = 0; i < m; ++i ) this->v[i] = v[i];
 #endif
 	}
@@ -59,10 +63,46 @@ struct Matrix
 #ifdef USE_EIGEN
 	Matrix( const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>& A ) :v(A), m(A.rows()), n(A.cols()) {}
 #endif
+
+	Matrix( const Matrix<T>& mat )
+	{
+		m = mat.m; n = mat.n;
+		if( m == 0 || n == 0 ){
+			v = NULL;
+		}
+		else{
+			v = new double[m*n];
+#pragma omp parallel for
+			for( int i = 0; i < m*n; ++i )  v[i] = mat.v[i];
+		}
+	}
+
+	Matrix<T>& operator = ( const Matrix& mat )
+	{
+		if( v != NULL ) delete [] v;
+
+		m = mat.m; n = mat.n;
+		if( m == 0 || n == 0 ){
+			v = NULL;
+			return *this;
+		}
+			
+		v = new double[m*n];
+#pragma omp parallel for
+		for( int i = 0; i < m*n; ++i )  v[i] = mat.v[i];
+
+		return *this;
+	}
+
+	~Matrix ()
+	{
+		if( v != NULL ) delete [] v;
+	}
 	
 	static Matrix<T> eye ( const int& m, const int& n )
 	{
 		Matrix<T> ret(m, n);
+#pragma omp parallel for
 		for( int i = 0; i < std::min(m,n); ++i ) ret(i,i) = 1.0;
 		return ret;
 	}
@@ -70,13 +110,17 @@ struct Matrix
 	static Matrix<T> ones ( const int& m, const int& n )
 	{
 		Matrix<T> ret(m, n);
+#pragma omp parallel for
 		for( int i = 0; i < m; ++i ) for( int j = 0; j < n; ++j ) ret(i,j) = 1.0;
 		return ret;
 	}
 
 	static Matrix<T> zeros ( const int& m, const int& n )
 	{
-		return Matrix<T>(m, n);
+		Matrix<T> ret(m, n);
+#pragma omp parallel for
+		for( int i = 0; i < m; ++i ) for( int j = 0; j < n; ++j ) ret(i,j) = 0.0;
+		return ret;
 	}
 
 	static Matrix<T> transpose( const Matrix<T>& mat )

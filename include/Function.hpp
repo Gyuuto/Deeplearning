@@ -35,20 +35,20 @@ class ReLU : public Function
 {
 public:
 	inline Matrix<double> operator() ( const Matrix<double>& x, const bool& isdiff ){
-		auto y = x;
+		Matrix<double> y(x.m, x.n);
 
 		if( isdiff ){
 #pragma omp parallel for schedule(auto)
 			for( int i = 0; i < y.m; ++i )
 				for( int j = 0; j < y.n; ++j )
-					y(i,j) = (y(i,j) <= 0.0 ? 0.0 : 1.0);
+					y(i,j) = (x(i,j) <= 0.0 ? 0.0 : 1.0);
 		
 		}
 		else{
 #pragma omp parallel for schedule(auto)
 			for( int i = 0; i < y.m; ++i )
 				for( int j = 0; j < y.n; ++j )
-					y(i,j) = std::max(0.0, y(i,j));
+					y(i,j) = std::max(0.0, x(i,j));
 		}
 
 		return y;
@@ -62,21 +62,21 @@ public:
 	Sigmoid( double alpha = 1.0 ) :alpha(alpha) {}
 	
 	inline Matrix<double> operator() ( const Matrix<double>& x, const bool& isdiff ){
-		auto y = x;
+		Matrix<double> y(x.m, x.n);
 
 		if( isdiff ){
 #pragma omp parallel for schedule(auto)
 			for( int i = 0; i < y.m; ++i )
 				for( int j = 0; j < y.n; ++j ){
-					double tmp = 1.0 + std::exp(-alpha*y(i,j));
-					y(i,j) = alpha*std::exp(-alpha*y(i,j)) / (tmp*tmp);
+					double tmp = 1.0 + std::exp(-alpha*x(i,j));
+					y(i,j) = alpha*std::exp(-alpha*x(i,j)) / (tmp*tmp);
 				}
 		}
 		else{
 #pragma omp parallel for schedule(auto)
 			for( int i = 0; i < y.m; ++i )
 				for( int j = 0; j < y.n; ++j )
-					y(i,j) = 1.0 / (1.0 + std::exp(-alpha*y(i,j)));
+					y(i,j) = 1.0 / (1.0 + std::exp(-alpha*x(i,j)));
 		}
 		
 		return y;
@@ -87,13 +87,13 @@ class Tanh : public Function
 {
 public:
 	inline Matrix<double> operator() ( const Matrix<double>& x, const bool& isdiff ){
-		auto y = x;
+		Matrix<double> y(x.m, x.n);
 
 		if( isdiff ){
 #pragma omp parallel for schedule(auto)
 			for( int i = 0; i < y.m; ++i )
 				for( int j = 0; j < y.n; ++j ){
-					double tmp = std::tanh(y(i,j));
+					double tmp = std::tanh(x(i,j));
 					y(i,j) = 1.0 - tmp*tmp;
 				}
 		}
@@ -101,7 +101,7 @@ public:
 #pragma omp parallel for schedule(auto)
 			for( int i = 0; i < y.m; ++i )
 				for( int j = 0; j < y.n; ++j )
-					y(i,j) = std::tanh(y(i,j));
+					y(i,j) = std::tanh(x(i,j));
 		}
 			
 		return y;
@@ -111,24 +111,24 @@ public:
 class Softsign : public Function
 {
 	inline Matrix<double> operator() ( const Matrix<double>& x, const bool& isdiff ){
-		auto y = x;
+		Matrix<double> y(x.m, x.n);
 
 		if( isdiff ){
 #pragma omp parallel for schedule(auto)
 			for( int i = 0; i < y.m; ++i )
 				for( int j = 0; j < y.n; ++j ){
-					double tmp = 1.0 + std::abs(y(i,j));
+					double tmp = 1.0 + std::abs(x(i,j));
 					double y_diff = 0.0;
-					if( y(i,j) > 1.0E-10 ) y_diff = 1.0;
-					else if( y(i,j) < -1.0E-10 ) y_diff = -1.0;
-					y(i,j) = (tmp - y(i,j)*y_diff)/(tmp*tmp);
+					if( x(i,j) > 1.0E-10 ) y_diff = 1.0;
+					else if( x(i,j) < -1.0E-10 ) y_diff = -1.0;
+					y(i,j) = (tmp - x(i,j)*y_diff)/(tmp*tmp);
 				}
 		}
 		else{
 #pragma omp parallel for schedule(auto)
 			for( int i = 0; i < y.m; ++i )
 				for( int j = 0; j < y.n; ++j )
-					y(i,j) = y(i,j) / (1.0 + std::abs(y(i,j)));
+					y(i,j) = x(i,j) / (1.0 + std::abs(x(i,j)));
 		}
 			
 		return y;
@@ -138,13 +138,13 @@ class Softsign : public Function
 class Softplus : public Function
 {
 	inline Matrix<double> operator() ( const Matrix<double>& x, const bool& isdiff ){
-		auto y = x;
+		Matrix<double> y(x.m, x.n);
 
 		if( isdiff ){
 #pragma omp parallel for schedule(auto)
 			for( int i = 0; i < y.m; ++i )
 				for( int j = 0; j < y.n; ++j ){
-					double tmp = std::exp(y(i,j));
+					double tmp = std::exp(x(i,j));
 					y(i,j) = tmp / (1.0 + tmp);
 				}
 		}
@@ -152,7 +152,7 @@ class Softplus : public Function
 #pragma omp parallel for schedule(auto)
 			for( int i = 0; i < y.m; ++i )
 				for( int j = 0; j < y.n; ++j )
-					y(i,j) = std::log(1.0 + std::exp(y(i,j)));
+					y(i,j) = std::log(1.0 + std::exp(x(i,j)));
 		}
 			
 		return y;
@@ -163,20 +163,20 @@ template<int n>
 class Polynomial : public Function
 {
 	inline Matrix<double> operator() ( const Matrix<double>& x, const bool& isdiff ){
-		auto y = x;
+		Matrix<double> y(x.m, x.n);
 
 		if( isdiff ){
 #pragma omp parallel for schedule(auto)
 			for( int i = 0; i < y.m; ++i )
 				for( int j = 0; j < y.n; ++j ){
-					y(i,j) = n*std::pow(y(i,j), n-1);
+					y(i,j) = n*std::pow(x(i,j), n-1);
 				}
 		}
 		else{
 #pragma omp parallel for schedule(auto)
 			for( int i = 0; i < y.m; ++i )
 				for( int j = 0; j < y.n; ++j )
-					y(i,j) = std::pow(y(i,j), n);
+					y(i,j) = std::pow(x(i,j), n);
 		}
 			
 		return y;
@@ -187,20 +187,20 @@ template<int n>
 class TruncatedPower : public Function
 {
 	inline Matrix<double> operator() ( const Matrix<double>& x, const bool& isdiff ){
-		auto y = x;
+		Matrix<double> y(x.m, x.n);
 
 		if( isdiff ){
 #pragma omp parallel for schedule(auto)
 			for( int i = 0; i < y.m; ++i )
 				for( int j = 0; j < y.n; ++j ){
-					y(i,j) = (y(i,j) < 0.0 ? 0.0 : n*std::pow(y(i,j), n-1));
+					y(i,j) = (x(i,j) < 0.0 ? 0.0 : n*std::pow(x(i,j), n-1));
 				}
 		}
 		else{
 #pragma omp parallel for schedule(auto)
 			for( int i = 0; i < y.m; ++i )
 				for( int j = 0; j < y.n; ++j )
-					y(i,j) = (y(i,j) < 0.0 ? 0.0 : std::pow(y(i,j), n));
+					y(i,j) = (x(i,j) < 0.0 ? 0.0 : std::pow(x(i,j), n));
 		}
 			
 		return y;
@@ -210,15 +210,15 @@ class TruncatedPower : public Function
 class Abs : public Function
 {
 	inline Matrix<double> operator() ( const Matrix<double>& x, const bool& isdiff ){
-		auto y = x;
+		Matrix<double> y(x.m, x.n);
 
 		if( isdiff ){
 #pragma omp parallel for schedule(auto)
 			for( int i = 0; i < y.m; ++i )
 				for( int j = 0; j < y.n; ++j ){
 					double y_diff = 0.0;
-					if( y(i,j) > 1.0E-10 ) y_diff = 1.0;
-					else if( y(i,j) < -1.0E-10 ) y_diff = -1.0;
+					if( x(i,j) > 1.0E-10 ) y_diff = 1.0;
+					else if( x(i,j) < -1.0E-10 ) y_diff = -1.0;
 					y(i,j) = y_diff;
 				}
 		}
@@ -226,7 +226,7 @@ class Abs : public Function
 #pragma omp parallel for schedule(auto)
 			for( int i = 0; i < y.m; ++i )
 				for( int j = 0; j < y.n; ++j )
-					y(i,j) = std::abs(y(i,j));
+					y(i,j) = std::abs(x(i,j));
 		}
 			
 		return y;
@@ -271,11 +271,11 @@ class Square : public LossFunction
 public:
 	inline Matrix<double> operator() ( const Matrix<double>& x, const Matrix<double>& d, const bool& isdiff ){
 		if( isdiff ){
-			auto y = x;
+			Matrix<double> y(x.m, x.n);
 #pragma omp parallel for schedule(auto)
 			for( int i = 0; i < y.m; ++i )
 				for( int j = 0; j < y.n; ++j )
-					y(i,j) -= d(i,j);
+					y(i,j) = x(i,j) - d(i,j);
 			return y;
 		}
 		else{
