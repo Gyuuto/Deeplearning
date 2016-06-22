@@ -236,7 +236,7 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 
 	for( int i = 0; i < delta[0].n; ++i ){
 		auto beg = std::chrono::system_clock::now();
-		Mat delta_mat(m*n*num_map, my_size);
+		Mat delta_mat = Mat::zeros(m*n*num_map, my_size);
 		Mat U_mat(my_size, prev_num_map);
 
 		const int gap = prev_ldu + 2*pad;
