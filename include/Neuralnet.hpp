@@ -315,7 +315,6 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 #endif
 	mt = std::mt19937(seed);
 
-	// distributed data(WIP and perhaps will not distribute data)
 	std::vector<Mat> X(x[0].size(), Mat(num_dim_in, num_data)),
 		Y(y[0].size(), Mat(num_dim_out, num_data));
 	for( int i = 0; i < x[0].size(); ++i )
