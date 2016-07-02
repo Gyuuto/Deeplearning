@@ -32,7 +32,7 @@ struct Matrix
 	Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> v;
 #else
 	// std::vector<T> v;
-	double* v;
+	T* v;
 #endif
 	
 	Matrix(): m(0), n(0), v(NULL) { }
@@ -43,7 +43,7 @@ struct Matrix
 		for( int i = 0; i < m; ++i ) for( int j = 0; j < n; ++j ) v(i,j) = T();
 #else
 		// v = std::vector<T>(m*n, T());
-		v = new double[m*n];
+		v = new T[m*n];
 #endif
 	}
 
@@ -55,7 +55,7 @@ struct Matrix
 #else
 		// this->v = std::vector<T>(v.size(), T());
 		// for( int i = 0; i < m; ++i ) this->v[i] = v[i];
-		this->v = new double[m*n];
+		this->v = new T[m*n];
 		for( int i = 0; i < m; ++i ) this->v[i] = v[i];
 #endif
 	}
@@ -71,7 +71,7 @@ struct Matrix
 			v = NULL;
 		}
 		else{
-			v = new double[m*n];
+			v = new T[m*n];
 #pragma omp parallel for
 			for( int i = 0; i < m*n; ++i )  v[i] = mat.v[i];
 		}
@@ -87,7 +87,7 @@ struct Matrix
 			return *this;
 		}
 			
-		v = new double[m*n];
+		v = new T[m*n];
 #pragma omp parallel for
 		for( int i = 0; i < m*n; ++i )  v[i] = mat.v[i];
 
@@ -365,6 +365,17 @@ struct Matrix
 			std::cout << std::endl;
 		}
 		return os;
+	}
+
+	Matrix<T> sub ( int y, int x, int h, int w ) const
+	{
+		Matrix<T> ret(h, w);
+#pragma omp parallel for
+		for( int i = 0; i < w; ++i )
+			for( int j = 0; j < h; ++j )
+				ret(j, i) = (*this)(y + j, x + i);
+
+		return ret;
 	}
 };
 

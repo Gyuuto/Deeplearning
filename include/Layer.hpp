@@ -12,7 +12,7 @@
 #include <mpi.h>
 #endif
 
-#include "matrix.hpp"
+#include "Matrix.hpp"
 #include "Function.hpp"
 
 class Layer

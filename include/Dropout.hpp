@@ -2,7 +2,6 @@
 #define DROPOUT_HPP
 
 #include <fstream>
-
 #include <random>
 
 #include "Layer.hpp"
