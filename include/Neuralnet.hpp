@@ -134,7 +134,7 @@ std::vector<std::vector<std::vector<Neuralnet::Mat>>> Neuralnet::calc_gradient (
 
 void Neuralnet::check_gradient ( int cnt, const std::vector<int>& idx, const std::vector<Mat>& X, const std::vector<Mat>& Y, const std::vector<std::vector<std::vector<Mat>>>& nabla_w )
 {
-	int rank = 0;
+	int rank = 0, target_rank = 0;
 	int num_layer = this->layer.size();
 
 #ifdef USE_MPI
@@ -156,13 +156,22 @@ void Neuralnet::check_gradient ( int cnt, const std::vector<int>& idx, const std
 	for( int i = 0; i < num_layer; ++i ){
 		if( rank == 0 ) printf("\tlayer %d\n", i);
 		auto W = layer[i]->get_W();
-		for( int j = 0; j < std::min(2, (int)W.size()); ++j ){ // num_map
-			for( int k = 0; k < std::min(2, (int)W[j].size()); ++k ){ // prev_num_map
-				for( int l = 0; l < std::min(2, (int)W[j][k].m); ++l ){
-					for( int m = 0; m < std::min(2, (int)W[j][k].n); ++m ){
+		if( W.size() == 0 ) continue;
+
+		int J = W.size(), K = W[0].size(), L = W[0][0].m, M = W[0][0].n;
+#ifdef USE_MPI
+		MPI_Bcast(&J, 1, MPI_INT, target_rank, inner_world);
+		MPI_Bcast(&K, 1, MPI_INT, target_rank, inner_world);
+		MPI_Bcast(&L, 1, MPI_INT, target_rank, inner_world);
+		MPI_Bcast(&M, 1, MPI_INT, target_rank, inner_world);
+#endif
+		for( int j = 0; j < std::min(2, J); ++j ){ // num_map
+			for( int k = 0; k < std::min(2, K); ++k ){ // prev_num_map
+				for( int l = 0; l < std::min(2, L); ++l ){
+					for( int m = 0; m < std::min(2, M); ++m ){
 						auto tmp = 1.0E-6*(std::abs(W[j][k](l,m)) < 1.0E-3 ? 1.0 : std::abs(W[j][k](l,m)));;
 
-						if( layer[i]->get_num_map() != 1 || rank == 0 ){
+						if( layer[i]->get_num_map() != 1 || rank == target_rank ){
 							W[j][k](l,m) += tmp;
 							layer[i]->set_W(W);
 						}
@@ -170,7 +179,7 @@ void Neuralnet::check_gradient ( int cnt, const std::vector<int>& idx, const std
 						auto tmp1 = apply(tmp_X);
 						for( int n = 0; n < Y.size(); ++n ) E1 += (*loss)(tmp1[n], tmp_Y[n], false)(0, 0);
 
-						if( layer[i]->get_num_map() != 1 || rank == 0 ){
+						if( layer[i]->get_num_map() != 1 || rank == target_rank ){
 							W[j][k](l,m) -= tmp;
 							layer[i]->set_W(W);
 						}
@@ -178,7 +187,7 @@ void Neuralnet::check_gradient ( int cnt, const std::vector<int>& idx, const std
 						auto tmp2 = apply(tmp_X);
 						for( int n = 0; n < Y.size(); ++n ) E2 += (*loss)(tmp2[n], tmp_Y[n], false)(0, 0);
 						
-						if( rank == 0 ){
+						if( rank == target_rank ){
 							double grad = nabla_w[i][j][k](l,m);
 
 							printf("\t%3d, %3d, %3d, %3d : ( %.10E, %.10E = %.10E )\n", j, k, l, m, 0.5*(E1 - E2)/tmp/BATCH_SIZE, grad, (std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE - grad))/std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE));
