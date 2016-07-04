@@ -18,7 +18,7 @@ public:
 	Convolutional( int prev_num_map, int prev_num_unit, int prev_ldu,
 				   int num_map, int num_unit, int ldu,
 				   int m, int n, int stride, 
-				   const std::shared_ptr<Function>& f );
+				   const std::shared_ptr<Function>& f, bool use_bias = true );
 
 #ifdef USE_MPI
 	void init( std::mt19937& mt, MPI_Comm inner_world, MPI_Comm outer_world );
@@ -47,7 +47,7 @@ public:
 Convolutional::Convolutional( int prev_num_map, int prev_num_unit, int prev_ldu,
 							  int num_map, int num_unit, int ldu,
 							  int m, int n, int stride, 
-							  const std::shared_ptr<Function>& f )
+							  const std::shared_ptr<Function>& f, bool use_bias )
 {
 	this->prev_num_map = prev_num_map;
 	this->prev_num_unit = prev_num_unit;
@@ -56,6 +56,8 @@ Convolutional::Convolutional( int prev_num_map, int prev_num_unit, int prev_ldu,
 	this->num_map = num_map;
 	this->num_unit = num_unit;
 	this->ldu = ldu;	
+
+	this->is_use_bias = use_bias;
 
 	t_apply = t_delta = t_grad = 0.0;
 	t_apply_init = t_apply_gemm = t_apply_repl = 0.0;
@@ -279,11 +281,13 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 					nabla[i][j](k, l) = nabla_mat(i*m*n + k*n + l, j);
 		}
 		
-		double sum = 0.0;
-		for( int k = 0; k < delta[i].m; ++k )
-			for( int j = 0; j < delta[i].n; ++j )
-				sum += delta[i](k,j);
-		d_bias[i] = sum / delta[i].n;
+		if( is_use_bias ){
+			double sum = 0.0;
+			for( int k = 0; k < delta[i].m; ++k )
+				for( int j = 0; j < delta[i].n; ++j )
+					sum += delta[i](k,j);
+			d_bias[i] = sum / delta[i].n;
+		}
 	}
 	end = std::chrono::system_clock::now();
 	t_grad_repl += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
@@ -406,9 +410,11 @@ void Convolutional::update_W ( const std::vector<std::vector<Mat>>& dW )
 		for( int j = 0; j < prev_num_map; ++j )
 			W[i][j] = W[i][j] + dW[i][j];
 
-		v[i] = a_beta*v[i] + (1.0 - a_beta)*d_bias[i];
-		r[i] = a_gamma*r[i] + (1.0 - a_gamma)*d_bias[i]*d_bias[i];
-		bias[i] -= 0.001*v[i]/(1.0 - beta_)/(sqrt(r[i]/(1.0 - gamma_)+a_eps));
+		if( is_use_bias ){
+			v[i] = a_beta*v[i] + (1.0 - a_beta)*d_bias[i];
+			r[i] = a_gamma*r[i] + (1.0 - a_gamma)*d_bias[i]*d_bias[i];
+			bias[i] -= 0.001*v[i]/(1.0 - beta_)/(sqrt(r[i]/(1.0 - gamma_)+a_eps));
+		}
 	}
 }
 
@@ -479,10 +485,12 @@ std::vector<Convolutional::Mat> Convolutional::apply ( const std::vector<Mat>& U
 		t_apply_repl += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 	}
 	
-	for( int i = 0; i < num_map; ++i )
-		for( int j = 0; j < ret[i].m; ++j )
-			for( int k = 0; k < ret[i].n; ++k )
-				ret[i](j,k) += bias[i];
+	if( is_use_bias ){
+		for( int i = 0; i < num_map; ++i )
+			for( int j = 0; j < ret[i].m; ++j )
+				for( int k = 0; k < ret[i].n; ++k )
+					ret[i](j,k) += bias[i];
+	}
 
 	if( use_func )
 		for( int i = 0; i < num_map; ++i )

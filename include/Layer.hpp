@@ -21,6 +21,8 @@ protected:
 	typedef Matrix<double> Mat;
 	typedef std::vector<double> Vec;
 
+	bool is_use_bias;
+
 	int prev_num_map, num_map;
 	int prev_num_unit, num_unit;
 	

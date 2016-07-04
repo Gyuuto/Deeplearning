@@ -12,7 +12,7 @@ class FullyConnected : public Layer
 private:
 public:
 	FullyConnected ( int prev_num_map, int prev_num_unit, int num_map, int num_unit,
-					 const std::shared_ptr<Function>& f );
+					 const std::shared_ptr<Function>& f, bool use_bias = true );
 
 #ifdef USE_MPI
 	void init( std::mt19937& m, MPI_Comm inner_world, MPI_Comm outer_world );
@@ -37,12 +37,13 @@ public:
 };
 
 FullyConnected::FullyConnected( int prev_num_map, int prev_num_unit, int num_map, int num_unit,
-								const std::shared_ptr<Function>& f )
+								const std::shared_ptr<Function>& f, bool use_bias )
 {
 	this->prev_num_map = prev_num_map;
 	this->prev_num_unit = prev_num_unit;
 	this->num_map = num_map;
 	this->num_unit = num_unit;
+	this->is_use_bias = use_bias;
 
 	t_apply = t_delta = t_grad = 0.0;
 	t_apply_init = t_apply_gemm = t_apply_repl = 0.0;
@@ -69,7 +70,7 @@ void FullyConnected::init ( std::mt19937& m )
 	my_size = (rank+1)*num_unit/nprocs - rank*num_unit/nprocs;
 	offset = rank*num_unit/nprocs;
 #else
-	int my_size = num_unit;
+	int offset = 0, my_size = num_unit;
 #endif
 
 	for( int i = 0; i < num_map; ++i ){
@@ -83,10 +84,14 @@ void FullyConnected::init ( std::mt19937& m )
 	std::uniform_real_distribution<double> d_rand(-r, r);
 	for( int i = 0; i < num_map; ++i ){
 		for( int j = 0; j < prev_num_map; ++j ){
-			for( int k = 0; k < W[i][j].m; ++k ){
-				W[i][j](k, 0) = 0;
-				for( int l = 1; l < W[i][j].n; ++l )
-					W[i][j](k, l) = d_rand(m);
+			for( int k = 0; k < num_unit; ++k ){
+				if( offset <= k && k < offset+my_size )
+					W[i][j](k-offset, 0) = 0;
+				for( int l = 0; l < prev_num_unit; ++l ){
+					double a = d_rand(m);
+					if( offset <= k && k < offset+my_size )
+						W[i][j](k-offset, l+1) = a;
+				}
 			}
 		}
 	}
@@ -120,7 +125,7 @@ std::vector<std::vector<FullyConnected::Mat>> FullyConnected::calc_gradient ( co
 		for( int j = 0; j < prev_num_map; ++j ){
 			Mat V(U[j].m+1, U[j].n), U_ = (*prev_func)(U[j], false);
 			for( int k = 0; k < U_.n; ++k ){
-				V(0,k) = 1.0;
+				V(0,k) = (is_use_bias ? 1.0 : 0.0);
 				for( int l = 0; l < U_.m; ++l ) V(l+1,k) = U_(l, k);
 			}
 			
@@ -209,7 +214,7 @@ std::vector<FullyConnected::Mat> FullyConnected::apply ( const std::vector<Mat>&
 		V[i] = Mat(U[i].m+1, U[i].n);
 #pragma omp parallel for schedule(auto)
 		for( int j = 0; j < U[i].n; ++j ){
-			V[i](0,j) = 1.0;
+			V[i](0,j) = (is_use_bias ? 1.0 : 0.0); // for bias
 			for( int k = 0; k < U[i].m; ++k )
 				V[i](k+1,j) = U[i](k,j);
 		}
