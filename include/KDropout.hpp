@@ -48,6 +48,11 @@ KDropout::KDropout( int prev_num_map, int prev_num_unit, double K,
 	this->prev_num_unit = this->num_unit = prev_num_unit;
 	this->K = K;
 
+	t_apply = t_delta = t_grad = 0.0;
+	t_apply_init = t_apply_gemm = t_apply_repl = 0.0;
+	t_delta_init = t_delta_gemm = t_delta_repl = 0.0;
+	t_grad_init = t_grad_gemm = t_grad_repl = 0.0;
+
 	d_rand = std::uniform_real_distribution<double>(0.0, 1.0);
 	
 	func = f;
@@ -89,6 +94,9 @@ std::vector<std::vector<KDropout::Mat>> KDropout::calc_gradient ( const std::vec
 
 std::vector<KDropout::Mat> KDropout::calc_delta ( const std::vector<Mat>& U, const std::vector<Mat>& delta )
 {
+	auto tot_beg = std::chrono::system_clock::now();
+	auto beg = tot_beg;
+
 	int my_size = num_unit, my_offset = 0;
 #ifdef USE_MPI
 	std::vector<int> size(nprocs), offset(nprocs);
@@ -118,6 +126,10 @@ std::vector<KDropout::Mat> KDropout::calc_delta ( const std::vector<Mat>& U, con
 		MPI_Allgatherv(MPI_IN_PLACE, size[rank], MPI_DOUBLE_PRECISION,
 					   &nx_delta[i](0,0), &size[0], &offset[0], MPI_DOUBLE_PRECISION, inner_world);
 #endif
+	auto end = std::chrono::system_clock::now();
+
+	t_delta_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+	t_delta += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
 	
 	return nx_delta;
 }
@@ -129,6 +141,9 @@ void KDropout::update_W ( const std::vector<std::vector<Mat>>& dW )
 
 std::vector<KDropout::Mat> KDropout::apply ( const std::vector<Mat>& U, bool use_func )
 {
+	auto tot_beg = std::chrono::system_clock::now();
+	auto beg = tot_beg;
+
 	std::vector<Mat> ret(num_map), tmp_ret(num_map);
 	int my_size = num_unit, my_offset = 0;
 #ifdef USE_MPI
@@ -141,6 +156,8 @@ std::vector<KDropout::Mat> KDropout::apply ( const std::vector<Mat>& U, bool use
 	my_size = size[rank] / U[0].n;
 	my_offset = offset[rank] / U[0].n;
 #endif
+	auto end = std::chrono::system_clock::now();
+	t_apply_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
 	for( int i = 0; i < prev_num_map; ++i ){
 		std::vector<int> idx(U[i].m);
@@ -182,6 +199,9 @@ std::vector<KDropout::Mat> KDropout::apply ( const std::vector<Mat>& U, bool use
 		MPI_Allgatherv(&tmp_ret[i](0,0), size[rank], MPI_DOUBLE_PRECISION,
 					   &ret[i](0,0), &size[0], &offset[0], MPI_DOUBLE_PRECISION, inner_world);
 #endif
+	end = std::chrono::system_clock::now();
+	t_apply_gemm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+	t_apply += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
 	
 	return ret;
 }
