@@ -317,7 +317,7 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 	
 	int i, j, k, l, m;
 	int cnt = 0;
-	for( int n = 0; n <= MAX_ITER; ++n ){
+	for( int n = 0; n < MAX_ITER; ++n ){
 		// assign data to mini-batch
 		for( i = 0; i < X.size(); ++i )
 			for( j = 0; j < BATCH_SIZE; ++j )

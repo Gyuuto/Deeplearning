@@ -51,13 +51,9 @@ public:
 
 			for( int i = 0; i < x.n; ++i ){
 				int id = 0;
-				double val = x(0,i);
-				for( int j = 1; j < x.m; ++j )
-					if( val < x(j,i) ){
-						val = x(j,i);
-						id = j;
-					}
-				y(id,i) = val - d(id,i);
+				for( int j = 0; j < x.m; ++j )
+					if( d(j,i) != 0.0 ) id = j;
+				y(id,i) = x(id,i) - d(id,i);
 			}
 			
 			return y;
@@ -67,13 +63,9 @@ public:
 
 			for( int i = 0; i < x.n; ++i ){
 				int id = 0;
-				double val = x(0,i);
-				for( int j = 1; j < x.m; ++j )
-					if( val < x(j,i) ){
-						val = x(j,i);
-						id = j;
-					}
-				y(0,0) += (val - d(id,i))*(val - d(id,i));
+				for( int j = 0; j < x.m; ++j )
+					if( d(j,i) != 0.0 ) id = j;
+				y(0,0) += (x(id,i) - d(id,i))*(x(id,i) - d(id,i));
 			}
 
 			return y;
@@ -136,7 +128,7 @@ DQN::DQN(const int mem_capacity, const int initial_mem, const int max_id,
 #endif
 	)
 	: mem_capacity(mem_capacity), initial_mem(initial_mem), mem_id(0), max_id(max_id),
-	alpha(1.0E-3), gamma(0.95), epsilon(0.05), update_model_freq(1000),
+	alpha(1.0E-3), gamma(0.95), epsilon(0.05), update_model_freq(10000),
 	func_trans(func_trans), func_act(func_act), layers(layers), tilde_layers(tilde_layers)
 {
 	int seed = time(NULL);
@@ -198,12 +190,12 @@ int DQN::get_next_action ( const std::vector<Vec>& state )
 	int id = -100;
 	double max_Q = -1.0E100;
 
-	int rank = 0;
-	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 	for( int i = 0; i < max_id; ++i ){
-		if( func_act(i) && max_Q < a[0][0][i] ){
-			id = i;
-			max_Q = a[0][0][i];
+		if( func_act(i) ){
+			if( max_Q < a[0][0][i] ){
+				id = i;
+				max_Q = a[0][0][i];
+			}
 		}
 	}
 	
@@ -233,54 +225,98 @@ void DQN::learning( const int max_iter, const int batch_size )
 
 			if( possible.size() == 0 ) next_act_id = -100;
 			else next_act_id = possible[i_rand(mt)%possible.size()];
+			get_next_action(cur_state.s);
 		}
 		else{
 			next_act_id = get_next_action(cur_state.s);
 		}
 
 		State next_state = func_trans(next_act_id);
-		mem[mem_id%mem_capacity] = DQN_Memory(cur_state.s, next_state.s, next_act_id, next_state.r);
+		if( rank == 0 )
+			mem[mem_id%mem_capacity] = DQN_Memory(cur_state.s, next_state.s, next_act_id, next_state.r);
 		++mem_id;
+		if( mem_id > 2*mem_capacity ) mem_id = mem_capacity;
 
-		// Is this needed to generate x and d in each loop?
-		const int data_size = std::min(mem_id, batch_size);
-		const int dim = next_state.s.size();
-		std::vector<int> idx(std::min(mem_id, mem_capacity));
-		std::vector<std::vector<Vec>> x(data_size), x_n(data_size), d(data_size);
+		if( (mem_id-1) > initial_mem ){
+			const int data_size = std::min(mem_id, batch_size);
+			const int dim = next_state.s.size();
+			std::vector<int> idx(std::min(mem_id, mem_capacity));
+			std::vector<std::vector<Vec>> x(data_size), x_n(data_size), d(data_size);
 
-		std::iota( idx.begin(), idx.end(), 0 );
-		std::shuffle( idx.begin(), idx.end(), mt );
+			std::iota( idx.begin(), idx.end(), 0 );
+			std::shuffle( idx.begin(), idx.end(), mt );
+			if( rank == 0 ){
+				for( int i = 0; i < data_size; ++i ){
+					x[i] = mem[idx[i]].s;
+					x_n[i] = mem[idx[i]].s_n;
+				}
+
+				int tmp = x[0].size();
+				MPI_Bcast(&tmp, 1, MPI_INT, 0, inner_world);
+				tmp = x[0][0].size();
+				MPI_Bcast(&tmp, 1, MPI_INT, 0, inner_world);
 			
-		for( int i = 0; i < data_size; ++i ){
-			x[i] = mem[idx[i]].s;
-			x_n[i] = mem[idx[i]].s_n;
-		}
-
-		auto tmp = Q_tilde->apply(x_n);
-		for( int i = 0; i < data_size; ++i ){
-			int id = 0;
-			double val = tmp[i][0][0];
-			for( int j = 1; j < max_id; ++j ){
-				if( val < tmp[i][0][j] ){
-					id = j;
-					val = tmp[i][0][j];
+				for( int i = 0; i < data_size; ++i ){
+					for( int j = 0; j < x[i].size(); ++j )
+						MPI_Bcast(&x[i][j][0], x[i][j].size(), MPI_DOUBLE_PRECISION, 0, inner_world);
+					for( int j = 0; j < x_n[i].size(); ++j )
+						MPI_Bcast(&x_n[i][j][0], x_n[i][j].size(), MPI_DOUBLE_PRECISION, 0, inner_world);
 				}
 			}
-			d[i] = std::vector<Vec>(1, Vec(max_id, 0.0));
+			else{
+				int m, n;
+				MPI_Bcast(&m, 1, MPI_INT, 0, inner_world);
+				MPI_Bcast(&n, 1, MPI_INT, 0, inner_world);
 
-			if( next_state.ep_s == DQN_STATE::EPISODE_CONT )
-				d[i][0][id] = mem[idx[i]].r + gamma * val;
-			else
-				d[i][0][id] = mem[idx[i]].r;
-		}
+				for( int i = 0; i < data_size; ++i ){
+					std::vector<Vec> add_data(m, Vec(n));
+					for( int j = 0; j < m; ++j )
+						MPI_Bcast(&add_data[j][0], n, MPI_DOUBLE_PRECISION, 0, inner_world);
+					x[i] = add_data;
+					for( int j = 0; j < m; ++j )
+						MPI_Bcast(&add_data[j][0], n, MPI_DOUBLE_PRECISION, 0, inner_world);
+					x_n[i] = add_data;
+				}
+			}
 
-		// do backpropagation with mem
-		Q->set_BATCHSIZE(data_size);
-		Q->learning(x, d, 0);
+			std::vector<int> action_id(data_size);
+			std::vector<double> reward(data_size);
+			if( rank == 0 ){
+				for( int i = 0; i < data_size; ++i ){
+					action_id[i] = mem[idx[i]].a_id;
+					reward[i] = mem[idx[i]].r;
+				}
+				MPI_Bcast(&action_id[0], data_size, MPI_INT, 0, inner_world);
+				MPI_Bcast(&reward[0], data_size, MPI_DOUBLE_PRECISION, 0, inner_world);
+			}
+			else{
+				MPI_Bcast(&action_id[0], data_size, MPI_INT, 0, inner_world);
+				MPI_Bcast(&reward[0], data_size, MPI_DOUBLE_PRECISION, 0, inner_world);
+			}
+		
+			auto tmp = Q_tilde->apply(x_n);
+			for( int i = 0; i < data_size; ++i ){
+				int id = 0;
+				double val = tmp[i][0][0];
+				for( int j = 1; j < max_id; ++j ){
+					if( val < tmp[i][0][j] ){
+						id = j;
+						val = tmp[i][0][j];
+					}
+				}
+				d[i] = std::vector<Vec>(1, Vec(max_id, 0.0));
 
-		cur_state = next_state;
-		if( mem_id > initial_mem ){
-			if( n % update_model_freq == 0 ){
+				if( next_state.ep_s == DQN_STATE::EPISODE_CONT )
+					d[i][0][action_id[i]] = reward[i] + gamma * val;
+				else
+					d[i][0][action_id[i]] = reward[i];
+			}
+			// do backpropagation with mem
+			Q->set_BATCHSIZE(data_size);
+			Q->learning(x, d, 1);
+
+			cur_state = next_state;
+			if( (mem_id-1) % update_model_freq == 0 ){
 				// update Q_tilde weights
 				for( int i = 0; i < tilde_layers.size(); ++i ){
 					*tilde_layers[i] = *layers[i];
@@ -301,4 +337,5 @@ void DQN::output_W ( const std::string& filename )
 void DQN::set_W ( const std::string& filename )
 {
 	Q->set_W(filename);
+	Q_tilde->set_W(filename);
 }
