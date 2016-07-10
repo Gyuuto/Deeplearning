@@ -79,7 +79,7 @@ void FullyConnected::init ( std::mt19937& m )
 			W[i][j] = Mat(my_size, 1+prev_num_unit);
 		}
 	}
-	
+
 	const double r = sqrt(6.0/(num_unit + prev_num_unit));
 	std::uniform_real_distribution<double> d_rand(-r, r);
 	for( int i = 0; i < num_map; ++i ){
@@ -168,9 +168,9 @@ std::vector<FullyConnected::Mat> FullyConnected::calc_delta ( const std::vector<
 	beg = std::chrono::system_clock::now();
 	for( int i = 0; i < prev_num_map; ++i ){
 		tmp[i] = Mat::zeros(W[0][0].n, tmp_delta[0].n);
-		for( int j = 0; j < num_map; ++j ){
-			tmp[i] += Mat::transpose(W[j][i])*tmp_delta[j];
-		}
+		if( W[0][0].m != 0 )
+			for( int j = 0; j < num_map; ++j )
+				tmp[i] += Mat::transpose(W[j][i])*tmp_delta[j];
 	}
 
 #ifdef USE_MPI
