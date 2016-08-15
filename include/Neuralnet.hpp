@@ -322,13 +322,13 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 	std::vector<Mat> X(x[0].size(), Mat(num_dim_in, num_data)),
 		Y(y[0].size(), Mat(num_dim_out, num_data));
 	for( int i = 0; i < x[0].size(); ++i )
-		for( int j = 0; j < num_data; ++j )
-			for( int k = 0; k < num_dim_in; ++k )
-				X[i](k,j) = x[j][i][k];
+		for( int j = 0; j < num_dim_in; ++j )
+			for( int k = 0; k < num_data; ++k )
+				X[i](j,k) = x[k][i][j];
 	for( int i = 0; i < y[0].size(); ++i )
-		for( int j = 0; j < num_data; ++j )
-			for( int k = 0; k < num_dim_out; ++k )
-				Y[i](k,j) = y[j][i][k];
+		for( int j = 0; j < num_dim_out; ++j )
+			for( int k = 0; k < num_data; ++k )
+				Y[i](j,k) = y[k][i][j];
 	
 	learning(X, Y, MAX_ITER, each_func);
 }
@@ -369,14 +369,14 @@ void Neuralnet::learning ( const std::vector<Mat>& X, const std::vector<Mat>& Y,
 	for( int n = 0; n < MAX_ITER; ++n ){
 		// assign data to mini-batch
 		for( int i = 0; i < X.size(); ++i )
-			for( int j = 0; j < BATCH_SIZE; ++j )
-				for( int k = 0; k < U[0][i].m; ++k )
-					U[0][i](k,j) = X[i](k, idx[(cnt+j)%num_data]);
+			for( int j = 0; j < U[0][i].m; ++j )
+				for( int k = 0; k < BATCH_SIZE; ++k )
+					U[0][i](j,k) = X[i](j, idx[(cnt+k)%num_data]);
 		
 		for( int i = 0; i < Y.size(); ++i )
-			for( int j = 0; j < BATCH_SIZE; ++j )
-				for( int k = 0; k < D[i].m; ++k )
-					D[i](k,j) = Y[i](k, idx[(cnt+j)%num_data]);
+			for( int j = 0; j < D[i].m; ++j )
+				for( int k = 0; k < BATCH_SIZE; ++k )
+					D[i](j,k) = Y[i](j, idx[(cnt+k)%num_data]);
 
 #ifdef DEBUG
 		auto beg = std::chrono::system_clock::now();
@@ -433,6 +433,9 @@ void Neuralnet::learning ( const std::vector<Mat>& X, const std::vector<Mat>& Y,
 			cnt = 0;
 		}
 
+#ifdef DEBUG
+		beg = std::chrono::system_clock::now();
+#endif
 		// update W
 		adam_beta_ *= adam_beta;
 		adam_gamma_ *= adam_gamma;
@@ -480,6 +483,10 @@ void Neuralnet::learning ( const std::vector<Mat>& X, const std::vector<Mat>& Y,
 		}
 #endif
 		
+#ifdef DEBUG
+		end = std::chrono::system_clock::now();
+		if( myrank == 0 ) printf("Averaging : %3lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
+#endif
 		each_func(*this, n, U[0], D);
 	}
 

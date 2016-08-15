@@ -124,9 +124,9 @@ std::vector<std::vector<FullyConnected::Mat>> FullyConnected::calc_gradient ( co
 	for( int i = 0; i < num_map; ++i )
 		for( int j = 0; j < prev_num_map; ++j ){
 			Mat V(U[j].m+1, U[j].n), U_ = (*prev_func)(U[j], false);
-			for( int k = 0; k < U_.n; ++k ){
-				V(0,k) = (is_use_bias ? 1.0 : 0.0);
-				for( int l = 0; l < U_.m; ++l ) V(l+1,k) = U_(l, k);
+			for( int l = 0; l < U_.n; ++l ) V(0,l) = (is_use_bias ? 1.0 : 0.0);
+			for( int k = 0; k < U_.m; ++k ){
+				for( int l = 0; l < U_.n; ++l ) V(k+1,l) = U_(k, l);
 			}
 			
 			Mat tmp_delta(W[i][j].m, delta[i].n);
@@ -213,10 +213,11 @@ std::vector<FullyConnected::Mat> FullyConnected::apply ( const std::vector<Mat>&
 	for( int i = 0; i < prev_num_map; ++i ){
 		V[i] = Mat(U[i].m+1, U[i].n);
 #pragma omp parallel for schedule(auto)
-		for( int j = 0; j < U[i].n; ++j ){
-			V[i](0,j) = (is_use_bias ? 1.0 : 0.0); // for bias
-			for( int k = 0; k < U[i].m; ++k )
-				V[i](k+1,j) = U[i](k,j);
+		for( int j = 0; j < U[i].n; ++j ) V[i](0,j) = (is_use_bias ? 1.0 : 0.0); // for bias
+#pragma omp parallel for schedule(auto)
+		for( int j = 0; j < U[i].m; ++j ){
+			for( int k = 0; k < U[i].n; ++k )
+				V[i](j+1,k) = U[i](j,k);
 		}
 	}
 	auto end = std::chrono::system_clock::now();
