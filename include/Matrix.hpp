@@ -277,6 +277,29 @@ struct Matrix
 		return ret;
 	}
 	
+	friend Matrix<T> operator + ( const Matrix<T>& mat, const T& c )
+	{
+		int m = mat.m, n = mat.n;
+		Matrix<T> ret = mat;
+
+#ifdef USE_EIGEN
+		ret.v += c;
+#else
+#pragma omp parallel for schedule(auto)
+		for( int i = 0; i < n; ++i )
+			for( int j = 0; j < m; ++j )
+				ret(j,i) += c;
+#endif
+		cnt_flop += m*n;
+
+		return ret;
+	}
+
+	friend Matrix<T> operator + ( const T& c, const Matrix<T>& mat )
+	{
+		return mat + c;
+	}
+
 	friend Matrix<T> operator - ( const Matrix<T>& m1, const Matrix<T>& m2 )
 	{
 		int m = m1.m, n = m1.n;
@@ -350,6 +373,16 @@ struct Matrix
 		return c*m1;
 	}
 	 
+friend Matrix<T> operator / ( const Matrix<T>& m1, const Matrix<T>& m2 )
+	{
+		Matrix<T> ret = m1;
+#pragma omp parallel for schedule(auto)
+		for( int i = 0; i < ret.n; ++i )
+			for( int j = 0; j < ret.m; ++j )
+				ret(j, i) /= m2(j, i);
+		return ret;
+	}
+
 	friend Matrix<T> operator / ( const Matrix<T>& m1, const T& c )
 	{
 		return (1.0/c)*m1;

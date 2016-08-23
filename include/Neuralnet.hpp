@@ -13,8 +13,8 @@
 #include <chrono>
 #endif
 
+#include "Optimizer.hpp"
 #include "Layer.hpp"
-#include "Convolutional.hpp"
 #include "Function.hpp"
 #include "Matrix.hpp"
 
@@ -22,21 +22,21 @@
 #include <mpi.h>
 #endif
 
+template<class Loss, class Opt>
 class Neuralnet
 {
 private:
 	typedef Matrix<double> Mat;
 	typedef std::vector<double> Vec;
 
-	const double adam_beta = 0.9, adam_gamma = 0.999, adam_eps = 1.0E-8;
-	std::vector<std::vector<std::vector<Mat>>> adam_v, adam_r;
-	double adam_beta_ = 1.0, adam_gamma_ = 1.0;
-
 	int BATCH_SIZE, UPDATE_ITER;
 	double EPS, LAMBDA;
 
-	std::shared_ptr<LossFunction> loss;
+	Loss loss;
 	std::vector<std::shared_ptr<Layer>> layer;
+
+	Opt optimizer;
+	std::vector<Opt> opt_layer;
 	
 	std::mt19937 mt;
 	std::uniform_real_distribution<double> d_rand;
@@ -48,9 +48,9 @@ private:
 	std::vector<std::vector<std::vector<Mat>>> calc_gradient (const std::vector<std::vector<Mat>>& U, const std::vector<Mat>& d);
 	void check_gradient ( int cnt, const std::vector<int>& idx, const std::vector<Mat>& X, const std::vector<Mat>& Y, const std::vector<std::vector<std::vector<Mat>>>& nabla_w );
 public:
-	Neuralnet( const std::shared_ptr<LossFunction>& loss );
+	Neuralnet( const Opt& opt );
 #ifdef USE_MPI
-	Neuralnet( const std::shared_ptr<LossFunction>& loss, MPI_Comm outer_world, MPI_Comm inner_world );
+	Neuralnet( const Opt& opt, MPI_Comm outer_world, MPI_Comm inner_world );
 #endif
 
 	void set_EPS ( const double& EPS );
@@ -85,7 +85,8 @@ public:
 };
 
 //////////////////// PRIVATE FUNCTION ////////////////////
-std::vector<std::vector<std::vector<Neuralnet::Mat>>> Neuralnet::calc_gradient (
+template<class Loss, class Opt>
+std::vector<std::vector<std::vector<Matrix<double>>>> Neuralnet<Loss, Opt>::calc_gradient (
 	const std::vector<std::vector<Mat>>& U, const std::vector<Mat>& d )
 {
 	const int num_layer = layer.size();
@@ -95,7 +96,7 @@ std::vector<std::vector<std::vector<Neuralnet::Mat>>> Neuralnet::calc_gradient (
 
 	std::shared_ptr<Function> f = layer[num_layer-1]->get_function();
 	for( int i = 0; i < d.size(); ++i )
-		delta[i] = Mat::hadamard((*loss)((*f)(U[num_layer][i], false), d[i], true),
+		delta[i] = Mat::hadamard(loss((*f)(U[num_layer][i], false), d[i], true),
 								 (*f)(U[num_layer][i], true));
 
 #ifdef DEBUG
@@ -132,7 +133,8 @@ std::vector<std::vector<std::vector<Neuralnet::Mat>>> Neuralnet::calc_gradient (
 	return nabla_w;
 }
 
-void Neuralnet::check_gradient ( int cnt, const std::vector<int>& idx, const std::vector<Mat>& X, const std::vector<Mat>& Y, const std::vector<std::vector<std::vector<Mat>>>& nabla_w )
+template<class Loss, class Opt>
+void Neuralnet<Loss, Opt>::check_gradient ( int cnt, const std::vector<int>& idx, const std::vector<Mat>& X, const std::vector<Mat>& Y, const std::vector<std::vector<std::vector<Mat>>>& nabla_w )
 {
 	int rank = 0, target_rank = 6;
 	int num_layer = this->layer.size();
@@ -202,15 +204,17 @@ void Neuralnet::check_gradient ( int cnt, const std::vector<int>& idx, const std
 }
 
 //////////////////// PUBLIC FUNCTION ////////////////////
-Neuralnet::Neuralnet( const std::shared_ptr<LossFunction>& loss )
-	:EPS(1.0E-3), LAMBDA(0.0), BATCH_SIZE(1), UPDATE_ITER(-1), loss(loss)
+template<class Loss, class Opt>
+Neuralnet<Loss, Opt>::Neuralnet( const Opt& opt )
+	:EPS(1.0E-3), LAMBDA(0.0), BATCH_SIZE(1), UPDATE_ITER(-1), optimizer(opt)
 {
 	mt = std::mt19937(time(NULL));
 }
 
 #ifdef USE_MPI
-Neuralnet::Neuralnet( const std::shared_ptr<LossFunction>& loss, MPI_Comm outer_world, MPI_Comm inner_world )
-	:EPS(1.0E-3), LAMBDA(0.0), BATCH_SIZE(1), UPDATE_ITER(-1), loss(loss), outer_world(outer_world), inner_world(inner_world)
+template<class Loss, class Opt>
+Neuralnet<Loss, Opt>::Neuralnet( const Opt& opt, MPI_Comm outer_world, MPI_Comm inner_world )
+	:EPS(1.0E-3), LAMBDA(0.0), BATCH_SIZE(1), UPDATE_ITER(-1), optimizer(opt), outer_world(outer_world), inner_world(inner_world)
 {
 	int rank = 0, seed;
 	MPI_Comm_rank(outer_world, &rank);
@@ -221,27 +225,32 @@ Neuralnet::Neuralnet( const std::shared_ptr<LossFunction>& loss, MPI_Comm outer_
 }
 #endif
 
-void Neuralnet::set_EPS ( const double& EPS )
+template<class Loss, class Opt>
+void Neuralnet<Loss, Opt>::set_EPS ( const double& EPS )
 {
 	this->EPS = EPS;
 }
 
-void Neuralnet::set_LAMBDA ( const double& LAMBDA )
+template<class Loss, class Opt>
+void Neuralnet<Loss, Opt>::set_LAMBDA ( const double& LAMBDA )
 {
 	this->LAMBDA = LAMBDA;
 }
 
-void Neuralnet::set_BATCHSIZE ( const int& BATCH_SIZE )
+template<class Loss, class Opt>
+void Neuralnet<Loss, Opt>::set_BATCHSIZE ( const int& BATCH_SIZE )
 {
 	this->BATCH_SIZE = BATCH_SIZE;
 }
 
-void Neuralnet::set_UPDATEITER ( const int& UPDATE_ITER )
+template<class Loss, class Opt>
+void Neuralnet<Loss, Opt>::set_UPDATEITER ( const int& UPDATE_ITER )
 {
 	this->UPDATE_ITER = UPDATE_ITER;
 }
 
-void Neuralnet::add_layer( const std::shared_ptr<Layer>& layer )
+template<class Loss, class Opt>
+void Neuralnet<Loss, Opt>::add_layer( const std::shared_ptr<Layer>& layer )
 {
 	std::shared_ptr<Function> f;
 	int prev_num_unit = -1, prev_num_map = -1;
@@ -281,20 +290,13 @@ void Neuralnet::add_layer( const std::shared_ptr<Layer>& layer )
 	this->layer[idx]->init(mt);
 #endif
 
-	auto w = layer->get_W();
-
-	adam_v.push_back(std::vector<std::vector<Mat>>(w.size()));
-	adam_r.push_back(std::vector<std::vector<Mat>>(w.size()));
-	for( int j = 0; j < w.size(); ++j ){
-		for( int k = 0; k < w[j].size(); ++k ){
-			adam_v[idx][j].push_back(Mat::zeros(w[j][k].m, w[j][k].n));
-			adam_r[idx][j].push_back(Mat::zeros(w[j][k].m, w[j][k].n));
-		}
-	}
+	opt_layer.push_back(Opt());
+	opt_layer[opt_layer.size()-1].init(&optimizer, this->layer[idx]);
 }
 
 #ifdef USE_MPI
-void Neuralnet::averaging ()
+template<class Loss, class Opt>
+void Neuralnet<Loss, Opt>::averaging ()
 {
 	for( int i = 0; i < layer.size(); ++i ){
 		layer[i]->param_mix();
@@ -311,8 +313,9 @@ void Neuralnet::averaging ()
 }
 #endif
 
-void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::vector<std::vector<Vec>>& y,
-						   const int MAX_ITER, const std::function<void(Neuralnet&, const int, const std::vector<Mat>&, const std::vector<Mat>&)>& each_func )
+template<class Loss, class Opt>
+void Neuralnet<Loss, Opt>::learning ( const std::vector<std::vector<Vec>>& x, const std::vector<std::vector<Vec>>& y,
+									  const int MAX_ITER, const std::function<void(Neuralnet<Loss, Opt>&, const int, const std::vector<Mat>&, const std::vector<Mat>&)>& each_func )
 {
 	const int num_layer = layer.size();
 	const int num_data = x.size();
@@ -333,9 +336,10 @@ void Neuralnet::learning ( const std::vector<std::vector<Vec>>& x, const std::ve
 	learning(X, Y, MAX_ITER, each_func);
 }
 
-void Neuralnet::learning ( const std::vector<Mat>& X, const std::vector<Mat>& Y,
-						   const int MAX_ITER,
-						   const std::function<void(Neuralnet&, const int, const std::vector<Mat>&, const std::vector<Mat>&)>& each_func )
+template<class Loss, class Opt>
+void Neuralnet<Loss, Opt>::learning ( const std::vector<Mat>& X, const std::vector<Mat>& Y,
+									  const int MAX_ITER,
+									  const std::function<void(Neuralnet<Loss, Opt>&, const int, const std::vector<Mat>&, const std::vector<Mat>&)>& each_func )
 {
 	int nprocs = 1, myrank = 0;
 #ifdef USE_MPI
@@ -437,44 +441,14 @@ void Neuralnet::learning ( const std::vector<Mat>& X, const std::vector<Mat>& Y,
 		beg = std::chrono::system_clock::now();
 #endif
 		// update W
-		adam_beta_ *= adam_beta;
-		adam_gamma_ *= adam_gamma;
 		for( int i = 0; i < num_layer; ++i ){
-			// L2 norm regularization
 			auto W = layer[i]->get_W();
-
-			if( W.size() == 0 ) continue;
-
-#pragma omp parallel for schedule(auto)
-			for( int j = 0; j < W.size(); ++j )
-				for( int k = 0; k < W[j].size(); ++k )
-					for( int l = 0; l < W[j][k].m; ++l )
-						for( int m = 1; m < W[j][k].n; ++m )
-							nabla_w[i][j][k](l,m) += LAMBDA*W[j][k](l,m);
-
-			// ADAM
-#pragma omp parallel for schedule(auto)
-			for( int j = 0; j < nabla_w[i].size(); ++j )
-				for( int k = 0; k < nabla_w[i][j].size(); ++k )
-					for( int l = 0; l < nabla_w[i][j][k].m; ++l )
-						for( int m = 0; m < nabla_w[i][j][k].n; ++m ){
-							adam_v[i][j][k](l,m) = adam_beta*adam_v[i][j][k](l,m) + (1.0 - adam_beta)*nabla_w[i][j][k](l,m);
-							adam_r[i][j][k](l,m) = adam_gamma*adam_r[i][j][k](l,m) + (1.0 - adam_gamma)*(nabla_w[i][j][k](l,m)*nabla_w[i][j][k](l,m));
-						}
-
-			std::vector<std::vector<Mat>> update_W(W.size(), std::vector<Mat>(W[0].size()));
-			for( int j = 0; j < W.size(); ++j )
-				for( int k = 0; k < W[j].size(); ++k ){
-					update_W[j][k] = Mat(W[j][k].m, W[j][k].n);
-#pragma omp parallel for schedule(auto)
-					for( int l = 0; l < update_W[j][k].m; ++l )
-						for( int m = 0; m < update_W[j][k].n; ++m ){
-							auto v_hat = adam_v[i][j][k](l,m) / (1.0 - adam_beta_);
-							auto r_hat = adam_r[i][j][k](l,m) / (1.0 - adam_gamma_);
-							update_W[j][k](l,m) = -EPS*v_hat/(sqrt(r_hat)+adam_eps);
-						}
-				}
-			layer[i]->update_W(update_W);
+			if( std::abs(LAMBDA) > 1.0E-12 )
+				for( int j = 0; j < nabla_w[i].size(); ++j )
+					for( int k = 0; k < nabla_w[i][j].size(); ++k )
+						nabla_w[i][j][k] += LAMBDA*W[j][k];
+			
+			opt_layer[i].update_W(n, nabla_w[i]);
 		}
 
 #ifdef USE_MPI
@@ -493,7 +467,8 @@ void Neuralnet::learning ( const std::vector<Mat>& X, const std::vector<Mat>& Y,
 	for( int i = 0; i < num_layer; ++i ) layer[i]->finalize();	
 }
 
-std::vector<Neuralnet::Mat> Neuralnet::apply ( const std::vector<Mat>& X ) const
+template<class Loss, class Opt>
+std::vector<Matrix<double>> Neuralnet<Loss, Opt>::apply ( const std::vector<Mat>& X ) const
 {
 	const int num_layer = layer.size();
 	std::vector<Mat> U(X.size());
@@ -514,7 +489,8 @@ std::vector<Neuralnet::Mat> Neuralnet::apply ( const std::vector<Mat>& X ) const
 	return ret;
 }
 
-std::vector<std::vector<Neuralnet::Vec>> Neuralnet::apply ( const std::vector<std::vector<Vec>>& x ) const
+template<class Loss, class Opt>
+std::vector<std::vector<std::vector<double>>> Neuralnet<Loss, Opt>::apply ( const std::vector<std::vector<Vec>>& x ) const
 {
 	std::vector<Mat> u(x[0].size());
 	for( int i = 0; i < x[0].size(); ++i ) u[i] = Mat(x[0][0].size(), x.size());
@@ -536,21 +512,24 @@ std::vector<std::vector<Neuralnet::Vec>> Neuralnet::apply ( const std::vector<st
 	return ret;
 }
 
-void Neuralnet::set_W ( const std::string& filename )
+template<class Loss, class Opt>
+void Neuralnet<Loss, Opt>::set_W ( const std::string& filename )
 {
 	for( int i = 0; i < layer.size(); ++i ){
 		layer[i]->set_W("layer_" + std::to_string(i) + "_" + filename);
 	}
 }
 
-void Neuralnet::output_W ( const std::string& filename ) const
+template<class Loss, class Opt>
+void Neuralnet<Loss, Opt>::output_W ( const std::string& filename ) const
 {
 	for( int i = 0; i < layer.size(); ++i ){
 		layer[i]->output_W("layer_" + std::to_string(i) + "_" + filename);
 	}
 }
 
-void Neuralnet::print_cost ( const std::vector<Mat>& x, const std::vector<Mat>& y ) const
+template<class Loss, class Opt>
+void Neuralnet<Loss, Opt>::print_cost ( const std::vector<Mat>& x, const std::vector<Mat>& y ) const
 {
 	double error[3] = { 0.0 }, min_err = 1.0E100, max_err = 0.0;
 	auto v = apply(x);
@@ -594,7 +573,8 @@ void Neuralnet::print_cost ( const std::vector<Mat>& x, const std::vector<Mat>& 
 	}
 }
 
-void Neuralnet::print_cost ( const std::vector<std::vector<Vec>>& x, const std::vector<std::vector<Vec>>& y ) const
+template<class Loss, class Opt>
+void Neuralnet<Loss, Opt>::print_cost ( const std::vector<std::vector<Vec>>& x, const std::vector<std::vector<Vec>>& y ) const
 {
 	std::vector<Mat> X(x[0].size(), Mat(x[0][0].size(), x.size())), Y(y[0].size(), Mat(y[0][0].size(), y.size()));
 
@@ -611,7 +591,8 @@ void Neuralnet::print_cost ( const std::vector<std::vector<Vec>>& x, const std::
 	print_cost( X, Y );
 }
 
-void Neuralnet::print_weight () const
+template<class Loss, class Opt>
+void Neuralnet<Loss, Opt>::print_weight () const
 {
 	int rank = 0;
 #ifdef USE_MPI
@@ -650,7 +631,8 @@ void Neuralnet::print_weight () const
 	}
 }
 
-void Neuralnet::print_gradient () const
+template<class Loss, class Opt>
+void Neuralnet<Loss, Opt>::print_gradient () const
 {
 	int rank = 0;
 #ifdef USE_MPI

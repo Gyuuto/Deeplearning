@@ -263,6 +263,30 @@ public:
 	}
 };
 
+class Sqrt : public Function
+{
+public:
+	inline Matrix<double> operator() ( const Matrix<double>& x, const bool& isdiff ){
+		Matrix<double> y(x.m, x.n);
+
+		if( isdiff ){
+#pragma omp parallel for schedule(auto)
+			for( int i = 0; i < y.m; ++i )
+				for( int j = 0; j < y.n; ++j )
+					y(i,j) = 1.0 / (2.0 * sqrt(x(i,j)));
+		
+		}
+		else{
+#pragma omp parallel for schedule(auto)
+			for( int i = 0; i < y.m; ++i )
+				for( int j = 0; j < y.n; ++j )
+					y(i,j) = sqrt(x(i,j));
+		}
+
+		return y;
+	}
+};
+
 ///////////////////////////////////////////////////////
 //////////////////// Loss function ////////////////////
 ///////////////////////////////////////////////////////
