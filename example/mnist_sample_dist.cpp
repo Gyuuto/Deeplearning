@@ -8,6 +8,7 @@
 #include <chrono>
 
 #include "../include/Neuralnet.hpp"
+#include "../include/ADAM.hpp"
 #include "../include/Layer.hpp"
 #include "../include/Dropout.hpp"
 #include "../include/FullyConnected.hpp"
@@ -97,7 +98,7 @@ int main( int argc, char* argv[] )
 	MPI_Comm_size(outer_world, &outer_nprocs);
 
 	// construct neuralnetwork with CrossEntropy.
-    Neuralnet net(shared_ptr<LossFunction>(new CrossEntropy), outer_world, inner_world);
+    Neuralnet<CrossEntropy, ADAM> net(ADAM(1.0E-3), outer_world, inner_world);
 	vector<shared_ptr<Layer>> layers;
 
 	// define layers.
@@ -203,7 +204,7 @@ int main( int argc, char* argv[] )
 
 	// checking error function.
 	chrono::time_point<chrono::system_clock> prev_time, total_time;
-	auto check_error = [&](const Neuralnet& nn, const int iter, const std::vector<Matrix<double>>& x, const std::vector<Matrix<double>>& d ) -> void {
+	auto check_error = [&](const Neuralnet<CrossEntropy, ADAM>& nn, const int iter, const std::vector<Matrix<double>>& x, const std::vector<Matrix<double>>& d ) -> void {
 		if( (iter+1)%((N/BATCH_SIZE)) != 0 ) return;
 
 		const int once_num = 1000;
