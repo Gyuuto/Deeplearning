@@ -32,6 +32,8 @@ void ADAM::init( Optimizer* opt, const std::shared_ptr<Layer>& layer )
 	this->BETA = opt_->BETA; this->GAMMA = opt_->GAMMA; this->EPS = opt_->EPS;
 	
 	auto W = layer->get_W();
+	if( W.size() == 0 ) return;
+
 	int num_map = W.size(), prev_num_map = W[0].size();
 
 	v = std::vector<std::vector<Matrix<double>>>(num_map);
@@ -48,6 +50,8 @@ void ADAM::init( Optimizer* opt, const std::shared_ptr<Layer>& layer )
 
 void ADAM::update_W ( int iter, std::vector<std::vector<Matrix<double>>> nabla_w )
 {
+	if( nabla_w.size() == 0 ) return;
+	
 	for( int i = 0; i < nabla_w.size(); ++i )
 		for( int j = 0; j < nabla_w[i].size(); ++j ){
 			v[i][j] = BETA*v[i][j] + (1.0 - BETA)*nabla_w[i][j];
