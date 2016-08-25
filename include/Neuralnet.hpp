@@ -443,10 +443,9 @@ void Neuralnet<Loss, Opt>::learning ( const std::vector<Mat>& X, const std::vect
 		// update W
 		for( int i = 0; i < num_layer; ++i ){
 			auto W = layer[i]->get_W();
-			if( std::abs(LAMBDA) > 1.0E-12 )
-				for( int j = 0; j < nabla_w[i].size(); ++j )
-					for( int k = 0; k < nabla_w[i][j].size(); ++k )
-						nabla_w[i][j][k] += LAMBDA*W[j][k];
+			for( int j = 0; j < nabla_w[i].size(); ++j )
+				for( int k = 0; k < nabla_w[i][j].size(); ++k )
+					nabla_w[i][j][k] += LAMBDA*W[j][k];
 			
 			opt_layer[i].update_W(n, nabla_w[i]);
 		}

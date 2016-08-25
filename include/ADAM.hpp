@@ -14,7 +14,7 @@ public:
 	ADAM( double learning_rate, double beta = 0.9, double gamma = 0.999, double eps = 1.0E-8 );
 
 	void init ( Optimizer* opt, const std::shared_ptr<Layer>& layer );
-	void update_W ( int iter, std::vector<std::vector<Matrix<double>>> nabla_w );
+	inline void update_W ( int iter, std::vector<std::vector<Matrix<double>>> nabla_w );
 };
 
 ADAM::ADAM( double learning_rate, double BETA, double GAMMA, double EPS )
@@ -48,7 +48,7 @@ void ADAM::init( Optimizer* opt, const std::shared_ptr<Layer>& layer )
 	}
 }
 
-void ADAM::update_W ( int iter, std::vector<std::vector<Matrix<double>>> nabla_w )
+inline void ADAM::update_W ( int iter, std::vector<std::vector<Matrix<double>>> nabla_w )
 {
 	if( nabla_w.size() == 0 ) return;
 	
