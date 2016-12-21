@@ -58,6 +58,7 @@ public:
 	
 	virtual std::vector<std::vector<Mat>> get_W ();
 	virtual std::shared_ptr<Function> get_function ();
+	virtual std::shared_ptr<Function> get_prev_function ();
 
 	virtual int get_num_map();
 	virtual int get_num_unit();
@@ -84,6 +85,11 @@ std::vector<std::vector<Layer::Mat>> Layer::get_W ()
 std::shared_ptr<Function> Layer::get_function ()
 {
 	return func;
+}
+
+std::shared_ptr<Function> Layer::get_prev_function ()
+{
+	return prev_func;
 }
 
 int Layer::get_num_map()
