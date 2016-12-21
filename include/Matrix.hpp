@@ -237,7 +237,7 @@ struct Matrix
 #pragma omp parallel for schedule(auto)
 		for( int i = 0; i < this->m; ++i )
 			for( int j = 0; j < this->n; ++j )
-				*this(i,j) *= c;
+				(*this)(i,j) *= c;
 #endif
 		cnt_flop += this->m*this->n;
 
@@ -252,7 +252,7 @@ struct Matrix
 #pragma omp parallel for schedule(auto)
 		for( int i = 0; i < this->m; ++i )
 			for( int j = 0; j < this->n; ++j )
-				*this(i,j) /= c;
+				(*this)(i,j) /= c;
 #endif
 		cnt_flop += this->m*this->n;
 

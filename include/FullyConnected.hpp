@@ -114,8 +114,8 @@ std::vector<std::vector<FullyConnected::Mat>> FullyConnected::calc_gradient ( co
 	std::vector<std::vector<Mat>> nabla(num_map);
 	for( int i = 0; i < num_map; ++i ){
 		nabla[i] = std::vector<Mat>(prev_num_map);
-		// for( int j = 0; j < prev_num_map; ++j )
-		// 	nabla[i][j] = Mat(W[i][j].m, W[i][j].n);
+		for( int j = 0; j < prev_num_map; ++j )
+			nabla[i][j] = Mat(W[i][j].m, W[i][j].n);
 	}
 	auto end = std::chrono::system_clock::now();
 	t_grad_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
