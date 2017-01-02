@@ -365,6 +365,8 @@ void Neuralnet::learning ( const std::vector<Mat>& X, const std::vector<Mat>& Y,
 		U[i+1] = std::vector<Mat>(layer[i]->get_num_map(), Mat(layer[i]->get_num_unit(), BATCH_SIZE));
 	}
 
+	each_func(*this, 0, U[0], D);
+
 	int cnt = 0;
 	for( int n = 0; n < MAX_ITER; ++n ){
 		// assign data to mini-batch
@@ -418,11 +420,14 @@ void Neuralnet::learning ( const std::vector<Mat>& X, const std::vector<Mat>& Y,
 		if( myrank == 0 ) printf("Back : %3lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
 #endif
 
+#ifdef DEBUG
+		beg = std::chrono::system_clock::now();
+#endif
 		// averaging all gradients of weights of mini-batches
 		for( int i = 0; i < nabla_w.size(); ++i )
 			for( int j = 0; j < nabla_w[i].size(); ++j )
 				for( int k = 0; k < nabla_w[i][j].size(); ++k )
-					nabla_w[i][j][k] = 1.0/BATCH_SIZE * nabla_w[i][j][k];
+					nabla_w[i][j][k] *= 1.0/BATCH_SIZE;
 		
 #ifdef CHECK_GRAD
 		check_gradient(cnt, idx, X, Y, nabla_w);
@@ -433,50 +438,60 @@ void Neuralnet::learning ( const std::vector<Mat>& X, const std::vector<Mat>& Y,
 			cnt = 0;
 		}
 
-#ifdef DEBUG
-		beg = std::chrono::system_clock::now();
-#endif
 		// update W
 		adam_beta_ *= adam_beta;
 		adam_gamma_ *= adam_gamma;
 		for( int i = 0; i < num_layer; ++i ){
-			// L2 norm regularization
 			auto W = layer[i]->get_W();
 
 			if( W.size() == 0 ) continue;
 
-#pragma omp parallel for schedule(auto)
-			for( int j = 0; j < W.size(); ++j )
-				for( int k = 0; k < W[j].size(); ++k )
-					for( int l = 0; l < W[j][k].m; ++l )
-						for( int m = 1; m < W[j][k].n; ++m )
-							nabla_w[i][j][k](l,m) += LAMBDA*W[j][k](l,m);
-
-			// ADAM
-#pragma omp parallel for schedule(auto)
-			for( int j = 0; j < nabla_w[i].size(); ++j )
-				for( int k = 0; k < nabla_w[i][j].size(); ++k )
-					for( int l = 0; l < nabla_w[i][j][k].m; ++l )
-						for( int m = 0; m < nabla_w[i][j][k].n; ++m ){
-							adam_v[i][j][k](l,m) = adam_beta*adam_v[i][j][k](l,m) + (1.0 - adam_beta)*nabla_w[i][j][k](l,m);
-							adam_r[i][j][k](l,m) = adam_gamma*adam_r[i][j][k](l,m) + (1.0 - adam_gamma)*(nabla_w[i][j][k](l,m)*nabla_w[i][j][k](l,m));
-						}
-
-			std::vector<std::vector<Mat>> update_W(W.size(), std::vector<Mat>(W[0].size()));
-			for( int j = 0; j < W.size(); ++j )
-				for( int k = 0; k < W[j].size(); ++k ){
-					update_W[j][k] = Mat(W[j][k].m, W[j][k].n);
-#pragma omp parallel for schedule(auto)
-					for( int l = 0; l < update_W[j][k].m; ++l )
-						for( int m = 0; m < update_W[j][k].n; ++m ){
-							auto v_hat = adam_v[i][j][k](l,m) / (1.0 - adam_beta_);
-							auto r_hat = adam_r[i][j][k](l,m) / (1.0 - adam_gamma_);
-							update_W[j][k](l,m) = -EPS*v_hat/(sqrt(r_hat)+adam_eps);
-						}
+			std::vector<std::vector<Mat>> update_W(W.size(), std::vector<Mat>(W[0].size(), Mat(W[0][0].m, W[0][0].n)));
+#pragma omp parallel
+			{
+				if( std::abs(LAMBDA) > 1.0E-15 ){
+					// L2 norm regularization
+					for( int j = 0; j < W.size(); ++j )
+						for( int k = 0; k < W[j].size(); ++k )
+#pragma omp for schedule(auto) nowait
+							for( int l = 0; l < W[j][k].m; ++l )
+								for( int m = 1; m < W[j][k].n; ++m )
+									nabla_w[i][j][k](l,m) += LAMBDA*W[j][k](l,m);
 				}
+
+				// ADAM
+				for( int j = 0; j < nabla_w[i].size(); ++j )
+					for( int k = 0; k < nabla_w[i][j].size(); ++k )
+#pragma omp for schedule(auto) nowait
+						for( int l = 0; l < nabla_w[i][j][k].m; ++l )
+							for( int m = 0; m < nabla_w[i][j][k].n; ++m ){
+								adam_v[i][j][k](l,m) = adam_beta*adam_v[i][j][k](l,m) + (1.0 - adam_beta)*nabla_w[i][j][k](l,m);
+								adam_r[i][j][k](l,m) = adam_gamma*adam_r[i][j][k](l,m) + (1.0 - adam_gamma)*(nabla_w[i][j][k](l,m)*nabla_w[i][j][k](l,m));
+							}
+
+#pragma omp barrier
+				
+				for( int j = 0; j < W.size(); ++j )
+					for( int k = 0; k < W[j].size(); ++k ){
+#pragma omp for schedule(auto) nowait
+						for( int l = 0; l < update_W[j][k].m; ++l )
+							for( int m = 0; m < update_W[j][k].n; ++m ){
+								auto v_hat = adam_v[i][j][k](l,m) / (1.0 - adam_beta_);
+								auto r_hat = adam_r[i][j][k](l,m) / (1.0 - adam_gamma_);
+								update_W[j][k](l,m) = -EPS*v_hat/(sqrt(r_hat)+adam_eps);
+							}
+					}
+			}
 			layer[i]->update_W(update_W);
 		}
+#ifdef DEBUG
+		end = std::chrono::system_clock::now();
+		if( myrank == 0 ) printf("Update : %3lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
+#endif
 
+#ifdef DEBUG
+		beg = std::chrono::system_clock::now();
+#endif
 #ifdef USE_MPI
 		if( UPDATE_ITER != -1 && n % UPDATE_ITER == 0 ){
 			averaging();
@@ -487,7 +502,7 @@ void Neuralnet::learning ( const std::vector<Mat>& X, const std::vector<Mat>& Y,
 		end = std::chrono::system_clock::now();
 		if( myrank == 0 ) printf("Averaging : %3lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
 #endif
-		each_func(*this, n, U[0], D);
+		each_func(*this, n+1, U[0], D);
 	}
 
 	for( int i = 0; i < num_layer; ++i ) layer[i]->finalize();	

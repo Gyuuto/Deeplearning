@@ -120,24 +120,34 @@ std::vector<std::vector<FullyConnected::Mat>> FullyConnected::calc_gradient ( co
 	auto end = std::chrono::system_clock::now();
 	t_grad_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 	
-	beg = std::chrono::system_clock::now();
 	for( int i = 0; i < num_map; ++i )
 		for( int j = 0; j < prev_num_map; ++j ){
 			Mat V(U[j].m+1, U[j].n), U_ = (*prev_func)(U[j], false);
-			for( int l = 0; l < U_.n; ++l ) V(0,l) = (is_use_bias ? 1.0 : 0.0);
-			for( int k = 0; k < U_.m; ++k ){
-				for( int l = 0; l < U_.n; ++l ) V(k+1,l) = U_(k, l);
-			}
-			
 			Mat tmp_delta(W[i][j].m, delta[i].n);
-			for( int k = 0; k < tmp_delta.m; ++k )
-				for( int l = 0; l < delta[i].n; ++l )
-					tmp_delta(k,l) = delta[i](k + offset,l);
 
+			beg = std::chrono::system_clock::now();
+#pragma omp parallel
+			{
+#pragma omp for schedule(auto) nowait
+				for( int l = 0; l < U_.n; ++l ) V(0,l) = (is_use_bias ? 1.0 : 0.0);
+#pragma omp for schedule(auto) nowait
+				for( int k = 0; k < U_.m; ++k ){
+					for( int l = 0; l < U_.n; ++l ) V(k+1,l) = U_(k, l);
+				}
+			
+#pragma omp for schedule(auto) nowait
+				for( int k = 0; k < tmp_delta.m; ++k )
+					for( int l = 0; l < delta[i].n; ++l )
+						tmp_delta(k,l) = delta[i](k + offset,l);
+			}
+			end = std::chrono::system_clock::now();
+			t_grad_repl += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+			
+			beg = std::chrono::system_clock::now();
 			nabla[i][j] = tmp_delta*Mat::transpose(V);
+			end = std::chrono::system_clock::now();
+			t_grad_gemm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 		}
-	end = std::chrono::system_clock::now();
-	t_grad_gemm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 	t_grad += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
 
 	return nabla;
@@ -152,14 +162,17 @@ std::vector<FullyConnected::Mat> FullyConnected::calc_delta ( const std::vector<
 #ifdef USE_MPI
 	offset = rank*num_unit/nprocs;
 #endif
-	std::vector<Mat> tmp_delta(num_map), tmp(prev_num_map), nx_delta(prev_num_map);
+	std::vector<Mat> tmp_delta(num_map, Mat(W[0][0].m, delta[0].n)),
+		tmp(prev_num_map), nx_delta(prev_num_map);
 
-	for( int i = 0; i < num_map; ++i ){
-		tmp_delta[i] = Mat(W[0][0].m, delta[i].n);
-#pragma omp parallel for schedule(auto)
-		for( int j = 0; j < W[0][0].m; ++j ){
-			for( int k = 0; k < delta[i].n; ++k )
-				tmp_delta[i](j, k) = delta[i](offset + j, k);
+#pragma omp parallel
+	{
+		for( int i = 0; i < num_map; ++i ){
+#pragma omp for schedule(auto) nowait
+			for( int j = 0; j < W[0][0].m; ++j ){
+				for( int k = 0; k < delta[i].n; ++k )
+					tmp_delta[i](j, k) = delta[i](offset + j, k);
+			}
 		}
 	}
 	auto end = std::chrono::system_clock::now();
@@ -185,7 +198,7 @@ std::vector<FullyConnected::Mat> FullyConnected::calc_delta ( const std::vector<
 		for( int j = 0; j < tmp[i].m-1; ++j )
 			for( int k = 0; k < tmp[i].n; ++k )
 				V(j,k) = tmp[i](j+1,k);
-
+		
 		nx_delta[i] = Mat::hadamard(V, U_);
 	}
 	end = std::chrono::system_clock::now();
@@ -208,16 +221,18 @@ std::vector<FullyConnected::Mat> FullyConnected::apply ( const std::vector<Mat>&
 	auto beg = tot_beg;
 
 	std::vector<Mat> ret(num_map), tmp_ret(num_map);
-	std::vector<Mat> V(prev_num_map);
+	std::vector<Mat> V(prev_num_map, Mat(U[0].m+1, U[0].n));
 	
-	for( int i = 0; i < prev_num_map; ++i ){
-		V[i] = Mat(U[i].m+1, U[i].n);
-#pragma omp parallel for schedule(auto)
-		for( int j = 0; j < U[i].n; ++j ) V[i](0,j) = (is_use_bias ? 1.0 : 0.0); // for bias
-#pragma omp parallel for schedule(auto)
-		for( int j = 0; j < U[i].m; ++j ){
-			for( int k = 0; k < U[i].n; ++k )
-				V[i](j+1,k) = U[i](j,k);
+#pragma omp parallel
+	{
+		for( int i = 0; i < prev_num_map; ++i ){
+#pragma omp for schedule(auto) nowait
+			for( int j = 0; j < U[i].n; ++j ) V[i](0,j) = (is_use_bias ? 1.0 : 0.0); // for bias
+#pragma omp for schedule(auto) nowait
+			for( int j = 0; j < U[i].m; ++j ){
+				for( int k = 0; k < U[i].n; ++k )
+					V[i](j+1,k) = U[i](j,k);
+			}
 		}
 	}
 	auto end = std::chrono::system_clock::now();
@@ -262,15 +277,19 @@ std::vector<std::vector<FullyConnected::Vec>> FullyConnected::apply ( const std:
 	for( int i = 0; i < prev_num_map; ++i )
 		tmp[i] = Mat(u[i][0].size(), u.size());
 
-	for( int i = 0; i < prev_num_map; ++i )
-		for( int j = 0; j < u[i][0].size(); ++j )
-			for( int k = 0; k < u.size(); ++k )
-				tmp[i](j,k) = u[k][i][j];
+#pragma omp parallel
+	{
+		for( int i = 0; i < prev_num_map; ++i )
+#pragma omp for schedule(auto) nowait
+			for( int j = 0; j < u[i][0].size(); ++j )
+				for( int k = 0; k < u.size(); ++k )
+					tmp[i](j,k) = u[k][i][j];
+	}
 	
 	auto U = apply(tmp, use_func);
-	std::vector<std::vector<Vec>> ret(U[0].n);
+	std::vector<std::vector<Vec>> ret(U[0].n, std::vector<Vec>(U.size(), Vec(U[0].m)));
+#pragma omp parallel for schedule(auto)
 	for( int i = 0; i < U[0].n; ++i ){
-		ret[i] = std::vector<Vec>(U.size(), Vec(U[0].m));
 		for( int j = 0; j < U.size(); ++j )
 			for( int k = 0; k < U[0].m; ++k )
 				ret[i][j][k] = U[j](k,i);
@@ -380,21 +399,31 @@ void FullyConnected::param_mix ()
 	int cnt = W.size()*W[0].size()*W[0][0].m*W[0][0].n;
 	std::vector<double> w(cnt);
 
-	int idx = 0;
-	for( int i = 0; i < W.size(); ++i )
-		for( int j = 0; j < W[i].size(); ++j )
-			for( int k = 0; k < W[i][j].m; ++k )
-				for( int l = 0; l < W[i][j].n; ++l )
-					w[idx++] = W[i][j](k,l);
-		
+#pragma omp parallel
+	{
+		for( int i = 0; i < W.size(); ++i )
+			for( int j = 0; j < W[i].size(); ++j )
+#pragma omp for schedule(auto) nowait
+				for( int k = 0; k < W[i][j].m; ++k )
+					for( int l = 0; l < W[i][j].n; ++l ){
+						int idx = i*(W[i].size()*W[i][j].m*W[i][j].n) + j*(W[i][j].m*W[i][j].n) + k*W[i][j].n + l;
+						w[idx] = W[i][j](k,l);
+					}
+	}
+
 	MPI_Allreduce(MPI_IN_PLACE, &w[0], cnt, MPI_DOUBLE_PRECISION, MPI_SUM, outer_world);
 
-	idx = 0;
-	for( int i = 0; i < W.size(); ++i )
-		for( int j = 0; j < W[i].size(); ++j )
-			for( int k = 0; k < W[i][j].m; ++k )
-				for( int l = 0; l < W[i][j].n; ++l )
-					W[i][j](k,l) = w[idx++]/nprocs;
+#pragma omp parallel
+	{
+		for( int i = 0; i < W.size(); ++i )
+			for( int j = 0; j < W[i].size(); ++j )
+#pragma omp for schedule(auto) nowait
+				for( int k = 0; k < W[i][j].m; ++k )
+					for( int l = 0; l < W[i][j].n; ++l ){
+						int idx = i*(W[i].size()*W[i][j].m*W[i][j].n) + j*(W[i][j].m*W[i][j].n) + k*W[i][j].n + l;
+						W[i][j](k,l) = w[idx]/nprocs;
+					}
+	}
 }
 #endif
 

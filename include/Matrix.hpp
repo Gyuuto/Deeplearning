@@ -111,7 +111,7 @@ struct Matrix
 	{
 		Matrix<T> ret(m, n);
 #pragma omp parallel for
-		for( int i = 0; i < m; ++i ) for( int j = 0; j < n; ++j ) ret(i,j) = 1.0;
+		for( int i = 0; i < m*n; ++i ) ret.v[i] = 1.0;
 		return ret;
 	}
 
@@ -119,7 +119,7 @@ struct Matrix
 	{
 		Matrix<T> ret(m, n);
 #pragma omp parallel for
-		for( int i = 0; i < m; ++i ) for( int j = 0; j < n; ++j ) ret(i,j) = 0.0;
+		for( int i = 0; i < m*n; ++i ) ret.v[i] = 0.0;
 		return ret;
 	}
 
@@ -150,9 +150,7 @@ struct Matrix
 		Matrix<T> ret(m, n);
 
 #pragma omp parallel for schedule(auto)
-		for( int i = 0; i < m; ++i )
-			for( int j = 0; j < n; ++j )
-				ret(i,j) = m1(i,j)*m2(i,j);
+		for( int i = 0; i < m*n; ++i ) ret.v[i] = m1.v[i]*m2.v[i];
 
 		return ret;
 	}
@@ -193,10 +191,12 @@ struct Matrix
 #ifdef USE_EIGEN
 		this->v += m1.v;
 #else
+// #pragma omp parallel for schedule(auto)
+// 		for( int i = 0; i < m; ++i )
+// 			for( int j = 0; j < n; ++j )
+// 				(*this)(i,j) += m1(i,j);
 #pragma omp parallel for schedule(auto)
-		for( int i = 0; i < m; ++i )
-			for( int j = 0; j < n; ++j )
-				(*this)(i,j) += m1(i,j);
+		for( int i = 0; i < m*n; ++i ) this->v[i] += m1.v[i];
 #endif
 		cnt_flop += m*n;
 
@@ -210,9 +210,7 @@ struct Matrix
 		this->v -= m1.v;
 #else
 #pragma omp parallel for schedule(auto)
-		for( int i = 0; i < m; ++i )
-			for( int j = 0; j < n; ++j )
-				(*this)(i,j) -= m1(i,j);
+		for( int i = 0; i < m*n; ++i ) this->v[i] -= m1.v[i];
 #endif
 		cnt_flop += m*n;
 
@@ -235,9 +233,7 @@ struct Matrix
 		this->v *= c;
 #else
 #pragma omp parallel for schedule(auto)
-		for( int i = 0; i < this->m; ++i )
-			for( int j = 0; j < this->n; ++j )
-				(*this)(i,j) *= c;
+		for( int i = 0; i < m*n; ++i ) this->v[i] *= c;
 #endif
 		cnt_flop += this->m*this->n;
 
@@ -250,9 +246,7 @@ struct Matrix
 		this->v /= c;
 #else
 #pragma omp parallel for schedule(auto)
-		for( int i = 0; i < this->m; ++i )
-			for( int j = 0; j < this->n; ++j )
-				(*this)(i,j) /= c;
+		for( int i = 0; i < m*n; ++i ) this->v[i] /= c;
 #endif
 		cnt_flop += this->m*this->n;
 
@@ -268,9 +262,7 @@ struct Matrix
 		ret.v = m1.v + m2.v;
 #else
 #pragma omp parallel for schedule(auto)
-		for( int i = 0; i < m; ++i )
-			for( int j = 0; j < n; ++j )
-				ret(i,j) = m1(i,j) + m2(i,j);
+		for( int i = 0; i < m*n; ++i ) ret.v[i] = m1.v[i] + m2.v[i];
 #endif
 		cnt_flop += m*n;
 
@@ -285,9 +277,7 @@ struct Matrix
 		ret.v = m1.v - m2.v;
 #else
 #pragma omp parallel for schedule(auto)
-		for( int i = 0; i < m; ++i )
-			for( int j = 0; j < n; ++j )
-				ret(i,j) = m1(i,j) - m2(i,j);
+		for( int i = 0; i < m*n; ++i ) ret.v[i] = m1.v[i] - m2.v[i];
 #endif
 		cnt_flop += m*n;
 
