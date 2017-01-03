@@ -771,6 +771,7 @@ void Convolutional::param_mix ()
 			w[idx] = bias[i];
 		}
 	}
+
 	MPI_Allreduce(MPI_IN_PLACE, &w[0], cnt, MPI_DOUBLE_PRECISION, MPI_SUM, outer_world);
 	
 #pragma omp parallel
@@ -788,7 +789,7 @@ void Convolutional::param_mix ()
 #pragma omp for schedule(auto) nowait
 		for( int i = 0; i < bias.size(); ++i ){
 			int idx = W.size()*W[0].size()*W[0][0].m*W[0][0].n + i;
-			bias[i] = w[idx]/nprocs
+			bias[i] = w[idx]/nprocs;
 		}
 	}
 }
