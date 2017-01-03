@@ -119,11 +119,14 @@ std::vector<std::vector<FullyConnected::Mat>> FullyConnected::calc_gradient ( co
 	}
 	auto end = std::chrono::system_clock::now();
 	t_grad_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
-	
+
+	Mat V(U[0].m+1, U[0].n), tmp_delta(W[0][0].m, delta[0].n);
 	for( int i = 0; i < num_map; ++i )
 		for( int j = 0; j < prev_num_map; ++j ){
-			Mat V(U[j].m+1, U[j].n), U_ = (*prev_func)(U[j], false);
-			Mat tmp_delta(W[i][j].m, delta[i].n);
+			beg = std::chrono::system_clock::now();
+			Mat U_ = (*prev_func)(U[j], false);
+			end = std::chrono::system_clock::now();
+			t_grad_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
 			beg = std::chrono::system_clock::now();
 #pragma omp parallel
@@ -164,7 +167,10 @@ std::vector<FullyConnected::Mat> FullyConnected::calc_delta ( const std::vector<
 #endif
 	std::vector<Mat> tmp_delta(num_map, Mat(W[0][0].m, delta[0].n)),
 		tmp(prev_num_map), nx_delta(prev_num_map);
+	auto end = std::chrono::system_clock::now();
+	t_delta_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
+	beg = std::chrono::system_clock::now();
 #pragma omp parallel
 	{
 		for( int i = 0; i < num_map; ++i ){
@@ -175,8 +181,8 @@ std::vector<FullyConnected::Mat> FullyConnected::calc_delta ( const std::vector<
 			}
 		}
 	}
-	auto end = std::chrono::system_clock::now();
-	t_delta_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+	end = std::chrono::system_clock::now();
+	t_delta_repl += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
 	beg = std::chrono::system_clock::now();
 	for( int i = 0; i < prev_num_map; ++i ){
@@ -223,6 +229,10 @@ std::vector<FullyConnected::Mat> FullyConnected::apply ( const std::vector<Mat>&
 	std::vector<Mat> ret(num_map), tmp_ret(num_map);
 	std::vector<Mat> V(prev_num_map, Mat(U[0].m+1, U[0].n));
 	
+	auto end = std::chrono::system_clock::now();
+	t_apply_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+
+	beg = std::chrono::system_clock::now();
 #pragma omp parallel
 	{
 		for( int i = 0; i < prev_num_map; ++i ){
@@ -235,14 +245,14 @@ std::vector<FullyConnected::Mat> FullyConnected::apply ( const std::vector<Mat>&
 			}
 		}
 	}
-	auto end = std::chrono::system_clock::now();
-	t_apply_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+	end = std::chrono::system_clock::now();
+	t_apply_repl += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
 	beg = std::chrono::system_clock::now();
 	for( int i = 0; i < num_map; ++i ){
-		tmp_ret[i] = Mat::zeros(W[0][0].m, V[0].n);
+		tmp_ret[i] = W[i][0]*V[0]; //Mat::zeros(W[0][0].m, V[0].n);
 		ret[i] = Mat(num_unit, V[0].n);
-		for( int j = 0; j < prev_num_map; ++j )
+		for( int j = 1; j < prev_num_map; ++j )
 			tmp_ret[i] += W[i][j]*V[j];
 	}
 
@@ -259,13 +269,15 @@ std::vector<FullyConnected::Mat> FullyConnected::apply ( const std::vector<Mat>&
 #else
 	ret = tmp_ret;
 #endif
-
+	end = std::chrono::system_clock::now();
+	t_apply_gemm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 	
+	beg = std::chrono::system_clock::now();
 	if( use_func )
 		for( int i = 0; i < num_map; ++i )
 			ret[i] = (*func)(ret[i], false);
 	end = std::chrono::system_clock::now();
-	t_apply_gemm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+	t_apply_repl += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 	t_apply += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
 	
 	return ret;
