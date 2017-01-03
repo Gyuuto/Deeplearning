@@ -24,6 +24,13 @@ extern "C"{
 #endif
 
 long long cnt_flop = 0;
+
+template<class T>
+struct Matrix;
+
+#include "tMatrix.hpp"
+
+
 template<class T>
 struct Matrix
 {
@@ -123,25 +130,19 @@ struct Matrix
 		return ret;
 	}
 
-	static Matrix<T> transpose( const Matrix<T>& mat )
+	static tMatrix<T> transpose( const Matrix<T>& mat )
 	{
-		int m = mat.m, n = mat.n;
-		Matrix<T> ret(n, m);
+// 		int m = mat.m, n = mat.n;
+// 		Matrix<T> ret(n, m);
 
-#pragma omp parallel for schedule(auto)
-		for( int i = 0; i < n*m; ++i ){
-			int idx1 = i/m, idx2 = i%m;
-			ret(idx1,idx2) = mat(idx2,idx1);
-		}
-// #pragma omp parallel for default(none) \
-// 	private(i,j) shared(m,n,mat,ret)
-// 		for( i = 0; i < n; ++i ){
-// 			for( j = 0; j < m; ++j ){
-// 				ret(i,j) = mat(j,i);
-// 			}
+// #pragma omp parallel for schedule(auto)
+// 		for( int i = 0; i < n*m; ++i ){
+// 			int idx1 = i/m, idx2 = i%m;
+// 			ret(idx1,idx2) = mat(idx2,idx1);
 // 		}
 
-		return ret;
+// 		return ret;
+		return tMatrix<T>(&mat);
 	}
 
 	static Matrix<T> hadamard ( const Matrix<T>& m1, const Matrix<T>& m2 )
@@ -167,6 +168,12 @@ struct Matrix
 		return sqrt(ret);
 	}
 
+	void apply ( const std::function<double(const double&)>& func )
+	{
+#pragma omp parallel for schedule(auto)
+		for( int i = 0; i < m*n; ++i ) this->v[i] = func(this->v[i]);
+	}
+	
 	const T& operator () ( int i, int j ) const
 	{
 #ifdef USE_EIGEN
@@ -218,6 +225,16 @@ struct Matrix
 	}
 
 	Matrix<T>& operator *= ( const Matrix<T>& m1 )
+	{
+#ifdef USE_EIGEN
+		this->v *= m1.v;
+#else
+		*this = *this*m1;
+#endif
+		return *this;
+	}
+
+	Matrix<T>& operator *= ( const tMatrix<T>& m1 )
 	{
 #ifdef USE_EIGEN
 		this->v *= m1.v;
