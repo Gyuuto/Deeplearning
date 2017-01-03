@@ -35,9 +35,9 @@ protected:
 	std::shared_ptr<Function> func, prev_func;
 public:
 	double t_apply, t_delta, t_grad;
-	double t_apply_init, t_apply_gemm, t_apply_repl;
-	double t_delta_init, t_delta_gemm, t_delta_repl;
-	double t_grad_init, t_grad_gemm, t_grad_repl;
+	double t_apply_init, t_apply_gemm, t_apply_repl, t_apply_comm;
+	double t_delta_init, t_delta_gemm, t_delta_repl, t_delta_comm;
+	double t_grad_init, t_grad_gemm, t_grad_repl, t_grad_comm;
 
 	Layer(){}
 

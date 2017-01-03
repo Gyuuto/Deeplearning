@@ -46,9 +46,9 @@ FullyConnected::FullyConnected( int prev_num_map, int prev_num_unit, int num_map
 	this->is_use_bias = use_bias;
 
 	t_apply = t_delta = t_grad = 0.0;
-	t_apply_init = t_apply_gemm = t_apply_repl = 0.0;
-	t_delta_init = t_delta_gemm = t_delta_repl = 0.0;
-	t_grad_init = t_grad_gemm = t_grad_repl = 0.0;
+	t_apply_init = t_apply_gemm = t_apply_repl = t_apply_comm = 0.0;
+	t_delta_init = t_delta_gemm = t_delta_repl = t_delta_comm = 0.0;
+	t_grad_init = t_grad_gemm = t_grad_repl = t_grad_comm = 0.0;
 
 	func = f;
 }
@@ -191,13 +191,19 @@ std::vector<FullyConnected::Mat> FullyConnected::calc_delta ( const std::vector<
 			for( int j = 0; j < num_map; ++j )
 				tmp[i] += Mat::transpose(W[j][i])*tmp_delta[j];
 	}
+	end = std::chrono::system_clock::now();
+	t_delta_gemm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
+	beg = std::chrono::system_clock::now();
 #ifdef USE_MPI
 	for( int i = 0; i < prev_num_map; ++i )
 		MPI_Allreduce(MPI_IN_PLACE, &tmp[i](0,0), tmp[i].m*tmp[i].n,
 					  MPI_DOUBLE_PRECISION, MPI_SUM, inner_world);
 #endif
+	end = std::chrono::system_clock::now();
+	t_delta_comm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 	
+	beg = std::chrono::system_clock::now();
 	for( int i = 0; i < prev_num_map; ++i ){
 		Mat V(tmp[i].m-1, tmp[i].n), U_ = (*prev_func)(U[i], true);
 #pragma omp parallel for schedule(auto)
@@ -208,7 +214,7 @@ std::vector<FullyConnected::Mat> FullyConnected::calc_delta ( const std::vector<
 		nx_delta[i] = Mat::hadamard(V, U_);
 	}
 	end = std::chrono::system_clock::now();
-	t_delta_gemm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+	t_delta_repl += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 	t_delta += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
 
 	return nx_delta;
@@ -255,7 +261,10 @@ std::vector<FullyConnected::Mat> FullyConnected::apply ( const std::vector<Mat>&
 		for( int j = 1; j < prev_num_map; ++j )
 			tmp_ret[i] += W[i][j]*V[j];
 	}
+	end = std::chrono::system_clock::now();
+	t_apply_gemm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
+	beg = std::chrono::system_clock::now();
 #ifdef USE_MPI
 	std::vector<int> size(nprocs), offset(nprocs);
 	for( int i = 0; i < nprocs; ++i ){
@@ -270,7 +279,7 @@ std::vector<FullyConnected::Mat> FullyConnected::apply ( const std::vector<Mat>&
 	ret = tmp_ret;
 #endif
 	end = std::chrono::system_clock::now();
-	t_apply_gemm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+	t_apply_comm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 	
 	beg = std::chrono::system_clock::now();
 	if( use_func )
