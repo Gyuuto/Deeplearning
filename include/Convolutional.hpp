@@ -753,24 +753,44 @@ void Convolutional::param_mix ()
 	int cnt = W.size()*W[0].size()*W[0][0].m*W[0][0].n + bias.size();
 	std::vector<double> w(cnt);
 
-	int idx = 0;
-	for( int i = 0; i < W.size(); ++i )
-		for( int j = 0; j < W[i].size(); ++j )
-			for( int k = 0; k < W[i][j].m; ++k )
-				for( int l = 0; l < W[i][j].n; ++l )
-					w[idx++] = W[i][j](k,l);
-
-	for( int i = 0; i < bias.size(); ++i ) w[idx++] = bias[i];
-	
+#pragma omp parallel
+	{
+		for( int i = 0; i < W.size(); ++i )
+			for( int j = 0; j < W[i].size(); ++j )
+#pragma omp for schedule(auto) nowait
+				for( int k = 0; k < W[i][j].m; ++k )
+					for( int l = 0; l < W[i][j].n; ++l ){
+						int idx = i*(W[i].size()*W[i][j].m*W[i][j].n) +
+							j*(W[i][j].m*W[i][j].n) + k*W[i][j].n + l;
+						w[idx] = W[i][j](k,l);
+					}
+		
+#pragma omp for schedule(auto) nowait
+		for( int i = 0; i < bias.size(); ++i ){
+			int idx = W.size()*W[0].size()*W[0][0].m*W[0][0].n + i;
+			w[idx] = bias[i];
+		}
+	}
 	MPI_Allreduce(MPI_IN_PLACE, &w[0], cnt, MPI_DOUBLE_PRECISION, MPI_SUM, outer_world);
+	
+#pragma omp parallel
+	{
+		for( int i = 0; i < W.size(); ++i )
+			for( int j = 0; j < W[i].size(); ++j )
+#pragma omp for schedule(auto) nowait
+				for( int k = 0; k < W[i][j].m; ++k )
+					for( int l = 0; l < W[i][j].n; ++l ){
+						int idx = i*(W[i].size()*W[i][j].m*W[i][j].n) +
+							j*(W[i][j].m*W[i][j].n) + k*W[i][j].n + l;
+						W[i][j](k,l) = w[idx] / nprocs;
+					}
 
-	idx = 0;
-	for( int i = 0; i < W.size(); ++i )
-		for( int j = 0; j < W[i].size(); ++j )
-			for( int k = 0; k < W[i][j].m; ++k )
-				for( int l = 0; l < W[i][j].n; ++l )
-					W[i][j](k,l) = w[idx++]/nprocs;
-	for( int i = 0; i < bias.size(); ++i ) bias[i] = w[idx++]/nprocs;
+#pragma omp for schedule(auto) nowait
+		for( int i = 0; i < bias.size(); ++i ){
+			int idx = W.size()*W[0].size()*W[0][0].m*W[0][0].n + i;
+			bias[i] = w[idx]/nprocs
+		}
+	}
 }
 #endif
 
