@@ -169,7 +169,7 @@ void Neuralnet::check_gradient ( int cnt, const std::vector<int>& idx, const std
 				for( int l = 0; l < std::min(2, L); ++l ){
 					for( int m = 0; m < std::min(2, M); ++m ){
 						double tmp;
-						if( rank == target_rank ) tmp = 1.0E-6*(std::abs(W[j][k](l,m)) < 1.0E-3 ? 1.0 : std::abs(W[j][k](l,m)));
+						if( layer[i]->get_num_map() != 1 || rank == target_rank ) tmp = 1.0E-6*(std::abs(W[j][k](l,m)) < 1.0E-3 ? 1.0 : std::abs(W[j][k](l,m)));
 
 						if( layer[i]->get_num_map() != 1 || rank == target_rank ){
 							W[j][k](l,m) += tmp;
