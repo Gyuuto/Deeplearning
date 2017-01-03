@@ -14,7 +14,6 @@
 #endif
 
 #include "Layer.hpp"
-#include "Convolutional.hpp"
 #include "Function.hpp"
 #include "Matrix.hpp"
 
@@ -134,7 +133,7 @@ std::vector<std::vector<std::vector<Neuralnet::Mat>>> Neuralnet::calc_gradient (
 
 void Neuralnet::check_gradient ( int cnt, const std::vector<int>& idx, const std::vector<Mat>& X, const std::vector<Mat>& Y, const std::vector<std::vector<std::vector<Mat>>>& nabla_w )
 {
-	int rank = 0, target_rank = 6;
+	int rank = 0, target_rank = 0;
 	int num_layer = this->layer.size();
 
 #ifdef USE_MPI
@@ -369,19 +368,30 @@ void Neuralnet::learning ( const std::vector<Mat>& X, const std::vector<Mat>& Y,
 
 	int cnt = 0;
 	for( int n = 0; n < MAX_ITER; ++n ){
-		// assign data to mini-batch
-		for( int i = 0; i < X.size(); ++i )
-			for( int j = 0; j < U[0][i].m; ++j )
-				for( int k = 0; k < BATCH_SIZE; ++k )
-					U[0][i](j,k) = X[i](j, idx[(cnt+k)%num_data]);
-		
-		for( int i = 0; i < Y.size(); ++i )
-			for( int j = 0; j < D[i].m; ++j )
-				for( int k = 0; k < BATCH_SIZE; ++k )
-					D[i](j,k) = Y[i](j, idx[(cnt+k)%num_data]);
-
 #ifdef DEBUG
 		auto beg = std::chrono::system_clock::now();
+#endif
+		// assign data to mini-batch
+#pragma omp parallel
+		{
+			for( int i = 0; i < X.size(); ++i )
+#pragma omp for schedule(auto) nowait
+				for( int j = 0; j < U[0][i].m; ++j )
+					for( int k = 0; k < BATCH_SIZE; ++k )
+						U[0][i](j,k) = X[i](j, idx[(cnt+k)%num_data]);
+		
+			for( int i = 0; i < Y.size(); ++i )
+#pragma omp for schedule(auto) nowait
+				for( int j = 0; j < D[i].m; ++j )
+					for( int k = 0; k < BATCH_SIZE; ++k )
+						D[i](j,k) = Y[i](j, idx[(cnt+k)%num_data]);
+		}
+#ifdef DEBUG
+		auto end = std::chrono::system_clock::now();
+		if( myrank == 0 ) printf("Init : %3lld %d\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count(), n);
+#endif
+#ifdef DEBUG
+		beg = std::chrono::system_clock::now();
 #endif
 		// feed forward calculation
 		for( int i = 0; i < num_layer; ++i ) {
@@ -406,7 +416,7 @@ void Neuralnet::learning ( const std::vector<Mat>& X, const std::vector<Mat>& Y,
 #endif
 		}
 #ifdef DEBUG
-		auto end = std::chrono::system_clock::now();
+		end = std::chrono::system_clock::now();
 		if( myrank == 0 ) printf("Feed : %3lld %d\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count(), n);
 #endif
 
