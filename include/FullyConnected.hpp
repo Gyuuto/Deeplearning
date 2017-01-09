@@ -196,16 +196,27 @@ std::vector<FullyConnected::Mat> FullyConnected::calc_delta ( const std::vector<
 
 	beg = std::chrono::system_clock::now();
 #ifdef USE_MPI
+	std::vector<MPI_Request> req(prev_num_map);
 	for( int i = 0; i < prev_num_map; ++i )
-		MPI_Allreduce(MPI_IN_PLACE, &tmp[i](0,0), tmp[i].m*tmp[i].n,
-					  MPI_DOUBLE_PRECISION, MPI_SUM, inner_world);
+		MPI_Iallreduce(MPI_IN_PLACE, &tmp[i](0,0), tmp[i].m*tmp[i].n,
+					   MPI_DOUBLE_PRECISION, MPI_SUM, inner_world, &req[i]);
 #endif
 	end = std::chrono::system_clock::now();
 	t_delta_comm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 	
+
 	beg = std::chrono::system_clock::now();
 	for( int i = 0; i < prev_num_map; ++i ){
-		Mat V(tmp[i].m-1, tmp[i].n), U_ = (*prev_func)(U[i], true);
+		Mat V(W[0][0].n-1, tmp_delta[0].n), U_ = (*prev_func)(U[i], true);
+
+#ifdef USE_MPI
+		beg = std::chrono::system_clock::now();
+		MPI_Status stat;
+		MPI_Wait(&req[i], &stat);
+		end = std::chrono::system_clock::now();
+		t_delta_comm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+#endif
+
 #pragma omp parallel for schedule(auto)
 		for( int j = 0; j < tmp[i].m-1; ++j )
 			for( int k = 0; k < tmp[i].n; ++k )
@@ -272,9 +283,10 @@ std::vector<FullyConnected::Mat> FullyConnected::apply ( const std::vector<Mat>&
 		offset[i] = i*num_unit/nprocs*U[0].n;
 	}
 
+	std::vector<MPI_Request> req(num_map);
 	for( int i = 0; i < num_map; ++i )
-		MPI_Allgatherv(&tmp_ret[i](0,0), size[rank], MPI_DOUBLE_PRECISION,
-					   &ret[i](0,0), &size[0], &offset[0], MPI_DOUBLE_PRECISION, inner_world);
+		MPI_Iallgatherv(&tmp_ret[i](0,0), size[rank], MPI_DOUBLE_PRECISION,
+						&ret[i](0,0), &size[0], &offset[0], MPI_DOUBLE_PRECISION, inner_world, &req[i]);
 #else
 	ret = tmp_ret;
 #endif
@@ -283,10 +295,30 @@ std::vector<FullyConnected::Mat> FullyConnected::apply ( const std::vector<Mat>&
 	
 	beg = std::chrono::system_clock::now();
 	if( use_func )
-		for( int i = 0; i < num_map; ++i )
+		for( int i = 0; i < num_map; ++i ){
+#ifdef USE_MPI
+			beg = std::chrono::system_clock::now();
+			MPI_Status stat;
+			MPI_Wait(&req[i], &stat);
+			end = std::chrono::system_clock::now();
+			t_apply_comm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+#endif
 			ret[i] = (*func)(ret[i], false);
+		}
+#ifdef USE_MPI
+	else{
+		beg = std::chrono::system_clock::now();
+		for( int i = 0; i < num_map; ++i ){
+			MPI_Status stat;
+			MPI_Wait(&req[i], &stat);
+		}
+		end = std::chrono::system_clock::now();
+		t_apply_comm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+	}
+#endif
 	end = std::chrono::system_clock::now();
 	t_apply_repl += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+
 	t_apply += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
 	
 	return ret;

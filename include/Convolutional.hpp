@@ -267,9 +267,9 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 			for( int l = 0; l < size; ++l )
 #pragma omp for schedule(auto) nowait
 				for( int k = 0; k < num_map; ++k )
-					for( int s = 0; s < n; ++s )
-						for( int t = 0; t < m; ++ t )
-							for( int j = l_idx; j < r_idx; ++j )
+					for( int j = l_idx; j < r_idx; ++j )
+						for( int s = 0; s < n; ++s )
+							for( int t = 0; t < m; ++ t )
 								if( delta_idx[(j-l_idx)*m*n + t*n + s] != -1 )
 									delta_mat(k*m*n + s*m + t, delta_idx[(j-l_idx)*m*n + t*n + s] + l*my_size) = delta[k](j, l+i);
 
@@ -316,6 +316,7 @@ std::vector<std::vector<Convolutional::Mat>> Convolutional::calc_gradient ( cons
 	
 	beg = std::chrono::system_clock::now();
 #ifdef USE_MPI
+	std::vector<MPI_Request> req(num_map*prev_num_map);
 	for( int i = 0; i < num_map; ++i )
 		for( int j = 0; j < prev_num_map; ++j )
 			MPI_Allreduce(MPI_IN_PLACE, &nabla[i][j](0,0), m*n, MPI_DOUBLE_PRECISION, MPI_SUM, inner_world);
@@ -419,8 +420,9 @@ std::vector<Convolutional::Mat> Convolutional::calc_delta ( const std::vector<Ma
 		gath_displs[i] = offset[i]*U[0].n;
 	}
 
-	MPI_Allgatherv(MPI_IN_PLACE, gath_size[rank], MPI_DOUBLE_PRECISION,
-				   buf, &gath_size[0], &gath_displs[0], MPI_DOUBLE_PRECISION, inner_world);
+	MPI_Request req;
+	MPI_Iallgatherv(MPI_IN_PLACE, gath_size[rank], MPI_DOUBLE_PRECISION,
+					buf, &gath_size[0], &gath_displs[0], MPI_DOUBLE_PRECISION, inner_world, &req);
 	end = std::chrono::system_clock::now();
 	t_delta_comm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
@@ -429,10 +431,24 @@ std::vector<Convolutional::Mat> Convolutional::calc_delta ( const std::vector<Ma
 	{
 		for( int j = 0; j < prev_num_map; ++j )
 #pragma omp for schedule(auto) nowait
-			for( int n = 0; n < nprocs; ++n )
+			for( int k = 0; k < size[rank]/prev_num_map; ++k )
+				for( int i = 0; i < U[0].n; ++i )
+					nx_delta[j](offset[rank]/prev_num_map+k, i) = buf[i*size[rank]+j*size[rank]/prev_num_map+k + offset[rank]*U[0].n];
+	}
+
+	MPI_Status stat;
+	MPI_Wait(&req, &stat);
+	
+#pragma omp parallel
+	{
+		for( int j = 0; j < prev_num_map; ++j )
+			for( int n = 0; n < nprocs; ++n ){
+				if( n == rank ) continue;
+#pragma omp for schedule(auto) nowait
 				for( int k = 0; k < size[n]/prev_num_map; ++k )
 					for( int i = 0; i < U[0].n; ++i )
 						nx_delta[j](offset[n]/prev_num_map+k, i) = buf[i*size[n]+j*size[n]/prev_num_map+k + offset[n]*U[0].n];
+			}
 	}
 	end = std::chrono::system_clock::now();
 	t_delta_repl += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
@@ -444,9 +460,9 @@ std::vector<Convolutional::Mat> Convolutional::calc_delta ( const std::vector<Ma
 	{
 		for( int j = 0; j < prev_num_map; ++j )
 #pragma omp for schedule(auto) nowait
-			for( int k = 0; k < prev_num_unit; ++k )
+			for( int k = 0; k < my_size; ++k )
 				for( int i = 0; i < U[0].n; ++i )
-					nx_delta[j](k, i) = tmp_nx_delta(i, j*prev_num_unit + k);
+					nx_delta[j](k, i) = tmp_img[i/once_num](k + (i%once_num)*my_size, j);
 	}
 	end = std::chrono::system_clock::now();
 	t_delta_repl += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
@@ -557,21 +573,35 @@ std::vector<Convolutional::Mat> Convolutional::apply ( const std::vector<Mat>& U
 		gath_displs[i] = offset[i]*U[0].n;
 	}
 
-	MPI_Allgatherv(MPI_IN_PLACE, gath_size[rank], MPI_DOUBLE_PRECISION,
-				   buf, &gath_size[0], &gath_displs[0], MPI_DOUBLE_PRECISION, inner_world);
+	MPI_Request req;
+	MPI_Iallgatherv(MPI_IN_PLACE, gath_size[rank], MPI_DOUBLE_PRECISION,
+					buf, &gath_size[0], &gath_displs[0], MPI_DOUBLE_PRECISION, inner_world, &req);
 	end = std::chrono::system_clock::now();
 	t_apply_comm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
 	beg = std::chrono::system_clock::now();
-
 #pragma omp parallel
 	{
 		for( int j = 0; j < num_map; ++j )
 #pragma omp for schedule(auto) nowait
-			for( int n = 0; n < nprocs; ++n )
+			for( int k = 0; k < size[rank]/num_map; ++k )
+				for( int i = 0; i < U[0].n; ++i )
+						ret[j](offset[rank]/num_map+k, i) = buf[i*size[rank]+j*size[rank]/num_map+k + offset[rank]*U[0].n];
+	}
+
+	MPI_Status stat;
+	MPI_Wait(&req, &stat);
+
+#pragma omp parallel
+	{
+		for( int j = 0; j < num_map; ++j )
+			for( int n = 0; n < nprocs; ++n ){
+				if( n == rank ) continue;
+#pragma omp for schedule(auto) nowait
 				for( int k = 0; k < size[n]/num_map; ++k )
 					for( int i = 0; i < U[0].n; ++i )
 						ret[j](offset[n]/num_map+k, i) = buf[i*size[n]+j*size[n]/num_map+k + offset[n]*U[0].n];
+			}
 	}
 	end = std::chrono::system_clock::now();
 	t_apply_repl += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
@@ -586,7 +616,7 @@ std::vector<Convolutional::Mat> Convolutional::apply ( const std::vector<Mat>& U
 #pragma omp for schedule(auto) nowait
 			for( int k = 0; k < num_unit; ++k )
 				for( int i = 0; i < U[0].n; ++i )
-					ret[j](k, i) = tmp_ret(i, j*num_unit+k);
+					ret[j](k, i) = tmp_img[i/once_num](k + (i%once_num)*my_size, j);
 	}
 	end = std::chrono::system_clock::now();
 	t_apply_repl += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
@@ -714,6 +744,7 @@ void Convolutional::set_W ( const std::string& filename )
 		for( int j = 0; j < prev_num_map; ++j ){
 			ifs.read((char*)&W[i][j].m, sizeof(W[i][j].m));
 			ifs.read((char*)&W[i][j].n, sizeof(W[i][j].n));
+	
 			for( int k = 0; k < W[i][j].m; ++k )
 				for( int l = 0; l < W[i][j].n; ++l ){
 					ifs.read((char*)&W[i][j](k,l), sizeof(W[i][j](k,l)));
