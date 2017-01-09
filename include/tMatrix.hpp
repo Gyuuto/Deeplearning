@@ -37,11 +37,12 @@ struct tMatrix
 	
 	friend Matrix<T> operator * ( const Matrix<T>& m1, const tMatrix<T>& m2 )
 	{
-		int m = m1.m, n = m2.n, l = m1.n, k = m2.m;
+		int m = m1.m, n = m2.n, l = m1.n;
 		Matrix<T> ret(m, n);
 #ifdef USE_EIGEN
 		ret.v = m1.v*m2.v;
 #elif USE_BLAS
+		int k = m2.m;
 		T ONE = 1.0, ZERO = 0.0;
 		
 		if( m != 0 && n != 0 && l != 0 ){
@@ -69,11 +70,12 @@ struct tMatrix
 
 	friend Matrix<T> operator * ( const tMatrix<T>& m1, const Matrix<T>& m2 )
 	{
-		int m = m1.m, n = m2.n, l = m1.n, k = m2.m;
+		int m = m1.m, n = m2.n, l = m1.n;
 		Matrix<T> ret(m, n);
 #ifdef USE_EIGEN
 		ret.v = m1.v*m2.v;
 #elif USE_BLAS
+		int k = m2.m;
 		T ONE = 1.0, ZERO = 0.0;
 
 		if( m != 0 && n != 0 && l != 0 ){
