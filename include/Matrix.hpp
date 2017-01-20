@@ -161,9 +161,8 @@ struct Matrix
 		int m = mat.m, n = mat.n;
 		T ret = 0.0;
 
-		for( int i = 0; i < m; ++i )
-			for( int j = 0; j < n; ++j )
-				ret += mat(i,j)*mat(i,j);
+#pragma omp parallel for schedule(auto) reduction(+:ret)
+		for( int i = 0; i < m*n; ++i ) ret += mat.v[i]*mat.v[i];
 
 		return sqrt(ret);
 	}
@@ -205,7 +204,7 @@ struct Matrix
 #pragma omp parallel for schedule(auto)
 		for( int i = 0; i < m*n; ++i ) this->v[i] += m1.v[i];
 #endif
-		cnt_flop += m*n;
+		cnt_flop += (long long)m*n;
 
 		return *this;
 	}
@@ -219,7 +218,7 @@ struct Matrix
 #pragma omp parallel for schedule(auto)
 		for( int i = 0; i < m*n; ++i ) this->v[i] -= m1.v[i];
 #endif
-		cnt_flop += m*n;
+		cnt_flop += (long long)m*n;
 
 		return *this;
 	}
@@ -252,7 +251,7 @@ struct Matrix
 #pragma omp parallel for schedule(auto)
 		for( int i = 0; i < m*n; ++i ) this->v[i] *= c;
 #endif
-		cnt_flop += this->m*this->n;
+		cnt_flop += (long long)this->m*this->n;
 
 		return *this;
 	}
@@ -265,7 +264,7 @@ struct Matrix
 #pragma omp parallel for schedule(auto)
 		for( int i = 0; i < m*n; ++i ) this->v[i] /= c;
 #endif
-		cnt_flop += this->m*this->n;
+		cnt_flop += (long long)this->m*this->n;
 
 		return *this;
 	}
@@ -281,7 +280,7 @@ struct Matrix
 #pragma omp parallel for schedule(auto)
 		for( int i = 0; i < m*n; ++i ) ret.v[i] = m1.v[i] + m2.v[i];
 #endif
-		cnt_flop += m*n;
+		cnt_flop += (long long)m*n;
 
 		return ret;
 	}
@@ -296,7 +295,7 @@ struct Matrix
 #pragma omp parallel for schedule(auto)
 		for( int i = 0; i < m*n; ++i ) ret.v[i] = m1.v[i] - m2.v[i];
 #endif
-		cnt_flop += m*n;
+		cnt_flop += (long long)m*n;
 
 		return ret;
 	}
@@ -329,7 +328,7 @@ struct Matrix
 			}
 		
 #endif
-		cnt_flop += m*n*l;
+		cnt_flop += (long long)m*n*l;
 
 		return ret;
 	}
@@ -342,12 +341,9 @@ struct Matrix
 		ret.v = c*m1.v;
 #else
 #pragma omp parallel for schedule(auto)
-		for( int i = 0; i < m; ++i )
-			for( int j = 0; j < n; ++j ){
-				ret(i,j) = c*m1(i,j);
-			}
+		for( int i = 0; i < m*n; ++i ) ret.v[i] = c*m1.v[i];
 #endif
-		cnt_flop += m*n;
+		cnt_flop += (long long)m*n;
 
 		return ret;
 	}

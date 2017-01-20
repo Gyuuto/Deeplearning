@@ -1,6 +1,7 @@
 #ifndef CONVOLUTIONAL_HPP
 #define CONVOLUTIONAL_HPP
 
+#include <fstream>
 #include "Layer.hpp"
 
 class Convolutional : public Layer
@@ -39,6 +40,7 @@ public:
 
 	void set_once_num ( const int& once_num );
 	
+
 	void set_W ( const std::string& filename );
 	void output_W ( const std::string& filename );
 	
@@ -538,10 +540,7 @@ std::vector<Convolutional::Mat> Convolutional::apply ( const std::vector<Mat>& U
 				for( int j = 0; j < my_size; ++j )
 					for( int k = 0; k < prev_num_map; ++k )
 						for( int s = 0; s < m*n; ++ s ){
-							if( feed_idx[j*m*n + s] != -1 )
-								input_image(l*my_size + j, m*n*k + s) = U[k](feed_idx[j*m*n + s], i+l);
-							else
-								input_image(l*my_size + j, m*n*k + s) = 0.0;
+							input_image(l*my_size + j, m*n*k + s) = (feed_idx[j*m*n + s] != -1 ? U[k](feed_idx[j*m*n + s], i+l) : 0.0);
 						}
 		}
 		auto end = std::chrono::system_clock::now();

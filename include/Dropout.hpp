@@ -17,7 +17,7 @@ private:
 	Mat mask;
 public:
 	Dropout ( int prev_num_map, int prev_num_unit, double dropout_p, 
-							const std::shared_ptr<Function>& f );
+			  const std::shared_ptr<Function>& f );
 	
 #ifdef USE_MPI
 	void init( std::mt19937& m, MPI_Comm inner_world, MPI_Comm outer_world );

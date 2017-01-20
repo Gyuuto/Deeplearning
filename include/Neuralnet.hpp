@@ -297,7 +297,6 @@ void Neuralnet::averaging ()
 {
 	for( int i = 0; i < layer.size(); ++i ){
 		layer[i]->param_mix();
-		
 		// for( int j = 0; j < adam_v[i].size(); ++j )
 		// 	for( int k = 0; k < adam_v[i][j].size(); ++k )
 		// 		for( int l = 0; l < adam_v[i][j][k].m; ++l )
@@ -503,7 +502,7 @@ void Neuralnet::learning ( const std::vector<Mat>& X, const std::vector<Mat>& Y,
 		beg = std::chrono::system_clock::now();
 #endif
 #ifdef USE_MPI
-		if( UPDATE_ITER != -1 && n % UPDATE_ITER == 0 ){
+		if( UPDATE_ITER != -1 && (n+1) % UPDATE_ITER == 0 ){
 			averaging();
 		}
 #endif
