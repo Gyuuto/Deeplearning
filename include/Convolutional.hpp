@@ -368,13 +368,13 @@ std::vector<Convolutional::Mat> Convolutional::calc_delta ( const std::vector<Ma
 		int size = std::min(once_num, delta[0].n - i);
 		auto beg = std::chrono::system_clock::now();
 
+#pragma omp parallel for schedule(auto)
+		for( int j = 0; j < my_size*once_num; ++j )
+			for( int k = 0; k < m*n*num_map; ++k )
+				input_image(j, k) = 0.0;
+		
 #pragma omp parallel
 		{
-#pragma omp for schedule(auto) nowait
-			for( int j = 0; j < my_size*once_num; ++j )
-				for( int k = 0; k < m*n*num_map; ++k )
-					input_image(j, k) = 0.0;
-		
 			const int gap = prev_ldu + 2*pad;
 #ifdef USE_MPI
 			const int tmp_size = (rank+1)*num_unit/nprocs - rank*num_unit/nprocs; 
