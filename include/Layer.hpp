@@ -12,7 +12,7 @@
 #include <mpi.h>
 #endif
 
-#include "matrix.hpp"
+#include "Matrix.hpp"
 #include "Function.hpp"
 
 class Layer
@@ -20,6 +20,8 @@ class Layer
 protected:
 	typedef Matrix<double> Mat;
 	typedef std::vector<double> Vec;
+
+	bool is_use_bias;
 
 	int prev_num_map, num_map;
 	int prev_num_unit, num_unit;
@@ -33,9 +35,9 @@ protected:
 	std::shared_ptr<Function> func, prev_func;
 public:
 	double t_apply, t_delta, t_grad;
-	double t_apply_init, t_apply_gemm, t_apply_repl;
-	double t_delta_init, t_delta_gemm, t_delta_repl;
-	double t_grad_init, t_grad_gemm, t_grad_repl;
+	double t_apply_init, t_apply_gemm, t_apply_repl, t_apply_comm;
+	double t_delta_init, t_delta_gemm, t_delta_repl, t_delta_comm;
+	double t_grad_init, t_grad_gemm, t_grad_repl, t_grad_comm;
 
 	Layer(){}
 
@@ -56,6 +58,7 @@ public:
 	
 	virtual std::vector<std::vector<Mat>> get_W ();
 	virtual std::shared_ptr<Function> get_function ();
+	virtual std::shared_ptr<Function> get_prev_function ();
 
 	virtual int get_num_map();
 	virtual int get_num_unit();
@@ -82,6 +85,11 @@ std::vector<std::vector<Layer::Mat>> Layer::get_W ()
 std::shared_ptr<Function> Layer::get_function ()
 {
 	return func;
+}
+
+std::shared_ptr<Function> Layer::get_prev_function ()
+{
+	return prev_func;
 }
 
 int Layer::get_num_map()

@@ -114,10 +114,9 @@ int main( int argc, char* argv[] )
 									20, 7*7, 7,
 									2, 2, 2, shared_ptr<Function>(new Identity)));
 	layers.emplace_back(new FullyConnected(20, 7*7, 1, 512, shared_ptr<Function>(new ReLU)));
-	layers.emplace_back(new Dropout(1, 512, 0.5, shared_ptr<Function>(new Identity)));
 	layers.emplace_back(new FullyConnected(1, 512, 1, 10, shared_ptr<Function>(new Softmax)));
 
-	// this neuralnet has 7 layers, input, Conv1, MaxPool, Conv2, MaxPool, Fc1 and Fc2;
+	// this neuralnet has 6 layers, Conv1, MaxPool, Conv2, MaxPool, Fc1 and Fc2;
 	for( int i = 0; i < layers.size(); ++i ){
 		net.add_layer(layers[i]);
 	}
@@ -261,7 +260,7 @@ int main( int argc, char* argv[] )
 		if( inner_rank == 0 ){
 			for( int i = 0; i < outer_nprocs; ++i ){
 				if( i == outer_rank ){
-					printf("outer rank : %d, iter : %d\n", outer_rank, iter);
+					printf("outer rank : %d, iter : %d\n", outer_rank, iter+1);
 					printf("  Elapsed time : %.3f, Total time : %.3f\n",
 						   chrono::duration_cast<chrono::milliseconds>(tmp_time - prev_time).count()/1e3,
 						   chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now() - total_time).count()/1e3);
@@ -282,7 +281,7 @@ int main( int argc, char* argv[] )
 	net.set_LAMBDA(LAMBDA);
 	net.set_BATCHSIZE(BATCH_SIZE);
 	net.set_UPDATEITER(N/BATCH_SIZE*UPDATE_EPOCH);
-	// learning the neuralnet in 20 EPOCH and output error defined above in each epoch.
+	// learning the neuralnet in SOME EPOCH and output error defined above in each epoch.
 	prev_time = total_time = chrono::system_clock::now();
 	net.learning(train_x, d, N/BATCH_SIZE*NUM_EPOCH, check_error);
 

@@ -24,6 +24,13 @@ extern "C"{
 #endif
 
 long long cnt_flop = 0;
+
+template<class T>
+struct Matrix;
+
+#include "tMatrix.hpp"
+
+
 template<class T>
 struct Matrix
 {
@@ -31,17 +38,19 @@ struct Matrix
 #ifdef USE_EIGEN
 	Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> v;
 #else
-	std::vector<T> v;
+	// std::vector<T> v;
+	T* v;
 #endif
 	
-	Matrix(){}
+	Matrix(): m(0), n(0), v(NULL) { }
 	Matrix( const int& m, const int& n ) :m(m), n(n)
 	{
 #ifdef USE_EIGEN
 		v = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>(m, n);
 		for( int i = 0; i < m; ++i ) for( int j = 0; j < n; ++j ) v(i,j) = T();
 #else
-		v = std::vector<T>(m*n, T());
+		// v = std::vector<T>(m*n, T());
+		v = new T[m*n];
 #endif
 	}
 
@@ -51,7 +60,9 @@ struct Matrix
 		this->v = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>(m, n);
 		for( int i = 0; i < m; ++i ) this->v(i, 0) = v[i];
 #else
-		this->v = std::vector<T>(v.size(), T());
+		// this->v = std::vector<T>(v.size(), T());
+		// for( int i = 0; i < m; ++i ) this->v[i] = v[i];
+		this->v = new T[m*n];
 		for( int i = 0; i < m; ++i ) this->v[i] = v[i];
 #endif
 	}
@@ -59,10 +70,46 @@ struct Matrix
 #ifdef USE_EIGEN
 	Matrix( const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>& A ) :v(A), m(A.rows()), n(A.cols()) {}
 #endif
+
+	Matrix( const Matrix<T>& mat )
+	{
+		m = mat.m; n = mat.n;
+		if( m == 0 || n == 0 ){
+			v = NULL;
+		}
+		else{
+			v = new T[m*n];
+#pragma omp parallel for
+			for( int i = 0; i < m*n; ++i )  v[i] = mat.v[i];
+		}
+	}
+
+	Matrix<T>& operator = ( const Matrix& mat )
+	{
+		if( v != NULL ) delete [] v;
+
+		m = mat.m; n = mat.n;
+		if( m == 0 || n == 0 ){
+			v = NULL;
+			return *this;
+		}
+			
+		v = new T[m*n];
+#pragma omp parallel for
+		for( int i = 0; i < m*n; ++i )  v[i] = mat.v[i];
+
+		return *this;
+	}
+
+	~Matrix ()
+	{
+		if( v != NULL ) delete [] v;
+	}
 	
 	static Matrix<T> eye ( const int& m, const int& n )
 	{
 		Matrix<T> ret(m, n);
+#pragma omp parallel for
 		for( int i = 0; i < std::min(m,n); ++i ) ret(i,i) = 1.0;
 		return ret;
 	}
@@ -70,34 +117,32 @@ struct Matrix
 	static Matrix<T> ones ( const int& m, const int& n )
 	{
 		Matrix<T> ret(m, n);
-		for( int i = 0; i < m; ++i ) for( int j = 0; j < n; ++j ) ret(i,j) = 1.0;
+#pragma omp parallel for
+		for( int i = 0; i < m*n; ++i ) ret.v[i] = 1.0;
 		return ret;
 	}
 
 	static Matrix<T> zeros ( const int& m, const int& n )
 	{
-		return Matrix<T>(m, n);
+		Matrix<T> ret(m, n);
+#pragma omp parallel for
+		for( int i = 0; i < m*n; ++i ) ret.v[i] = 0.0;
+		return ret;
 	}
 
-	static Matrix<T> transpose( const Matrix<T>& mat )
+	static tMatrix<T> transpose( const Matrix<T>& mat )
 	{
-		int m = mat.m, n = mat.n;
-		Matrix<T> ret(n, m);
+// 		int m = mat.m, n = mat.n;
+// 		Matrix<T> ret(n, m);
 
-#pragma omp parallel for schedule(auto)
-		for( int i = 0; i < n*m; ++i ){
-			int idx1 = i/m, idx2 = i%m;
-			ret(idx1,idx2) = mat(idx2,idx1);
-		}
-// #pragma omp parallel for default(none) \
-// 	private(i,j) shared(m,n,mat,ret)
-// 		for( i = 0; i < n; ++i ){
-// 			for( j = 0; j < m; ++j ){
-// 				ret(i,j) = mat(j,i);
-// 			}
+// #pragma omp parallel for schedule(auto)
+// 		for( int i = 0; i < n*m; ++i ){
+// 			int idx1 = i/m, idx2 = i%m;
+// 			ret(idx1,idx2) = mat(idx2,idx1);
 // 		}
 
-		return ret;
+// 		return ret;
+		return tMatrix<T>(&mat);
 	}
 
 	static Matrix<T> hadamard ( const Matrix<T>& m1, const Matrix<T>& m2 )
@@ -106,9 +151,7 @@ struct Matrix
 		Matrix<T> ret(m, n);
 
 #pragma omp parallel for schedule(auto)
-		for( int i = 0; i < m; ++i )
-			for( int j = 0; j < n; ++j )
-				ret(i,j) = m1(i,j)*m2(i,j);
+		for( int i = 0; i < m*n; ++i ) ret.v[i] = m1.v[i]*m2.v[i];
 
 		return ret;
 	}
@@ -118,13 +161,18 @@ struct Matrix
 		int m = mat.m, n = mat.n;
 		T ret = 0.0;
 
-		for( int i = 0; i < m; ++i )
-			for( int j = 0; j < n; ++j )
-				ret += mat(i,j)*mat(i,j);
+#pragma omp parallel for schedule(auto) reduction(+:ret)
+		for( int i = 0; i < m*n; ++i ) ret += mat.v[i]*mat.v[i];
 
 		return sqrt(ret);
 	}
 
+	void apply ( const std::function<double(const double&)>& func )
+	{
+#pragma omp parallel for schedule(auto)
+		for( int i = 0; i < m*n; ++i ) this->v[i] = func(this->v[i]);
+	}
+	
 	const T& operator () ( int i, int j ) const
 	{
 #ifdef USE_EIGEN
@@ -149,12 +197,14 @@ struct Matrix
 #ifdef USE_EIGEN
 		this->v += m1.v;
 #else
+// #pragma omp parallel for schedule(auto)
+// 		for( int i = 0; i < m; ++i )
+// 			for( int j = 0; j < n; ++j )
+// 				(*this)(i,j) += m1(i,j);
 #pragma omp parallel for schedule(auto)
-		for( int i = 0; i < m; ++i )
-			for( int j = 0; j < n; ++j )
-				(*this)(i,j) += m1(i,j);
+		for( int i = 0; i < m*n; ++i ) this->v[i] += m1.v[i];
 #endif
-		cnt_flop += m*n;
+		cnt_flop += (long long)m*n;
 
 		return *this;
 	}
@@ -166,16 +216,24 @@ struct Matrix
 		this->v -= m1.v;
 #else
 #pragma omp parallel for schedule(auto)
-		for( int i = 0; i < m; ++i )
-			for( int j = 0; j < n; ++j )
-				(*this)(i,j) -= m1(i,j);
+		for( int i = 0; i < m*n; ++i ) this->v[i] -= m1.v[i];
 #endif
-		cnt_flop += m*n;
+		cnt_flop += (long long)m*n;
 
 		return *this;
 	}
 
 	Matrix<T>& operator *= ( const Matrix<T>& m1 )
+	{
+#ifdef USE_EIGEN
+		this->v *= m1.v;
+#else
+		*this = *this*m1;
+#endif
+		return *this;
+	}
+
+	Matrix<T>& operator *= ( const tMatrix<T>& m1 )
 	{
 #ifdef USE_EIGEN
 		this->v *= m1.v;
@@ -191,11 +249,9 @@ struct Matrix
 		this->v *= c;
 #else
 #pragma omp parallel for schedule(auto)
-		for( int i = 0; i < this->m; ++i )
-			for( int j = 0; j < this->n; ++j )
-				*this(i,j) *= c;
+		for( int i = 0; i < m*n; ++i ) this->v[i] *= c;
 #endif
-		cnt_flop += this->m*this->n;
+		cnt_flop += (long long)this->m*this->n;
 
 		return *this;
 	}
@@ -206,11 +262,9 @@ struct Matrix
 		this->v /= c;
 #else
 #pragma omp parallel for schedule(auto)
-		for( int i = 0; i < this->m; ++i )
-			for( int j = 0; j < this->n; ++j )
-				*this(i,j) /= c;
+		for( int i = 0; i < m*n; ++i ) this->v[i] /= c;
 #endif
-		cnt_flop += this->m*this->n;
+		cnt_flop += (long long)this->m*this->n;
 
 		return *this;
 	}
@@ -224,11 +278,9 @@ struct Matrix
 		ret.v = m1.v + m2.v;
 #else
 #pragma omp parallel for schedule(auto)
-		for( int i = 0; i < m; ++i )
-			for( int j = 0; j < n; ++j )
-				ret(i,j) = m1(i,j) + m2(i,j);
+		for( int i = 0; i < m*n; ++i ) ret.v[i] = m1.v[i] + m2.v[i];
 #endif
-		cnt_flop += m*n;
+		cnt_flop += (long long)m*n;
 
 		return ret;
 	}
@@ -241,11 +293,9 @@ struct Matrix
 		ret.v = m1.v - m2.v;
 #else
 #pragma omp parallel for schedule(auto)
-		for( int i = 0; i < m; ++i )
-			for( int j = 0; j < n; ++j )
-				ret(i,j) = m1(i,j) - m2(i,j);
+		for( int i = 0; i < m*n; ++i ) ret.v[i] = m1.v[i] - m2.v[i];
 #endif
-		cnt_flop += m*n;
+		cnt_flop += (long long)m*n;
 
 		return ret;
 	}
@@ -278,7 +328,7 @@ struct Matrix
 			}
 		
 #endif
-		cnt_flop += m*n*l;
+		cnt_flop += (long long)m*n*l;
 
 		return ret;
 	}
@@ -291,12 +341,9 @@ struct Matrix
 		ret.v = c*m1.v;
 #else
 #pragma omp parallel for schedule(auto)
-		for( int i = 0; i < m; ++i )
-			for( int j = 0; j < n; ++j ){
-				ret(i,j) = c*m1(i,j);
-			}
+		for( int i = 0; i < m*n; ++i ) ret.v[i] = c*m1.v[i];
 #endif
-		cnt_flop += m*n;
+		cnt_flop += (long long)m*n;
 
 		return ret;
 	}
@@ -321,6 +368,17 @@ struct Matrix
 			std::cout << std::endl;
 		}
 		return os;
+	}
+
+	Matrix<T> sub ( int y, int x, int h, int w ) const
+	{
+		Matrix<T> ret(h, w);
+#pragma omp parallel for
+		for( int i = 0; i < w; ++i )
+			for( int j = 0; j < h; ++j )
+				ret(j, i) = (*this)(y + j, x + i);
+
+		return ret;
 	}
 };
 
