@@ -108,7 +108,7 @@ struct Matrix
 	
 	static Matrix<T> eye ( const int& m, const int& n )
 	{
-		Matrix<T> ret(m, n);
+		Matrix<T> ret = Matrix<T>::zeros(m, n);
 #pragma omp parallel for
 		for( int i = 0; i < std::min(m,n); ++i ) ret(i,i) = 1.0;
 		return ret;
@@ -300,39 +300,6 @@ struct Matrix
 		return ret;
 	}
 
-	friend Matrix<T> operator * ( const Matrix<T>& m1, const Matrix<T>& m2 )
-	{
-		int m = m1.m, n = m2.n, l = m1.n;
-		Matrix<T> ret(m, n);
-#ifdef USE_EIGEN
-		ret.v = m1.v*m2.v;
-#elif USE_BLAS
-		T ONE = 1.0, ZERO = 0.0;
-
-		if( m != 0 && n != 0 && l != 0 ){
-			dgemm_("N", "N", &n, &m, &l, &ONE,
-				   &m2(0,0), &n, &m1(0,0), &l,
-				   &ZERO, &ret(0,0), &n);
-			// sgemm_("N", "N", &n, &m, &l, &ONE,
-			// 	   &m2(0,0), &n, &m1(0,0), &l,
-			// 	   &ZERO, &ret(0,0), &n);
-		}
-#else
-#pragma omp parallel for schedule(auto)
-		for( int i = 0; i < m; ++i )
-			for( int j = 0; j < n; ++j ){
-				double sum = 0.0;
-				for( int k = 0; k < l; ++k )
-					sum += m1(i,k)*m2(k,j);
-				ret(i,j) = sum;
-			}
-		
-#endif
-		cnt_flop += (long long)m*n*l;
-
-		return ret;
-	}
-
 	friend Matrix<T> operator * ( const T& c, const Matrix<T>& m1 )
 	{
 		int m = m1.m, n = m1.n;
@@ -381,6 +348,74 @@ struct Matrix
 		return ret;
 	}
 };
+
+Matrix<double> operator * ( const Matrix<double>& m1, const Matrix<double>& m2 )
+{
+	int m = m1.m, n = m2.n, l = m1.n;
+	Matrix<double> ret(m, n);
+#ifdef USE_EIGEN
+	ret.v = m1.v*m2.v;
+#elif USE_BLAS
+	double ONE = 1.0, ZERO = 0.0;
+
+	if( m != 0 && n != 0 && l != 0 ){
+		dgemm_("N", "N", &n, &m, &l, &ONE,
+			   &m2(0,0), &n, &m1(0,0), &l,
+			   &ZERO, &ret(0,0), &n);
+		// sgemm_("N", "N", &n, &m, &l, &ONE,
+		// 	   &m2(0,0), &n, &m1(0,0), &l,
+		// 	   &ZERO, &ret(0,0), &n);
+	}
+#else
+#pragma omp parallel for schedule(auto)
+	for( int i = 0; i < m; ++i )
+		for( int j = 0; j < n; ++j ){
+			double sum = 0.0;
+			for( int k = 0; k < l; ++k )
+				sum += m1(i,k)*m2(k,j);
+			ret(i,j) = sum;
+		}
+		
+#endif
+	cnt_flop += (long long)m*n*l;
+
+	return ret;
+}
+
+Matrix<float> operator * ( const Matrix<float>& m1, const Matrix<float>& m2 )
+{
+	int m = m1.m, n = m2.n, l = m1.n;
+	Matrix<float> ret(m, n);
+#ifdef USE_EIGEN
+	ret.v = m1.v*m2.v;
+#elif USE_BLAS
+	float ONE = 1.0, ZERO = 0.0;
+
+	if( m != 0 && n != 0 && l != 0 ){
+		sgemm_("N", "N", &n, &m, &l, &ONE,
+			   &m2(0,0), &n, &m1(0,0), &l,
+			   &ZERO, &ret(0,0), &n);
+		// sgemm_("N", "N", &n, &m, &l, &ONE,
+		// 	   &m2(0,0), &n, &m1(0,0), &l,
+		// 	   &ZERO, &ret(0,0), &n);
+	}
+#else
+#pragma omp parallel for schedule(auto)
+	for( int i = 0; i < m; ++i )
+		for( int j = 0; j < n; ++j ){
+			double sum = 0.0;
+			for( int k = 0; k < l; ++k )
+				sum += m1(i,k)*m2(k,j);
+			ret(i,j) = sum;
+		}
+		
+#endif
+	cnt_flop += (long long)m*n*l;
+
+	return ret;
+}
+
+
 
 template<class T>
 int pivoting ( const Matrix<T>& A, const Matrix<T>& L, const Matrix<T>& U, const int& j )
