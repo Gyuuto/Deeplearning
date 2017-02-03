@@ -6,6 +6,8 @@
 class Pooling : public Layer
 {
 private:
+	typedef double real;
+	
 	int prev_ldu, ldu;
 	int m, n, stride, pad;
 	std::vector<Mat> S;
@@ -13,7 +15,7 @@ public:
 	Pooling( int prev_num_map, int prev_num_unit, int prev_ldu,
 			 int num_map, int num_unit, int ldu,
 			 int m, int n, int stride, 
-			 const std::shared_ptr<Function>& f );
+			 const std::shared_ptr<Function<real>>& f );
 	
 #ifdef USE_MPI
 	void init( std::mt19937& m, MPI_Comm inner_world, MPI_Comm outer_world );
@@ -42,7 +44,7 @@ public:
 Pooling::Pooling( int prev_num_map, int prev_num_unit, int prev_ldu,
 				  int num_map, int num_unit, int ldu,
 				  int m, int n, int stride, 
-				  const std::shared_ptr<Function>& f )
+				  const std::shared_ptr<Function<real>>& f )
 {
 	this->prev_num_map = prev_num_map;
 	this->prev_num_unit = prev_num_unit;

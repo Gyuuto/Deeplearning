@@ -7,6 +7,8 @@
 class Convolutional : public Layer
 {
 private:
+	typedef double real;
+
 	int prev_ldu, ldu;
 	int m, n, stride, pad;
 	int once_num;
@@ -20,7 +22,7 @@ public:
 	Convolutional( int prev_num_map, int prev_num_unit, int prev_ldu,
 				   int num_map, int num_unit, int ldu,
 				   int m, int n, int stride, 
-				   const std::shared_ptr<Function>& f, bool use_bias = true );
+				   const std::shared_ptr<Function<real>>& f, bool use_bias = true );
 
 #ifdef USE_MPI
 	void init( std::mt19937& mt, MPI_Comm inner_world, MPI_Comm outer_world );
@@ -52,7 +54,7 @@ public:
 Convolutional::Convolutional( int prev_num_map, int prev_num_unit, int prev_ldu,
 							  int num_map, int num_unit, int ldu,
 							  int m, int n, int stride, 
-							  const std::shared_ptr<Function>& f, bool use_bias )
+							  const std::shared_ptr<Function<real>>& f, bool use_bias )
 {
 	this->once_num = 1;
 	
