@@ -357,14 +357,12 @@ Matrix<double> operator * ( const Matrix<double>& m1, const Matrix<double>& m2 )
 	ret.v = m1.v*m2.v;
 #elif USE_BLAS
 	double ONE = 1.0, ZERO = 0.0;
-
+	char transA = 'N', transB = 'N';
+	
 	if( m != 0 && n != 0 && l != 0 ){
-		dgemm_("N", "N", &n, &m, &l, &ONE,
+		dgemm_(&transA, &transB, &n, &m, &l, &ONE,
 			   &m2(0,0), &n, &m1(0,0), &l,
 			   &ZERO, &ret(0,0), &n);
-		// sgemm_("N", "N", &n, &m, &l, &ONE,
-		// 	   &m2(0,0), &n, &m1(0,0), &l,
-		// 	   &ZERO, &ret(0,0), &n);
 	}
 #else
 #pragma omp parallel for schedule(auto)
@@ -390,14 +388,12 @@ Matrix<float> operator * ( const Matrix<float>& m1, const Matrix<float>& m2 )
 	ret.v = m1.v*m2.v;
 #elif USE_BLAS
 	float ONE = 1.0, ZERO = 0.0;
+	char transA = 'N', transB = 'N';
 
 	if( m != 0 && n != 0 && l != 0 ){
-		sgemm_("N", "N", &n, &m, &l, &ONE,
+		sgemm_(&transA, &transB, &n, &m, &l, &ONE,
 			   &m2(0,0), &n, &m1(0,0), &l,
 			   &ZERO, &ret(0,0), &n);
-		// sgemm_("N", "N", &n, &m, &l, &ONE,
-		// 	   &m2(0,0), &n, &m1(0,0), &l,
-		// 	   &ZERO, &ret(0,0), &n);
 	}
 #else
 #pragma omp parallel for schedule(auto)
@@ -415,7 +411,204 @@ Matrix<float> operator * ( const Matrix<float>& m1, const Matrix<float>& m2 )
 	return ret;
 }
 
+Matrix<double> operator * ( const Matrix<double>& m1, const tMatrix<double>& m2 )
+{
+	int m = m1.m, n = m2.n, l = m1.n;
+	Matrix<double> ret(m, n);
+#ifdef USE_EIGEN
+	ret.v = m1.v*m2.v;
+#elif USE_BLAS
+	int k = m2.m;
+	double ONE = 1.0, ZERO = 0.0;
+	char transA = 'T', transB = 'N';
+		
+	if( m != 0 && n != 0 && l != 0 ){
+		dgemm_(&transA, &transB, &n, &m, &l, &ONE,
+			   &m2(0,0), &k, &m1(0,0), &l,
+			   &ZERO, &ret(0,0), &n);
+	}
+#else
+	int i, j, k;
+#pragma omp parallel for default(none)			\
+	private(i,j,k) shared(m,n,l,m1,m2,ret)
+	for( i = 0; i < m; ++i )
+		for( j = 0; j < n; ++j ){
+			double sum = 0.0;
+			for( k = 0; k < l; ++k )
+				sum += m1(i,k)*m2(k,j);
+			ret(i,j) = sum;
+		}
+		
+#endif
+	cnt_flop += m*n*l;
 
+	return ret;
+}
+Matrix<float> operator * ( const Matrix<float>& m1, const tMatrix<float>& m2 )
+{
+	int m = m1.m, n = m2.n, l = m1.n;
+	Matrix<float> ret(m, n);
+#ifdef USE_EIGEN
+	ret.v = m1.v*m2.v;
+#elif USE_BLAS
+	int k = m2.m;
+	float ONE = 1.0, ZERO = 0.0;
+	char transA = 'T', transB = 'N';
+		
+	if( m != 0 && n != 0 && l != 0 ){
+		sgemm_(&transA, &transB, &n, &m, &l, &ONE,
+			   &m2(0,0), &k, &m1(0,0), &l,
+			   &ZERO, &ret(0,0), &n);
+	}
+#else
+	int i, j, k;
+#pragma omp parallel for default(none)			\
+	private(i,j,k) shared(m,n,l,m1,m2,ret)
+	for( i = 0; i < m; ++i )
+		for( j = 0; j < n; ++j ){
+			double sum = 0.0;
+			for( k = 0; k < l; ++k )
+				sum += m1(i,k)*m2(k,j);
+			ret(i,j) = sum;
+		}
+		
+#endif
+	cnt_flop += m*n*l;
+
+	return ret;
+}
+
+Matrix<double> operator * ( const tMatrix<double>& m1, const Matrix<double>& m2 )
+{
+	int m = m1.m, n = m2.n, l = m1.n;
+	Matrix<double> ret(m, n);
+#ifdef USE_EIGEN
+	ret.v = m1.v*m2.v;
+#elif USE_BLAS
+	int k = m2.m;
+	double ONE = 1.0, ZERO = 0.0;
+	char transA = 'N', transB = 'T';
+
+	if( m != 0 && n != 0 && l != 0 ){
+		dgemm_(&transA, &transB, &n, &m, &l, &ONE,
+			   &m2(0,0), &n, &m1(0,0), &m,
+			   &ZERO, &ret(0,0), &n);
+	}
+#else
+	int i, j, k;
+#pragma omp parallel for default(none)			\
+	private(i,j,k) shared(m,n,l,m1,m2,ret)
+	for( i = 0; i < m; ++i )
+		for( j = 0; j < n; ++j ){
+			double sum = 0.0;
+			for( k = 0; k < l; ++k )
+				sum += m1(i,k)*m2(k,j);
+			ret(i,j) = sum;
+		}
+		
+#endif
+	cnt_flop += m*n*l;
+
+	return ret;
+}
+Matrix<float> operator * ( const tMatrix<float>& m1, const Matrix<float>& m2 )
+{
+	int m = m1.m, n = m2.n, l = m1.n;
+	Matrix<float> ret(m, n);
+#ifdef USE_EIGEN
+	ret.v = m1.v*m2.v;
+#elif USE_BLAS
+	int k = m2.m;
+	float ONE = 1.0, ZERO = 0.0;
+	char transA = 'N', transB = 'T';
+
+	if( m != 0 && n != 0 && l != 0 ){
+		sgemm_(&transA, &transB, &n, &m, &l, &ONE,
+			   &m2(0,0), &n, &m1(0,0), &m,
+			   &ZERO, &ret(0,0), &n);
+	}
+#else
+	int i, j, k;
+#pragma omp parallel for default(none)			\
+	private(i,j,k) shared(m,n,l,m1,m2,ret)
+	for( i = 0; i < m; ++i )
+		for( j = 0; j < n; ++j ){
+			double sum = 0.0;
+			for( k = 0; k < l; ++k )
+				sum += m1(i,k)*m2(k,j);
+			ret(i,j) = sum;
+		}
+		
+#endif
+	cnt_flop += m*n*l;
+
+	return ret;
+}
+	
+Matrix<double> operator * ( const tMatrix<double>& m1, const tMatrix<double>& m2 )
+{
+	int m = m1.m, n = m2.n, l = m1.n;
+	Matrix<double> ret(m, n);
+#ifdef USE_EIGEN
+	ret.v = m1.v*m2.v;
+#elif USE_BLAS
+	double ONE = 1.0, ZERO = 0.0;
+	char transA = 'T', transB = 'T';
+		
+	if( m != 0 && n != 0 && l != 0 ){
+		dgemm_(&transA, &transB, &m, &n, &l, &ONE,
+			   &m1(0,0), &l, &m2(0,0), &n,
+			   &ZERO, &ret(0,0), &m);
+	}
+#else
+	int i, j, k;
+#pragma omp parallel for default(none)			\
+	private(i,j,k) shared(m,n,l,m1,m2,ret)
+	for( i = 0; i < m; ++i )
+		for( j = 0; j < n; ++j ){
+			double sum = 0.0;
+			for( k = 0; k < l; ++k )
+				sum += m1(i,k)*m2(k,j);
+			ret(i,j) = sum;
+		}
+		
+#endif
+	cnt_flop += m*n*l;
+
+	return ret;
+}
+Matrix<float> operator * ( const tMatrix<float>& m1, const tMatrix<float>& m2 )
+{
+	int m = m1.m, n = m2.n, l = m1.n;
+	Matrix<float> ret(m, n);
+#ifdef USE_EIGEN
+	ret.v = m1.v*m2.v;
+#elif USE_BLAS
+	float ONE = 1.0, ZERO = 0.0;
+	char transA = 'T', transB = 'T';
+		
+	if( m != 0 && n != 0 && l != 0 ){
+		sgemm_(&transA, &transB, &m, &n, &l, &ONE,
+			   &m1(0,0), &l, &m2(0,0), &n,
+			   &ZERO, &ret(0,0), &m);
+	}
+#else
+	int i, j, k;
+#pragma omp parallel for default(none)			\
+	private(i,j,k) shared(m,n,l,m1,m2,ret)
+	for( i = 0; i < m; ++i )
+		for( j = 0; j < n; ++j ){
+			double sum = 0.0;
+			for( k = 0; k < l; ++k )
+				sum += m1(i,k)*m2(k,j);
+			ret(i,j) = sum;
+		}
+		
+#endif
+	cnt_flop += m*n*l;
+
+	return ret;
+}
 
 template<class T>
 int pivoting ( const Matrix<T>& A, const Matrix<T>& L, const Matrix<T>& U, const int& j )
