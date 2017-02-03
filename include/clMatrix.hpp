@@ -4,6 +4,8 @@
 #include <vector>
 #include <functional>
 #include <clBLAS.h>
+
+#include "clDeviceManager.hpp"
 #include "Matrix.hpp"
 
 template<class T>
@@ -228,14 +230,14 @@ struct clMatrix
 	T get_element ( int i, int j ) const
 	{
 		T ret;
-		clEnqueueReadBuffer( cl_device_manager.get_queue(), v, CL_TRUE, i*n + j,
+		clEnqueueReadBuffer( cl_device_manager.get_queue(), v, CL_TRUE, (i*n + j)*sizeof(T),
 							 sizeof(T), &ret, 0, NULL, NULL );
 		return ret;
 	}
 
 	void set_element ( int i, int j, T val )
 	{
-		clEnqueueWriteBuffer( cl_device_manager.get_queue(), v, CL_TRUE, i*n + j,
+		clEnqueueWriteBuffer( cl_device_manager.get_queue(), v, CL_TRUE, (i*n + j)*sizeof(T),
 							  sizeof(T), &val, 0, NULL, NULL );
 	}
 
@@ -313,10 +315,11 @@ struct clMatrix
 		return *this;
 	}
 
-	friend clMatrix<T> operator + ( const clMatrix<T>& m1, const clMatrix<T>& m2 )
+	friend clMatrix<T> operator + ( clMatrix<T>& m1, clMatrix<T>& m2 )
 	{
 		int m = m1.m, n = m1.n;
 		clMatrix<T> ret = m1;
+		cl_int err;
 		cl_event event;
 
 		clblasSaxpy( m*n, 1.0f,
@@ -390,7 +393,7 @@ struct clMatrix
 		return (1.0f/c)*m1;
 	}
 
-	clMatrix<T> sub ( int y, int x, int h, int w )
+	clMatrix<T> sub ( int y, int x, int h, int w ) const
 	{
 		clMatrix<T> ret(h, w);
 		cl_int err;

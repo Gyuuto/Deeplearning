@@ -6,36 +6,61 @@
 
 #include "Matrix.hpp"
 
+#ifdef USE_GPU
+#include "clMatrix.hpp"
+#endif
+
+template<typename T>
 class Function
 {
 public:
-	virtual inline Matrix<double> operator() ( const Matrix<double>& x, const bool& isdiff ) = 0;
+	virtual inline Matrix<T> operator() ( const Matrix<T>& x, const bool& isdiff ) = 0;
+#ifdef USE_GPU
+	virtual inline clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ) = 0;
+#endif
 };
 
+template<typename T>
 class LossFunction
 {
 public:
-	virtual inline Matrix<double> operator() ( const Matrix<double>& x, const Matrix<double>& d, const bool& isdiff ) = 0;
+	virtual inline Matrix<T> operator() ( const Matrix<T>& x, const Matrix<T>& d, const bool& isdiff ) = 0;
+#ifdef USE_GPU
+	virtual inline clMatrix<T> operator() ( const clMatrix<T>& x, const clMatrix<T>& d, const bool& isdiff ) = 0;	
+#endif
 };
 
-class Identity : public Function
+template<typename T>
+class Identity : public Function<T>
 {
 public:
-	inline Matrix<double> operator() ( const Matrix<double>& x, const bool& isdiff ){
+	inline Matrix<T> operator() ( const Matrix<T>& x, const bool& isdiff ){
 		if( isdiff ){
-			return Matrix<double>::ones(x.m, x.n);
+			return Matrix<T>::ones(x.m, x.n);
 		}
 		else{
 			return x;
 		}
 	}
+
+#ifdef USE_GPU
+	inline clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ){
+		if( isdiff ){
+			return clMatrix<T>::ones(x.m, x.n);
+		}
+		else{
+			return x;
+		}
+	}
+#endif
 };
 
-class ReLU : public Function
+template<typename T>
+class ReLU : public Function<T>
 {
 public:
-	inline Matrix<double> operator() ( const Matrix<double>& x, const bool& isdiff ){
-		Matrix<double> y(x.m, x.n);
+	inline Matrix<T> operator() ( const Matrix<T>& x, const bool& isdiff ){
+		Matrix<T> y(x.m, x.n);
 
 		if( isdiff ){
 #pragma omp parallel for schedule(auto)
@@ -43,26 +68,61 @@ public:
 		}
 		else{
 #pragma omp parallel for schedule(auto)
-			for( int i = 0; i < y.m*y.n; ++i ) y.v[i] = std::max(0.0, x.v[i]);
+			for( int i = 0; i < y.m*y.n; ++i ) y.v[i] = std::max(T(0.0), x.v[i]);
 		}
 
 		return y;
 	}
+
+#ifdef USE_GPU
+	inline clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ){
+		clMatrix<T> y(x.m, x.n);
+
+		if( isdiff ){
+			cl_device_manager.set_argument( PRG::FUNC_RELU_DIFF, 0, &y.v );
+			cl_device_manager.set_argument( PRG::FUNC_RELU_DIFF, 1, &x.v );
+			cl_device_manager.run_kernel( PRG::FUNC_RELU_DIFF, y.m*y.n, 1 );
+		}
+		else{
+			cl_device_manager.set_argument( PRG::FUNC_RELU, 0, &y.v );
+			cl_device_manager.set_argument( PRG::FUNC_RELU, 1, &x.v );
+			cl_device_manager.run_kernel( PRG::FUNC_RELU, y.m*y.n, 1 );
+		}
+
+		return y;
+	}
+#endif
 };
 
-class Sigmoid : public Function
+template<typename T>
+class Sigmoid : public Function<T>
 {
 public:
-	double alpha;
-	Sigmoid( double alpha = 1.0 ) :alpha(alpha) {}
+	T alpha;
+#ifdef USE_GPU
+	cl_mem cl_alpha;
+	Sigmoid( T alpha = 1.0 ) :alpha(alpha)
+	{
+		T f_alpha = this->alpha;
+		cl_int err;
+		cl_alpha = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(T), NULL, &err);
+		err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_alpha, CL_TRUE, 0,
+									sizeof(T), &f_alpha, 0, NULL, NULL );
+	}
+
+	~Sigmoid ()
+	{
+		clReleaseMemObject( cl_alpha );
+	}
+#endif
 	
-	inline Matrix<double> operator() ( const Matrix<double>& x, const bool& isdiff ){
-		Matrix<double> y(x.m, x.n);
+	inline Matrix<T> operator() ( const Matrix<T>& x, const bool& isdiff ){
+		Matrix<T> y(x.m, x.n);
 
 		if( isdiff ){
 #pragma omp parallel for schedule(auto)
 			for( int i = 0; i < y.m*y.n; ++i ){
-				double tmp = 1.0 + std::exp(-alpha*x.v[i]);
+				T tmp = 1.0 + std::exp(-alpha*x.v[i]);
 				y.v[i] = alpha*std::exp(-alpha*x.v[i]) / (tmp*tmp);
 			}
 		}
@@ -73,18 +133,41 @@ public:
 		
 		return y;
 	}
+
+#ifdef USE_GPU
+	inline clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ){
+		clMatrix<T> y(x.m, x.n);
+		cl_int err;
+		
+		if( isdiff ){
+			cl_device_manager.set_argument( PRG::FUNC_SIGMOID_DIFF, 0, &y.v );
+			cl_device_manager.set_argument( PRG::FUNC_SIGMOID_DIFF, 1, &x.v );
+			cl_device_manager.set_argument( PRG::FUNC_SIGMOID_DIFF, 2, &cl_alpha );
+			cl_device_manager.run_kernel( PRG::FUNC_SIGMOID_DIFF, y.m*y.n, 1 );
+		}
+		else{
+			cl_device_manager.set_argument( PRG::FUNC_SIGMOID, 0, &y.v );
+			cl_device_manager.set_argument( PRG::FUNC_SIGMOID, 1, &x.v );
+			cl_device_manager.set_argument( PRG::FUNC_SIGMOID, 2, &cl_alpha );
+			cl_device_manager.run_kernel( PRG::FUNC_SIGMOID, y.m*y.n, 1 );
+		}
+		
+		return y;
+	}
+#endif
 };
 
-class Tanh : public Function
+template<typename T>
+class Tanh : public Function<T>
 {
 public:
-	inline Matrix<double> operator() ( const Matrix<double>& x, const bool& isdiff ){
-		Matrix<double> y(x.m, x.n);
+	inline Matrix<T> operator() ( const Matrix<T>& x, const bool& isdiff ){
+		Matrix<T> y(x.m, x.n);
 
 		if( isdiff ){
 #pragma omp parallel for schedule(auto)
 			for( int i = 0; i < y.m*y.n; ++i ){
-				double tmp = std::tanh(x.v[i]);
+				T tmp = std::tanh(x.v[i]);
 				y.v[i] = 1.0 - tmp*tmp;
 			}
 		}
@@ -95,22 +178,42 @@ public:
 			
 		return y;
 	}
+
+#ifdef USE_GPU
+	inline clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ){
+		clMatrix<T> y(x.m, x.n);
+
+		if( isdiff ){
+			cl_device_manager.set_argument( PRG::FUNC_TANH_DIFF, 0, &y.v );
+			cl_device_manager.set_argument( PRG::FUNC_TANH_DIFF, 1, &x.v );
+			cl_device_manager.run_kernel( PRG::FUNC_TANH_DIFF, y.m*y.n, 1 );
+		}
+		else{
+			cl_device_manager.set_argument( PRG::FUNC_TANH, 0, &y.v );
+			cl_device_manager.set_argument( PRG::FUNC_TANH, 1, &x.v );
+			cl_device_manager.run_kernel( PRG::FUNC_TANH, y.m*y.n, 1 );
+		}
+			
+		return y;
+	}
+#endif
 };
 
-class Softsign : public Function
+template<typename T>
+class Softsign : public Function<T>
 {
-	inline Matrix<double> operator() ( const Matrix<double>& x, const bool& isdiff ){
-		Matrix<double> y(x.m, x.n);
+	inline Matrix<T> operator() ( const Matrix<T>& x, const bool& isdiff ){
+		Matrix<T> y(x.m, x.n);
 
 		if( isdiff ){
 #pragma omp parallel for schedule(auto)
 			for( int i = 0; i < y.m*y.n; ++i ){
-					double tmp = 1.0 + std::abs(x.v[i]);
-					double y_diff = 0.0;
-					if( x.v[i] > 1.0E-10 ) y_diff = 1.0;
-					else if( x.v[i] < -1.0E-10 ) y_diff = -1.0;
-					y.v[i] = (tmp - x.v[i]*y_diff)/(tmp*tmp);
-				}
+				T tmp = 1.0 + std::abs(x.v[i]);
+				T y_diff = 0.0;
+				if( x.v[i] > 1.0E-10 ) y_diff = 1.0;
+				else if( x.v[i] < -1.0E-10 ) y_diff = -1.0;
+				y.v[i] = (tmp - x.v[i]*y_diff)/(tmp*tmp);
+			}
 		}
 		else{
 #pragma omp parallel for schedule(auto)
@@ -118,20 +221,40 @@ class Softsign : public Function
 		}
 			
 		return y;
+	}
+
+#ifdef USE_GPU
+	inline clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ){
+		clMatrix<T> y(x.m, x.n);
+
+		if( isdiff ){
+			cl_device_manager.set_argument( PRG::FUNC_SOFTSIGN_DIFF, 0, &y.v );
+			cl_device_manager.set_argument( PRG::FUNC_SOFTSIGN_DIFF, 1, &x.v );
+			cl_device_manager.run_kernel( PRG::FUNC_SOFTSIGN_DIFF, y.m*y.n, 1 );
+		}
+		else{
+			cl_device_manager.set_argument( PRG::FUNC_SOFTSIGN, 0, &y.v );
+			cl_device_manager.set_argument( PRG::FUNC_SOFTSIGN, 1, &x.v );
+			cl_device_manager.run_kernel( PRG::FUNC_SOFTSIGN, y.m*y.n, 1 );
+		}
+			
+		return y;
 	}	
+#endif
 };
   
-class Softplus : public Function
+template<typename T>
+class Softplus : public Function<T>
 {
-	inline Matrix<double> operator() ( const Matrix<double>& x, const bool& isdiff ){
-		Matrix<double> y(x.m, x.n);
+	inline Matrix<T> operator() ( const Matrix<T>& x, const bool& isdiff ){
+		Matrix<T> y(x.m, x.n);
 
 		if( isdiff ){
 #pragma omp parallel for schedule(auto)
 			for( int i = 0; i < y.m*y.n; ++i ){
-					double tmp = std::exp(x.v[i]);
-					y.v[i] = tmp / (1.0 + tmp);
-				}
+				T tmp = std::exp(x.v[i]);
+				y.v[i] = tmp / (1.0 + tmp);
+			}
 		}
 		else{
 #pragma omp parallel for schedule(auto)
@@ -139,14 +262,53 @@ class Softplus : public Function
 		}
 			
 		return y;
+	}
+
+#ifdef USE_GPU
+	inline clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ){
+		clMatrix<T> y(x.m, x.n);
+
+		if( isdiff ){
+			cl_device_manager.set_argument( PRG::FUNC_SOFTPLUS_DIFF, 0, &y.v );
+			cl_device_manager.set_argument( PRG::FUNC_SOFTPLUS_DIFF, 1, &x.v );
+			cl_device_manager.run_kernel( PRG::FUNC_SOFTPLUS_DIFF, y.m*y.n, 1 );
+		}
+		else{
+			cl_device_manager.set_argument( PRG::FUNC_SOFTPLUS, 0, &y.v );
+			cl_device_manager.set_argument( PRG::FUNC_SOFTPLUS, 1, &x.v );
+			cl_device_manager.run_kernel( PRG::FUNC_SOFTPLUS, y.m*y.n, 1 );
+		}
+			
+		return y;
 	}	
+#endif
+
 };
 
-template<int n>
-class Polynomial : public Function
+template<typename T, int n>
+class Polynomial : public Function<T>
 {
-	inline Matrix<double> operator() ( const Matrix<double>& x, const bool& isdiff ){
-		Matrix<double> y(x.m, x.n);
+#ifdef USE_GPU
+
+	cl_mem cl_n;
+	Polynomial()
+	{
+		cl_int err;
+		int val_n = n;
+		
+		cl_n = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
+		err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_n, CL_TRUE, 0,
+									sizeof(int), &val_n, 0, NULL, NULL );
+	}
+
+	~Polynomial ()
+	{
+		clReleaseMemObject(cl_n);
+	}
+#endif
+	
+	inline Matrix<T> operator() ( const Matrix<T>& x, const bool& isdiff ){
+		Matrix<T> y(x.m, x.n);
 
 		if( isdiff ){
 #pragma omp parallel for schedule(auto)
@@ -158,14 +320,53 @@ class Polynomial : public Function
 		}
 			
 		return y;
+	}
+
+#ifdef USE_GPU
+	inline clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ){
+		clMatrix<T> y(x.m, x.n);
+
+		if( isdiff ){
+			cl_device_manager.set_argument( PRG::FUNC_POLYNOMIAL_DIFF, 0, &y.v );
+			cl_device_manager.set_argument( PRG::FUNC_POLYNOMIAL_DIFF, 1, &x.v );
+			cl_device_manager.set_argument( PRG::FUNC_POLYNOMIAL_DIFF, 2, &cl_n );
+			cl_device_manager.run_kernel( PRG::FUNC_POLYNOMIAL_DIFF, y.m*y.n, 1 );
+		}
+		else{
+			cl_device_manager.set_argument( PRG::FUNC_POLYNOMIAL, 0, &y.v );
+			cl_device_manager.set_argument( PRG::FUNC_POLYNOMIAL, 1, &x.v );
+			cl_device_manager.set_argument( PRG::FUNC_POLYNOMIAL, 2, &cl_n );
+			cl_device_manager.run_kernel( PRG::FUNC_POLYNOMIAL, y.m*y.n, 1 );
+		}
+			
+		return y;
 	}	
+#endif
 };
 
-template<int n>
-class TruncatedPower : public Function
+template<typename T, int n>
+class TruncatedPower : public Function<T>
 {
-	inline Matrix<double> operator() ( const Matrix<double>& x, const bool& isdiff ){
-		Matrix<double> y(x.m, x.n);
+#ifdef USE_GPU
+	cl_mem cl_n;
+	TruncatedPower()
+	{
+		cl_int err;
+		int val_n = n;
+		
+		cl_n = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
+		err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_n, CL_TRUE, 0,
+									sizeof(int), &val_n, 0, NULL, NULL );
+	}
+
+	~TruncatedPower()
+	{
+		clReleaseMemObject(cl_n);
+	}	
+#endif
+
+	inline Matrix<T> operator() ( const Matrix<T>& x, const bool& isdiff ){
+		Matrix<T> y(x.m, x.n);
 
 		if( isdiff ){
 #pragma omp parallel for schedule(auto)
@@ -177,21 +378,43 @@ class TruncatedPower : public Function
 		}
 			
 		return y;
-	}	
+	}
+
+#ifdef USE_GPU
+	inline clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ){
+		clMatrix<T> y(x.m, x.n);
+
+		if( isdiff ){
+			cl_device_manager.set_argument( PRG::FUNC_TRUNCATEDPOWER_DIFF, 0, &y.v );
+			cl_device_manager.set_argument( PRG::FUNC_TRUNCATEDPOWER_DIFF, 1, &x.v );
+			cl_device_manager.set_argument( PRG::FUNC_TRUNCATEDPOWER_DIFF, 2, &cl_n );
+			cl_device_manager.run_kernel( PRG::FUNC_TRUNCATEDPOWER_DIFF, y.m*y.n, 1 );
+		}
+		else{
+			cl_device_manager.set_argument( PRG::FUNC_TRUNCATEDPOWER, 0, &y.v );
+			cl_device_manager.set_argument( PRG::FUNC_TRUNCATEDPOWER, 1, &x.v );
+			cl_device_manager.set_argument( PRG::FUNC_TRUNCATEDPOWER, 2, &cl_n );
+			cl_device_manager.run_kernel( PRG::FUNC_TRUNCATEDPOWER, y.m*y.n, 1 );
+		}
+			
+		return y;
+	}
+#endif
 };
 
-class Abs : public Function
+template<typename T>
+class Abs : public Function<T>
 {
-	inline Matrix<double> operator() ( const Matrix<double>& x, const bool& isdiff ){
-		Matrix<double> y(x.m, x.n);
+	inline Matrix<T> operator() ( const Matrix<T>& x, const bool& isdiff ){
+		Matrix<T> y(x.m, x.n);
 
 		if( isdiff ){
 #pragma omp parallel for schedule(auto)
 			for( int i = 0; i < y.m*y.n; ++i ){
-					double y_diff = 0.0;
-					if( x.v[i] > 1.0E-10 ) y_diff = 1.0;
-					else if( x.v[i] < -1.0E-10 ) y_diff = -1.0;
-					y.v[i] = y_diff;
+				T y_diff = 0.0;
+				if( x.v[i] > 1.0E-10 ) y_diff = 1.0;
+				else if( x.v[i] < -1.0E-10 ) y_diff = -1.0;
+				y.v[i] = y_diff;
 			}
 		}
 		else{
@@ -200,18 +423,38 @@ class Abs : public Function
 		}
 			
 		return y;
-	}	
-};
+	}
 
-class Softmax : public Function
-{
-public:
-	inline Matrix<double> operator() ( const Matrix<double>& x, const bool& isdiff ){
+#ifdef USE_GPU
+	inline clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ){
+		clMatrix<T> y(x.m, x.n);
+
 		if( isdiff ){
-			return Matrix<double>::ones(x.m, x.n);
+			cl_device_manager.set_argument( PRG::FUNC_ABS_DIFF, 0, &y.v );
+			cl_device_manager.set_argument( PRG::FUNC_ABS_DIFF, 1, &x.v );
+			cl_device_manager.run_kernel( PRG::FUNC_ABS_DIFF, y.m*y.n, 1 );
 		}
 		else{
-			Matrix<double> sum(1, x.n), max_val(1, x.n);
+			cl_device_manager.set_argument( PRG::FUNC_ABS, 0, &y.v );
+			cl_device_manager.set_argument( PRG::FUNC_ABS, 1, &x.v );
+			cl_device_manager.run_kernel( PRG::FUNC_ABS, y.m*y.n, 1 );
+		}
+			
+		return y;
+	}
+#endif
+};
+
+template<typename T>
+class Softmax : public Function<T>
+{
+public:
+	inline Matrix<T> operator() ( const Matrix<T>& x, const bool& isdiff ){
+		if( isdiff ){
+			return Matrix<T>::ones(x.m, x.n);
+		}
+		else{
+			Matrix<T> sum(1, x.n), max_val(1, x.n);
 
 #pragma omp parallel for schedule(auto)
 			for( int i = 0; i < x.n; ++i ){
@@ -223,50 +466,114 @@ public:
 					sum(0,i) += std::exp(x(j,i) - max_val(0,i));
 			}
 			
-			Matrix<double> y(x.m, x.n);
+			Matrix<T> y(x.m, x.n);
 #pragma omp parallel for schedule(auto)
 			for( int i = 0; i < y.m*y.n; ++i ) y.v[i] = std::exp(x.v[i] - max_val(0,i%y.n)) / sum(0,i%y.n);
 			
 			return y;
 		}
 	}
+
+#ifdef USE_GPU
+	inline clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ){
+		if( isdiff ){
+			return clMatrix<T>::ones(x.m, x.n);
+		}
+		else{
+			clMatrix<T> sum(1, x.n), max_val(1, x.n);
+
+			cl_int err;
+			
+			cl_device_manager.set_argument( PRG::FUNC_SOFTMAX_HELPER, 0, &x.v );
+			cl_device_manager.set_argument( PRG::FUNC_SOFTMAX_HELPER, 1, &max_val.v );
+			cl_device_manager.set_argument( PRG::FUNC_SOFTMAX_HELPER, 2, &sum.v );
+			cl_device_manager.set_argument( PRG::FUNC_SOFTMAX_HELPER, 3, &x.M );
+			cl_device_manager.set_argument( PRG::FUNC_SOFTMAX_HELPER, 4, &x.N );
+			cl_device_manager.run_kernel( PRG::FUNC_SOFTMAX_HELPER, x.n, 1 );
+			
+			clMatrix<T> y(x.m, x.n);
+			cl_device_manager.set_argument( PRG::FUNC_SOFTMAX, 0, &y.v );
+			cl_device_manager.set_argument( PRG::FUNC_SOFTMAX, 1, &x.v );
+			cl_device_manager.set_argument( PRG::FUNC_SOFTMAX, 2, &max_val.v );
+			cl_device_manager.set_argument( PRG::FUNC_SOFTMAX, 3, &sum.v );
+			cl_device_manager.run_kernel( PRG::FUNC_SOFTMAX, y.m, y.n );
+			
+			return y;
+		}
+	}
+#endif
 };
 
 ///////////////////////////////////////////////////////
 //////////////////// Loss function ////////////////////
 ///////////////////////////////////////////////////////
-class Square : public LossFunction
+template<typename T>
+class Square : public LossFunction<T>
 {
 public:
-	inline Matrix<double> operator() ( const Matrix<double>& x, const Matrix<double>& d, const bool& isdiff ){
+	inline Matrix<T> operator() ( const Matrix<T>& x, const Matrix<T>& d, const bool& isdiff ){
 		if( isdiff ){
-			Matrix<double> y(x.m, x.n);
+			Matrix<T> y(x.m, x.n);
 #pragma omp parallel for schedule(auto)
 			for( int i = 0; i < y.m*y.n; ++i ) y.v[i] = x.v[i] - d.v[i];
 
 			return y;
 		}
 		else{
-			Matrix<double> y(1, 1);
-			double y_ = 0.0;
+			Matrix<T> y(1, 1);
+			T y_ = 0.0;
 
 #pragma omp parallel for schedule(auto) reduction(+:y_)
 			for( int i = 0; i < x.m*x.n; ++i ){
-				double tmp = x.v[i] - d.v[i];
+				T tmp = x.v[i] - d.v[i];
 				y_ += tmp*tmp;
 			}
 			y(0,0) = y_;
 			return y;
 		}
 	}
+
+#ifdef USE_GPU
+	inline clMatrix<T> operator() ( const clMatrix<T>& x, const clMatrix<T>& d, const bool& isdiff ){
+		if( isdiff ){
+			clMatrix<T> y(x.m, x.n);
+
+			cl_device_manager.set_argument( PRG::FUNC_SQUARE_DIFF, 0, &y.v );
+			cl_device_manager.set_argument( PRG::FUNC_SQUARE_DIFF, 1, &x.v );
+			cl_device_manager.set_argument( PRG::FUNC_SQUARE_DIFF, 2, &d.v );
+			cl_device_manager.run_kernel( PRG::FUNC_SQUARE_DIFF, y.m*y.n, 1 );
+
+			return y;
+		}
+		else{
+			clMatrix<T> y(1,1);
+			clMatrix<T> y_ = clMatrix<float>::zeros(cl_device_manager.get_max_work_group(),1);
+
+			cl_device_manager.set_argument( PRG::FUNC_SQUARE, 0, &y_.v );
+			cl_device_manager.set_argument( PRG::FUNC_SQUARE, 1, &x.v );
+			cl_device_manager.set_argument( PRG::FUNC_SQUARE, 2, &d.v );
+			cl_device_manager.set_argument( PRG::FUNC_SQUARE, 3, cl_device_manager.get_max_work_item(0)*sizeof(T) );
+			cl_device_manager.run_kernel( PRG::FUNC_SQUARE, x.m*x.n, 1 );
+
+			auto y_mat = y_.get_matrix();
+			T sum = 0.0;
+#pragma omp parallel for schedule(auto) reduction(+:sum)
+			for( int i = 0; i < y_mat.m; ++i ) sum += y_mat(i,0);
+			y.set_element(0,0, sum);
+
+			return y;
+		}
+	}
+#endif
 };
 
-class CrossEntropy : public LossFunction
+template<typename T>
+class CrossEntropy : public LossFunction<T>
 {
 public:
-	inline Matrix<double> operator() ( const Matrix<double>& x, const Matrix<double>& d, const bool& isdiff ){
+	inline Matrix<T> operator() ( const Matrix<T>& x, const Matrix<T>& d, const bool& isdiff ){
 		if( isdiff ){
-			Matrix<double> y(x.m, x.n);
+			Matrix<T> y(x.m, x.n);
 
 #pragma omp parallel for schedule(auto)
 			for( int i = 0; i < x.m*x.n; ++i ) y.v[i] = x.v[i] - d.v[i];
@@ -274,8 +581,8 @@ public:
 			return y;
 		}
 		else{
-			double y_ = 0.0;
-			Matrix<double> y(1,1);
+			T y_ = 0.0;
+			Matrix<T> y(1,1);
 
 #pragma omp parallel for schedule(auto) reduction(-:y_)
 			for( int i = 0; i < x.m*x.n; ++i ) y_ -= d.v[i]*std::log(x.v[i]);
@@ -284,6 +591,39 @@ public:
 			return 2.0*y;
 		}
 	}
+
+#ifdef USE_GPU
+	inline clMatrix<T> operator() ( const clMatrix<T>& x, const clMatrix<T>& d, const bool& isdiff ){
+		if( isdiff ){
+			clMatrix<T> y(x.m, x.n);
+
+			cl_device_manager.set_argument( PRG::FUNC_SQUARE_DIFF, 0, &y.v );
+			cl_device_manager.set_argument( PRG::FUNC_SQUARE_DIFF, 1, &x.v );
+			cl_device_manager.set_argument( PRG::FUNC_SQUARE_DIFF, 2, &d.v );
+			cl_device_manager.run_kernel( PRG::FUNC_SQUARE_DIFF, y.m*y.n, 1 );
+
+			return y;
+		}
+		else{
+			clMatrix<T> y(1,1);
+			clMatrix<T> y_ = clMatrix<T>::zeros(cl_device_manager.get_max_work_group(),1);
+
+			cl_device_manager.set_argument( PRG::FUNC_CROSSENTROPY, 0, &y_.v );
+			cl_device_manager.set_argument( PRG::FUNC_CROSSENTROPY, 1, &x.v );
+			cl_device_manager.set_argument( PRG::FUNC_CROSSENTROPY, 2, &d.v );
+			cl_device_manager.set_argument( PRG::FUNC_CROSSENTROPY, 3, cl_device_manager.get_max_work_item(0)*sizeof(T) );
+			cl_device_manager.run_kernel( PRG::FUNC_CROSSENTROPY, x.m*x.n, 1 );
+
+			auto y_mat = y_.get_matrix();
+			T sum = 0.0;
+#pragma omp parallel for schedule(auto) reduction(+:sum)
+			for( int i = 0; i < y_mat.m; ++i ) sum += y_mat(i,0);
+			y.set_element(0,0,-2.0*sum);
+
+			return y;
+		}
+	}
+#endif
 };
 	
 #endif
