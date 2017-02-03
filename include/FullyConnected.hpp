@@ -12,8 +12,9 @@ class FullyConnected : public Layer
 private:
 public:
 	FullyConnected ( int prev_num_map, int prev_num_unit, int num_map, int num_unit,
-					 const std::shared_ptr<Function>& f, bool use_bias = true );
-
+					 const std::shared_ptr<Function<real>>& f, bool use_bias = true );
+	~FullyConnected ();
+	
 #ifdef USE_MPI
 	void init( std::mt19937& m, MPI_Comm inner_world, MPI_Comm outer_world );
 #else
@@ -37,13 +38,20 @@ public:
 };
 
 FullyConnected::FullyConnected( int prev_num_map, int prev_num_unit, int num_map, int num_unit,
-								const std::shared_ptr<Function>& f, bool use_bias )
+								const std::shared_ptr<Function<real>>& f, bool use_bias )
 {
 	this->prev_num_map = prev_num_map;
 	this->prev_num_unit = prev_num_unit;
 	this->num_map = num_map;
 	this->num_unit = num_unit;
 	this->is_use_bias = use_bias;
+
+#ifdef USE_GPU
+	cl_int err, tmp = use_bias;
+	this->cl_use_bias = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
+	err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_use_bias, CL_TRUE, 0,
+								sizeof(int), &tmp, 0, NULL, NULL );
+#endif
 
 	t_apply = t_delta = t_grad = 0.0;
 	t_apply_init = t_apply_gemm = t_apply_repl = t_apply_comm = 0.0;
@@ -53,6 +61,13 @@ FullyConnected::FullyConnected( int prev_num_map, int prev_num_unit, int num_map
 	func = f;
 }
 
+FullyConnected::~FullyConnected()
+{
+#ifdef USE_GPU
+	clReleaseMemObject( cl_use_bias );
+#endif
+}
+
 #ifdef USE_MPI
 void FullyConnected::init ( std::mt19937& m, MPI_Comm inner_world, MPI_Comm outer_world )
 #else
@@ -60,7 +75,7 @@ void FullyConnected::init ( std::mt19937& m )
 #endif
 {
 #ifdef USE_MPI
-	this->inner_world = inner_world;
+	This->inner_world = inner_world;
 	this->outer_world = outer_world;
 	MPI_Comm_size(inner_world, &(this->nprocs));
 	MPI_Comm_rank(inner_world, &(this->rank));
@@ -80,19 +95,21 @@ void FullyConnected::init ( std::mt19937& m )
 		}
 	}
 
-	const double r = sqrt(6.0/(num_unit + prev_num_unit));
+	const real r = sqrt(6.0/(num_unit + prev_num_unit));
 	std::uniform_real_distribution<double> d_rand(-r, r);
 	for( int i = 0; i < num_map; ++i ){
 		for( int j = 0; j < prev_num_map; ++j ){
+			Matrix<real> tmp_W(W[i][j].m, W[i][j].n);
 			for( int k = 0; k < num_unit; ++k ){
 				if( offset <= k && k < offset+my_size )
-					W[i][j](k-offset, 0) = 0;
+					tmp_W(k-offset, 0) = 0;
 				for( int l = 0; l < prev_num_unit; ++l ){
 					double a = d_rand(m);
 					if( offset <= k && k < offset+my_size )
-						W[i][j](k-offset, l+1) = a;
+						tmp_W(k-offset, l+1) = a;
 				}
 			}
+			W[i][j] = tmp_W;
 		}
 	}
 }
@@ -129,6 +146,14 @@ std::vector<std::vector<FullyConnected::Mat>> FullyConnected::calc_gradient ( co
 			t_grad_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
 			beg = std::chrono::system_clock::now();
+#ifdef USE_GPU
+			cl_device_manager.set_argument( PRG::FULL_APPLY_INIT, 0, &V.v );
+			cl_device_manager.set_argument( PRG::FULL_APPLY_INIT, 1, &U_.v );
+			cl_device_manager.set_argument( PRG::FULL_APPLY_INIT, 2, &cl_use_bias );
+			cl_device_manager.run_kernel( PRG::FULL_APPLY_INIT, V.m, V.n );
+
+			tmp_delta = delta[i];
+#else
 #pragma omp parallel
 			{
 #pragma omp for schedule(auto) nowait
@@ -143,6 +168,7 @@ std::vector<std::vector<FullyConnected::Mat>> FullyConnected::calc_gradient ( co
 					for( int l = 0; l < delta[i].n; ++l )
 						tmp_delta(k,l) = delta[i](k + offset,l);
 			}
+#endif
 			end = std::chrono::system_clock::now();
 			t_grad_repl += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 			
@@ -171,6 +197,11 @@ std::vector<FullyConnected::Mat> FullyConnected::calc_delta ( const std::vector<
 	t_delta_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
 	beg = std::chrono::system_clock::now();
+#ifdef USE_GPU
+	for( int i = 0; i < num_map; ++i ){
+		tmp_delta[i] = delta[i];
+	}
+#else
 #pragma omp parallel
 	{
 		for( int i = 0; i < num_map; ++i ){
@@ -181,6 +212,7 @@ std::vector<FullyConnected::Mat> FullyConnected::calc_delta ( const std::vector<
 			}
 		}
 	}
+#endif
 	end = std::chrono::system_clock::now();
 	t_delta_repl += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
@@ -217,11 +249,16 @@ std::vector<FullyConnected::Mat> FullyConnected::calc_delta ( const std::vector<
 		t_delta_comm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 #endif
 
+#ifdef USE_GPU
+		cl_device_manager.set_argument( PRG::FULL_DELTA_INIT, 0, &V.v );
+		cl_device_manager.set_argument( PRG::FULL_DELTA_INIT, 1, &tmp[i].v );
+		cl_device_manager.run_kernel( PRG::FULL_DELTA_INIT, V.m, V.n );
+#else
 #pragma omp parallel for schedule(auto)
 		for( int j = 0; j < tmp[i].m-1; ++j )
 			for( int k = 0; k < tmp[i].n; ++k )
 				V(j,k) = tmp[i](j+1,k);
-		
+#endif	
 		nx_delta[i] = Mat::hadamard(V, U_);
 	}
 	end = std::chrono::system_clock::now();
@@ -250,6 +287,14 @@ std::vector<FullyConnected::Mat> FullyConnected::apply ( const std::vector<Mat>&
 	t_apply_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
 	beg = std::chrono::system_clock::now();
+#ifdef USE_GPU
+	for( int i = 0; i < prev_num_map; ++i ){
+		cl_device_manager.set_argument( PRG::FULL_APPLY_INIT, 0, &V[i].v );
+		cl_device_manager.set_argument( PRG::FULL_APPLY_INIT, 1, &U[i].v );
+		cl_device_manager.set_argument( PRG::FULL_APPLY_INIT, 2, &cl_use_bias );
+		cl_device_manager.run_kernel( PRG::FULL_APPLY_INIT, V[i].m, V[i].n );
+	}
+#else
 #pragma omp parallel
 	{
 		for( int i = 0; i < prev_num_map; ++i ){
@@ -262,6 +307,7 @@ std::vector<FullyConnected::Mat> FullyConnected::apply ( const std::vector<Mat>&
 			}
 		}
 	}
+#endif
 	end = std::chrono::system_clock::now();
 	t_apply_repl += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
@@ -330,6 +376,9 @@ std::vector<std::vector<FullyConnected::Vec>> FullyConnected::apply ( const std:
 	for( int i = 0; i < prev_num_map; ++i )
 		tmp[i] = Mat(u[i][0].size(), u.size());
 
+#ifdef USE_GPU
+	puts("WIP");
+#else
 #pragma omp parallel
 	{
 		for( int i = 0; i < prev_num_map; ++i )
@@ -338,15 +387,20 @@ std::vector<std::vector<FullyConnected::Vec>> FullyConnected::apply ( const std:
 				for( int k = 0; k < u.size(); ++k )
 					tmp[i](j,k) = u[k][i][j];
 	}
+#endif
 	
 	auto U = apply(tmp, use_func);
 	std::vector<std::vector<Vec>> ret(U[0].n, std::vector<Vec>(U.size(), Vec(U[0].m)));
+#ifdef USE_GPU
+
+#else
 #pragma omp parallel for schedule(auto)
 	for( int i = 0; i < U[0].n; ++i ){
 		for( int j = 0; j < U.size(); ++j )
 			for( int k = 0; k < U[0].m; ++k )
 				ret[i][j][k] = U[j](k,i);
 	}
+#endif
 
 	return ret;
 }
@@ -362,6 +416,7 @@ void FullyConnected::set_W ( const std::string& filename )
 			ifs.read((char*)&n, sizeof(n));
 
 			int my_size = W[i][j].m*W[i][j].n, offset = 0;
+			Matrix<real> tmp_W(W[i][j].m, W[i][j].n);
 #ifdef USE_MPI
 			my_size = ((rank+1)*num_unit/nprocs - rank*num_unit/nprocs) * W[i][j].n;
 			offset = rank*num_unit/nprocs * W[i][j].n;
@@ -371,10 +426,11 @@ void FullyConnected::set_W ( const std::string& filename )
 #endif
 			for( int k = 0; k < W[i][j].m; ++k )
 				for( int l = 0; l < W[i][j].n; ++l )
-					ifs.read((char*)&W[i][j](k,l), sizeof(W[i][j](k,l)));
+					ifs.read((char*)&tmp_W(k,l), sizeof(tmp_W(k,l)));
 #ifdef USE_MPI
-			ifs.seekg((num_unit * W[i][j].n - (offset + my_size))*sizeof(double), std::ios::cur);
+			ifs.seekg((num_unit * tmp_W.n - (offset + my_size))*sizeof(double), std::ios::cur);
 #endif
+			W[i][j] = tmp_W;
 		}
 }
 
@@ -427,14 +483,19 @@ void FullyConnected::output_W ( const std::string& filename )
 			for( int j = 0; j < prev_num_map; ++j ){
 				ofs.write((char*)&num_unit, sizeof(num_unit));
 				ofs.write((char*)&W[i][j].n, sizeof(W[i][j].n));
-				
+
+#ifdef USE_GPU
+				Matrix<real> tmp_W = W[i][j].get_matrix();
+#else
+#ifdef USE_MPI
+				Matrix<real> tmp_W = all_W[i][j];
+#else
+				Matrix<real> tmp_W = W[i][j];
+#endif
+#endif
 				for( int k = 0; k < num_unit; ++k )
 					for( int l = 0; l < W[i][j].n; ++l ){
-#ifdef USE_MPI
-						ofs.write((char*)&all_W[i][j](k,l), sizeof(all_W[i][j](k,l)));
-#else
-						ofs.write((char*)&W[i][j](k,l), sizeof(W[i][j](k,l)));
-#endif
+						ofs.write((char*)&tmp_W(k,l), sizeof(tmp_W(k,l)));
 					}
 		}
 #ifdef USE_MPI

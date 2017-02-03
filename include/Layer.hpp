@@ -12,16 +12,28 @@
 #include <mpi.h>
 #endif
 
+#ifdef USE_GPU
+#include "clMatrix.hpp"
+#endif
+
 #include "Matrix.hpp"
 #include "Function.hpp"
 
 class Layer
 {
 protected:
-	typedef Matrix<double> Mat;
-	typedef std::vector<double> Vec;
+	typedef float real;
+#ifdef USE_GPU
+	typedef clMatrix<real> Mat;
+#else
+	typedef Matrix<real> Mat;
+#endif
+	typedef std::vector<real> Vec;
 
 	bool is_use_bias;
+#ifdef USE_GPU
+	cl_mem cl_use_bias;
+#endif
 
 	int prev_num_map, num_map;
 	int prev_num_unit, num_unit;
@@ -32,7 +44,7 @@ protected:
 #endif
 
 	std::vector<std::vector<Mat>> W;
-	std::shared_ptr<Function> func, prev_func;
+	std::shared_ptr<Function<real>> func, prev_func;
 public:
 	double t_apply, t_delta, t_grad;
 	double t_apply_init, t_apply_gemm, t_apply_repl, t_apply_comm;
@@ -57,8 +69,8 @@ public:
 	// virtual std::map<std::string, double> get_error () = 0;
 	
 	virtual std::vector<std::vector<Mat>> get_W ();
-	virtual std::shared_ptr<Function> get_function ();
-	virtual std::shared_ptr<Function> get_prev_function ();
+	virtual std::shared_ptr<Function<real>> get_function ();
+	virtual std::shared_ptr<Function<real>> get_prev_function ();
 
 	virtual int get_num_map();
 	virtual int get_num_unit();
@@ -66,8 +78,8 @@ public:
 	virtual int get_prev_num_unit();
 	
 	virtual void set_W ( const std::vector<std::vector<Mat>>& W );
-	virtual void set_function ( const std::shared_ptr<Function>& f );
-	virtual void set_prev_function ( const std::shared_ptr<Function>& f );
+	virtual void set_function ( const std::shared_ptr<Function<real>>& f );
+	virtual void set_prev_function ( const std::shared_ptr<Function<real>>& f );
 	
 	virtual void set_W ( const std::string& filename ) = 0;
 	virtual void output_W ( const std::string& filename ) = 0;
@@ -82,12 +94,12 @@ std::vector<std::vector<Layer::Mat>> Layer::get_W ()
 	return this->W;
 }
 
-std::shared_ptr<Function> Layer::get_function ()
+std::shared_ptr<Function<Layer::real>> Layer::get_function ()
 {
 	return func;
 }
 
-std::shared_ptr<Function> Layer::get_prev_function ()
+std::shared_ptr<Function<Layer::real>> Layer::get_prev_function ()
 {
 	return prev_func;
 }
@@ -117,12 +129,12 @@ void Layer::set_W ( const std::vector<std::vector<Mat>>& W )
 	this->W = W;
 }
 
-void Layer::set_function ( const std::shared_ptr<Function>& f )
+void Layer::set_function ( const std::shared_ptr<Function<real>>& f )
 {
 	func = f;
 }
 
-void Layer::set_prev_function ( const std::shared_ptr<Function>& f )
+void Layer::set_prev_function ( const std::shared_ptr<Function<real>>& f )
 {
 	prev_func = f;
 }
