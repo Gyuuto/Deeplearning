@@ -515,7 +515,7 @@ public:
 		if( isdiff ){
 			Matrix<T> y(x.m, x.n);
 #pragma omp parallel for schedule(auto)
-			for( int i = 0; i < y.m*y.n; ++i ) y.v[i] = x.v[i] - d.v[i];
+			for( int i = 0; i < y.m*y.n; ++i ) y.v[i] = 2.0*(x.v[i] - d.v[i]);
 
 			return y;
 		}
@@ -576,7 +576,7 @@ public:
 			Matrix<T> y(x.m, x.n);
 
 #pragma omp parallel for schedule(auto)
-			for( int i = 0; i < x.m*x.n; ++i ) y.v[i] = x.v[i] - d.v[i];
+			for( int i = 0; i < x.m*x.n; ++i ) y.v[i] = 2.0*(x.v[i] - d.v[i]);
 
 			return y;
 		}

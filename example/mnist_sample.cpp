@@ -5,27 +5,25 @@
 #include <cmath>
 
 #include "../include/Neuralnet.hpp"
-#include "../include/Layer.hpp"
-#include "../include/FullyConnected.hpp"
-#include "../include/Convolutional.hpp"
-#include "../include/Pooling.hpp"
+#include "../include/Layer/Layer.hpp"
+#include "../include/Layer/FullyConnected.hpp"
 
 using namespace std;
 
 // pixel normalize function
-void normalize ( vector<vector<vector<double>>>& image, vector<vector<double>>& ave )
+void normalize ( vector<Matrix<double>>& image, vector<vector<double>>& ave )
 {
-    for( int i = 0; i < image[0].size(); ++i ){
-        ave.emplace_back(image[0][0].size(), 0.0);
+    for( int i = 0; i < image.size(); ++i ){
+        ave.emplace_back(image[i].m, 0.0);
 
-        for( int j = 0; j < image.size(); ++j ){
-            for( int k = 0; k < image[0][i].size(); ++k ) ave[i][k] += image[j][i][k];
+        for( int j = 0; j < image[i].m; ++j ){
+            for( int k = 0; k < image[i].n; ++k ) ave[i][j] += image[i](j,k);
         }
-        for( int j = 0; j < image[0][i].size(); ++j ) ave[i][j] /= image.size();
+        for( int j = 0; j < image[i].m; ++j ) ave[i][j] /= image[i].n;
 
-        for( int j = 0; j < image.size(); ++j )
-			for( int k = 0; k < image[0][i].size(); ++k )
-				image[j][i][k] -= ave[i][k];
+        for( int j = 0; j < image[i].m; ++j )
+			for( int k = 0; k < image[i].n; ++k )
+				image[i](j,k) -= ave[i][j];
     }
 }
 
@@ -35,17 +33,13 @@ int main( int argc, char* argv[] )
 	const int BATCH_SIZE = 50;
 
 	// construct neuralnetwork with CrossEntropy.
-    Neuralnet net(shared_ptr<LossFunction>(new CrossEntropy));
-	vector<shared_ptr<Layer>> layers;
+    Neuralnet<Matrix, double> net(shared_ptr<LossFunction<double>>(new CrossEntropy<double>));
+	vector<shared_ptr<Layer<Matrix, double>>> layers;
 
 	// define layers.
-	layers.emplace_back(new Convolutional(1, 28*28, 28,
-										  20, 28*28, 28,
-										  5, 5, 1, shared_ptr<Function>(new ReLU)));
-	layers.emplace_back(new Pooling(20, 28*28, 28,
-									20, 7*7, 7,
-									4, 4, 4, shared_ptr<Function>(new Identity)));
-	layers.emplace_back(new FullyConnected(20, 7*7, 1, 10, shared_ptr<Function>(new Softmax)));
+	layers.emplace_back(new FullyConnected<Matrix, double>(1, 28*28, 1, 1000, shared_ptr<Function<double>>(new ReLU<double>)));
+	layers.emplace_back(new FullyConnected<Matrix, double>(1, 1000, 1, 500, shared_ptr<Function<double>>(new ReLU<double>)));
+	layers.emplace_back(new FullyConnected<Matrix, double>(1, 500, 1, 10, shared_ptr<Function<double>>(new Softmax<double>)));
 
 	// this neuralnet has 4 layers, input, convolutional, pooling and FullyConnected.
 	for( int i = 0; i < layers.size(); ++i ){
@@ -53,9 +47,7 @@ int main( int argc, char* argv[] )
 	}
 	
 	// read a test data of MNIST(http://yann.lecun.com/exdb/mnist/).
-	vector<int> train_lab;
-	vector<vector<vector<double>>> train_x;
-	const int N = 1000;
+	const int N = 10000;
 	ifstream train_image("train-images-idx3-ubyte", ios_base::binary);
 	if( !train_image.is_open() ){
 		cerr << "\"train-images-idx3-ubyte\" is not found!" << endl;
@@ -69,19 +61,18 @@ int main( int argc, char* argv[] )
 
 	train_image.seekg(4*4, ios_base::beg);
 	train_label.seekg(4*2, ios_base::beg);
+	vector<Matrix<double>> train_x(1, Matrix<double>(28*28, N)), train_d(1, Matrix<double>(10, N));
 	for( int i = 0; i < N; ++i ){
 		unsigned char tmp_lab;
 		train_label.read((char*)&tmp_lab, sizeof(unsigned char));
-		train_lab.push_back(tmp_lab);
+		for( int j = 0; j < 10; ++j ) train_d[0](j, i) = 0.0;
+		train_d[0](tmp_lab, i) = 1.0;
 		
-		vector<vector<double>> tmp(1, vector<double>(28*28));
 		for( int j = 0; j < 28*28; ++j ){
 			unsigned char c;
 			train_image.read((char*)&c, sizeof(unsigned char));
-			tmp[0][j] = (c/255.0);
+			train_x[0](j, i) = (c/255.0);
 		}
-		
-		train_x.push_back(tmp);
 	}
 
 	vector<vector<double>> ave;
@@ -89,8 +80,6 @@ int main( int argc, char* argv[] )
 	normalize(train_x, ave);
 
 	// read a train data of MNIST.
-	vector<int> test_lab;
-	vector<vector<vector<double>>> test_x;
 	const int M = 5000;
 	ifstream test_image("t10k-images-idx3-ubyte", ios_base::binary);
 	if( !test_image.is_open() ){
@@ -105,64 +94,95 @@ int main( int argc, char* argv[] )
 
 	test_image.seekg(4*4, ios_base::beg);
 	test_label.seekg(4*2, ios_base::beg);
+	vector<Matrix<double>> test_x(1, Matrix<double>(28*28, M)), test_d(1, Matrix<double>(10, M));
 	for( int i = 0; i < M; ++i ){
 		unsigned char tmp_lab;
 		test_label.read((char*)&tmp_lab, sizeof(unsigned char));
-		test_lab.push_back(tmp_lab);
+		for( int j = 0; j < 10; ++j ) test_d[0](j, i) = 0.0;
+		test_d[0](tmp_lab, i) = 1.0;
 		
-		vector<vector<double>> tmp(1, vector<double>(28*28));
 		for( int j = 0; j < 28*28; ++j ){
 			unsigned char c;
 			test_image.read((char*)&c, sizeof(unsigned char));
-			tmp[0][j] = (c/255.0 - ave[0][j]);
+			test_x[0](j,i) = (c/255.0 - ave[0][j]);
 		}
-		
-		test_x.push_back(tmp);
 	}
 	
+	chrono::time_point<chrono::system_clock> prev_time, total_time;
 	// checking error function.
-	string text = "Train data answer rate : ";
-	auto check_error = [&](const Neuralnet& nn, const int iter, const std::vector<Matrix<double>>& x, const std::vector<Matrix<double>>& d ) -> void {
-		if( iter%(N/BATCH_SIZE) != 0 || iter == 0 ) return;
+	auto check_error = [&](const Neuralnet<Matrix, double>& nn, const int iter, const std::vector<Matrix<double>>& x, const std::vector<Matrix<double>>& d ) -> void {
+		if( iter%(N/BATCH_SIZE) != 0 ) return;
 
-		int ans_num = 0;
-		auto Y = nn.apply(x);
-		for( int i = 0; i < Y[0].n; ++i ){
-			int idx, lab;
-			double max_num = 0.0;
-			for( int j = 0; j < 10; ++j ){
-				if( max_num < Y[0](j,i) ){
-					max_num = Y[0](j,i);
-					idx = j;
+		// extracting number of samples from data(for reduciong memory consumption)
+		const int once_num = 1000;
+
+		auto tmp_time = chrono::system_clock::now();
+		double flops = (double)cnt_flop / (std::chrono::duration_cast<std::chrono::milliseconds>(tmp_time - prev_time).count()/1e3) / 1e9;
+		
+		// calculate answer rate of train data
+		int train_ans_num = 0;
+		for( int i = 0; i < N; i += once_num ){
+			int size = min(once_num, N - i);
+			vector<Matrix<double>> tmp_x(1);
+			for( int j = 0; j < train_x.size(); ++j ) tmp_x[j] = train_x[0].sub(0, i, 28*28, size);
+			
+			auto tmp_y = nn.apply(tmp_x);
+			for( int j = 0; j < tmp_y[0].n; ++j ){
+				int idx = 0, lab = -1;
+				double max_num = tmp_y[0](0, j);
+
+				for( int k = 0; k < 10; ++k ){
+					if( max_num < tmp_y[0](k, j) ){
+						max_num = tmp_y[0](k, j);
+						idx = k;
+					}
+					if( train_d[0](k, i+j) == 1.0 ) lab = k;
 				}
-				if( d[0](j, i) == 1.0 ) lab = j;
+				if( idx == lab ) ++train_ans_num;
 			}
-			if( idx == lab ) ++ans_num;
 		}
 
-		printf("%s%.2f%%\n", text.c_str(), (double)ans_num/Y[0].n*100.0);
+		// calculate answer rate of test data
+		int test_ans_num = 0;
+		for( int i = 0; i < M; i += once_num ){
+			int size = min(once_num, M - i);
+			vector<Matrix<double>> tmp_x(1);
+			for( int j = 0; j < test_x.size(); ++j ) tmp_x[j] = test_x[0].sub(0, i, 28*28, size);
+			
+			auto tmp_y = nn.apply(tmp_x);
+			for( int j = 0; j < tmp_y[0].n; ++j ){
+				int idx = 0, lab = -1;
+				double max_num = tmp_y[0](0, j);
+
+				for( int k = 0; k < 10; ++k ){
+					if( max_num < tmp_y[0](k, j) ){
+						max_num = tmp_y[0](k, j);
+						idx = k;
+					}
+					if( test_d[0](k, i+j) == 1.0 ) lab = k;
+				}
+				if( idx == lab ) ++test_ans_num;
+			}
+		}
+
+		printf("Iter %5d, Epoch %3d\n", iter, iter/(N/BATCH_SIZE));
+		printf("  Elapsed time : %.3f, Total time : %.3f\n",
+			   chrono::duration_cast<chrono::milliseconds>(tmp_time - prev_time).count()/1e3,
+			   chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now() - total_time).count()/1e3);
+		printf("  Train answer rate %.2f%%\n", (double)train_ans_num/N*100.0);
+		printf("  Test answer rate  %.2f%%\n", (double)test_ans_num/M*100.0);
+		printf("  %.3f[GFLOPS]\n\n", flops);
+		prev_time = chrono::system_clock::now();
+		cnt_flop = 0;
 	};
 
 	// set supervised data.
-	vector<vector<vector<double>>> d(N, vector<vector<double>>(1, vector<double>(10, 0.0)));
-	for( int i = 0; i < N; ++i ) d[i][0][train_lab[i]] = 1.0;
-
-	vector<Matrix<double>> X(1, Matrix<double>(28*28, M)), Y(1, Matrix<double>(10, M));
-	for( int i = 0; i < M; ++i ){
-		for( int j = 0; j < 28*28; ++j ){
-			X[0](j, i) = test_x[i][0][j];
-		}
-		Y[0](test_lab[i], i) = 1.0;
-	}
 
 	// set a hyper parameter.
 	net.set_EPS(1.0E-3);
 	net.set_LAMBDA(0.0);
 	net.set_BATCHSIZE(BATCH_SIZE);
 	// learning the neuralnet in 10 EPOCH and output error defined above in each epoch.
-	net.learning(train_x, d, N/BATCH_SIZE*10, check_error);
-
-	// calc answer rate of test data.
-	text = "Test data answer rate : ";
-	check_error(net, N/BATCH_SIZE, X, Y);
+	prev_time = total_time = chrono::system_clock::now();
+	net.learning(train_x, train_d, N/BATCH_SIZE*10, check_error);
 }
