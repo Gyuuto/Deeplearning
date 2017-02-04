@@ -2,6 +2,6 @@ __kernel void function_Square_diff ( __global float* y, __global float* x, __glo
 {
 	int gid = get_global_id(0);
 
-	y[gid] = x[gid] - d[gid];
+	y[gid] = 2.0f*(x[gid] - d[gid]);
 }
 

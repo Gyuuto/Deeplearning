@@ -108,22 +108,18 @@ clDeviceManager::clDeviceManager()
 	cl_int err;
 
 	err = clGetPlatformIDs( 1, &platform, NULL );
-	printf("%d\n", err);
 	err = clGetDeviceIDs( platform, CL_DEVICE_TYPE_GPU, 1, &device, NULL );
-	printf("%d\n", err);
 
 	props[1] = (cl_context_properties)platform;
 	ctx = clCreateContext( props, 1, &device, NULL, NULL, &err );
-	printf("%d\n", err);
 	queue = clCreateCommandQueue( ctx, device, 0, &err );
-	printf("%d\n", err);
 
     err = clblasSetup();
 
 	clGetDeviceInfo(device, CL_DEVICE_MAX_WORK_ITEM_SIZES, sizeof(size_t)*3, maximum_work_item, NULL);
 	clGetDeviceInfo(device, CL_DEVICE_MAX_WORK_GROUP_SIZE, sizeof(size_t), &maximum_work_group, NULL);
 
-	for( int i = 0; i < 1; ++i ){ //PRG::LENG; ++i ){
+	for( int i = 0; i < PRG::LENG; ++i ){
 		std::string source = read_program(PRG_NAME[i]);
 		const char* c_source = source.data();
 		size_t source_size = source.size();
@@ -131,20 +127,20 @@ clDeviceManager::clDeviceManager()
 		
 		cl_program program = clCreateProgramWithSource(ctx, 1, &c_source, &source_size, &err);
 		err = clBuildProgram(program, 1, &device, NULL, NULL, NULL);
-		// if( err != 0 ){
-		// 	printf("Compile error : %s, error code %d\n", PRG_NAME[i].c_str(), err);
-		// 	char buf[1024];
-		// 	clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, 1024, buf, NULL);
-		// 	printf("  %s\n", buf);
-		// }
-		// kernel[i] = clCreateKernel(program, PRG_NAME[i].c_str(), &err);
-		// if( err != 0 ) printf("Failed CreateKernel : %s, error code %d\n", PRG_NAME[i].c_str(), err);
+		if( err != 0 ){
+			printf("Compile error : %s, error code %d\n", PRG_NAME[i].c_str(), err);
+			char buf[1024];
+			clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, 1024, buf, NULL);
+			printf("  %s\n", buf);
+		}
+		kernel[i] = clCreateKernel(program, PRG_NAME[i].c_str(), &err);
+		if( err != 0 ) printf("Failed CreateKernel : %s, error code %d\n", PRG_NAME[i].c_str(), err);
 	}
 }
 
 clDeviceManager::~clDeviceManager()
 {
-    // clblasTeardown( );
+    clblasTeardown( );
     clReleaseCommandQueue( queue );
     clReleaseContext( ctx );
 }
