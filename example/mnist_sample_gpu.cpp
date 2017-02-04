@@ -6,8 +6,8 @@
 #include <chrono>
 
 #include "../include/Neuralnet.hpp"
-#include "../include/Layer.hpp"
-#include "../include/FullyConnected.hpp"
+#include "../include/Layer/Layer.hpp"
+#include "../include/Layer/FullyConnected.hpp"
 // #include "../include/Convolutional.hpp"
 // #include "../include/Pooling.hpp"
 
@@ -36,8 +36,8 @@ int main( int argc, char* argv[] )
 	const int BATCH_SIZE = 128;
 
 	// construct neuralnetwork with CrossEntropy.
-    Neuralnet net(shared_ptr<LossFunction<float>>(new CrossEntropy<float>));
-	vector<shared_ptr<Layer>> layers;
+    Neuralnet<clMatrix, float> net(shared_ptr<LossFunction<float>>(new CrossEntropy<float>));
+	vector<shared_ptr<Layer<clMatrix, float>>> layers;
 
 	// define layers.
 	// layers.emplace_back(new Convolutional(1, 28*28, 28,
@@ -46,12 +46,17 @@ int main( int argc, char* argv[] )
 	// layers.emplace_back(new Pooling(20, 28*28, 28,
 	// 								20, 7*7, 7,
 	// 								4, 4, 4, shared_ptr<Function>(new Identity)));	
-	layers.emplace_back(new FullyConnected(1, 28*28, 1, 2000, shared_ptr<Function<float>>(new ReLU<float>)));
-	// layers.emplace_back(new FullyConnected(1, 2000, 1, 2000, shared_ptr<Function<float>>(new ReLU<float>)));
-	// layers.emplace_back(new FullyConnected(1, 2000, 1, 2000, shared_ptr<Function<float>>(new ReLU<float>)));
-	// layers.emplace_back(new FullyConnected(1, 2000, 1, 2000, shared_ptr<Function<float>>(new ReLU<float>)));
-	// layers.emplace_back(new FullyConnected(1, 2000, 1, 2000, shared_ptr<Function<float>>(new ReLU<float>)));
-	layers.emplace_back(new FullyConnected(1, 2000, 1, 10, shared_ptr<Function<float>>(new Softmax<float>)));
+
+	// layers.emplace_back(new FullyConnected<clMatrix, float>(1, 28*28, 1, 1000, shared_ptr<Function<float>>(new ReLU<float>)));
+	// layers.emplace_back(new FullyConnected<clMatrix, float>(1, 1000, 1, 500, shared_ptr<Function<float>>(new ReLU<float>)));
+	// layers.emplace_back(new FullyConnected<clMatrix, float>(1, 500, 1, 10, shared_ptr<Function<float>>(new Softmax<float>)));
+
+	layers.emplace_back(new FullyConnected<clMatrix, float>(1, 28*28, 1, 2000, shared_ptr<Function<float>>(new ReLU<float>)));
+	layers.emplace_back(new FullyConnected<clMatrix, float>(1, 2000, 1, 2000, shared_ptr<Function<float>>(new ReLU<float>)));
+	layers.emplace_back(new FullyConnected<clMatrix, float>(1, 2000, 1, 2000, shared_ptr<Function<float>>(new ReLU<float>)));
+	layers.emplace_back(new FullyConnected<clMatrix, float>(1, 2000, 1, 2000, shared_ptr<Function<float>>(new ReLU<float>)));
+	layers.emplace_back(new FullyConnected<clMatrix, float>(1, 2000, 1, 2000, shared_ptr<Function<float>>(new ReLU<float>)));
+	layers.emplace_back(new FullyConnected<clMatrix, float>(1, 2000, 1, 10, shared_ptr<Function<float>>(new Softmax<float>)));
 
 	// this neuralnet has 4 layers, input, convolutional, pooling and FullyConnected.
 	for( int i = 0; i < layers.size(); ++i ){
@@ -59,7 +64,7 @@ int main( int argc, char* argv[] )
 	}
 	
 	// read a test data of MNIST(http://yann.lecun.com/exdb/mnist/).
-	const int N = 60000;
+	const int N = 10000;
 	vector<Matrix<float>> train_x(1, Matrix<float>(28*28, N)),
 		train_d(1, Matrix<float>(10, N));
 	ifstream train_image("train-images-idx3-ubyte", ios_base::binary);
@@ -129,7 +134,7 @@ int main( int argc, char* argv[] )
 	// checking error function.
 	auto total = chrono::system_clock::now();
 	auto prev_time = chrono::system_clock::now();
-	auto check_error = [&](const Neuralnet& nn, const int iter, const std::vector<clMatrix<float>>& x, const std::vector<clMatrix<float>>& d ) -> void {
+	auto check_error = [&](const Neuralnet<clMatrix, float>& nn, const int iter, const std::vector<clMatrix<float>>& x, const std::vector<clMatrix<float>>& d ) -> void {
 		if( iter%(N/BATCH_SIZE) != 0 ) return;
 
 		auto tmp_time = chrono::system_clock::now();

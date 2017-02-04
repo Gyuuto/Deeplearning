@@ -11,7 +11,8 @@
 using namespace std;
 
 // pixel normalize function
-void normalize ( vector<Matrix<double>>& image, vector<vector<double>>& ave )
+template<typename T>
+void normalize ( vector<Matrix<T>>& image, vector<vector<double>>& ave )
 {
     for( int i = 0; i < image.size(); ++i ){
         ave.emplace_back(image[i].m, 0.0);
@@ -30,16 +31,17 @@ void normalize ( vector<Matrix<double>>& image, vector<vector<double>>& ave )
 int main( int argc, char* argv[] )
 {
 	// define mini-batch size.
-	const int BATCH_SIZE = 50;
-
+	const int BATCH_SIZE = 128;
+	typedef float Real;
+	
 	// construct neuralnetwork with CrossEntropy.
-    Neuralnet<Matrix, double> net(shared_ptr<LossFunction<double>>(new CrossEntropy<double>));
-	vector<shared_ptr<Layer<Matrix, double>>> layers;
+    Neuralnet<Matrix, Real> net(shared_ptr<LossFunction<Real>>(new CrossEntropy<Real>));
+	vector<shared_ptr<Layer<Matrix, Real>>> layers;
 
 	// define layers.
-	layers.emplace_back(new FullyConnected<Matrix, double>(1, 28*28, 1, 1000, shared_ptr<Function<double>>(new ReLU<double>)));
-	layers.emplace_back(new FullyConnected<Matrix, double>(1, 1000, 1, 500, shared_ptr<Function<double>>(new ReLU<double>)));
-	layers.emplace_back(new FullyConnected<Matrix, double>(1, 500, 1, 10, shared_ptr<Function<double>>(new Softmax<double>)));
+	layers.emplace_back(new FullyConnected<Matrix, Real>(1, 28*28, 1, 1000, shared_ptr<Function<Real>>(new ReLU<Real>)));
+	layers.emplace_back(new FullyConnected<Matrix, Real>(1, 1000, 1, 500, shared_ptr<Function<Real>>(new ReLU<Real>)));
+	layers.emplace_back(new FullyConnected<Matrix, Real>(1, 500, 1, 10, shared_ptr<Function<Real>>(new Softmax<Real>)));
 
 	// this neuralnet has 4 layers, input, convolutional, pooling and FullyConnected.
 	for( int i = 0; i < layers.size(); ++i ){
@@ -61,7 +63,7 @@ int main( int argc, char* argv[] )
 
 	train_image.seekg(4*4, ios_base::beg);
 	train_label.seekg(4*2, ios_base::beg);
-	vector<Matrix<double>> train_x(1, Matrix<double>(28*28, N)), train_d(1, Matrix<double>(10, N));
+	vector<Matrix<Real>> train_x(1, Matrix<Real>(28*28, N)), train_d(1, Matrix<Real>(10, N));
 	for( int i = 0; i < N; ++i ){
 		unsigned char tmp_lab;
 		train_label.read((char*)&tmp_lab, sizeof(unsigned char));
@@ -94,7 +96,7 @@ int main( int argc, char* argv[] )
 
 	test_image.seekg(4*4, ios_base::beg);
 	test_label.seekg(4*2, ios_base::beg);
-	vector<Matrix<double>> test_x(1, Matrix<double>(28*28, M)), test_d(1, Matrix<double>(10, M));
+	vector<Matrix<Real>> test_x(1, Matrix<Real>(28*28, M)), test_d(1, Matrix<Real>(10, M));
 	for( int i = 0; i < M; ++i ){
 		unsigned char tmp_lab;
 		test_label.read((char*)&tmp_lab, sizeof(unsigned char));
@@ -110,7 +112,7 @@ int main( int argc, char* argv[] )
 	
 	chrono::time_point<chrono::system_clock> prev_time, total_time;
 	// checking error function.
-	auto check_error = [&](const Neuralnet<Matrix, double>& nn, const int iter, const std::vector<Matrix<double>>& x, const std::vector<Matrix<double>>& d ) -> void {
+	auto check_error = [&](const Neuralnet<Matrix, Real>& nn, const int iter, const std::vector<Matrix<Real>>& x, const std::vector<Matrix<Real>>& d ) -> void {
 		if( iter%(N/BATCH_SIZE) != 0 ) return;
 
 		// extracting number of samples from data(for reduciong memory consumption)
@@ -123,7 +125,7 @@ int main( int argc, char* argv[] )
 		int train_ans_num = 0;
 		for( int i = 0; i < N; i += once_num ){
 			int size = min(once_num, N - i);
-			vector<Matrix<double>> tmp_x(1);
+			vector<Matrix<Real>> tmp_x(1);
 			for( int j = 0; j < train_x.size(); ++j ) tmp_x[j] = train_x[0].sub(0, i, 28*28, size);
 			
 			auto tmp_y = nn.apply(tmp_x);
@@ -146,7 +148,7 @@ int main( int argc, char* argv[] )
 		int test_ans_num = 0;
 		for( int i = 0; i < M; i += once_num ){
 			int size = min(once_num, M - i);
-			vector<Matrix<double>> tmp_x(1);
+			vector<Matrix<Real>> tmp_x(1);
 			for( int j = 0; j < test_x.size(); ++j ) tmp_x[j] = test_x[0].sub(0, i, 28*28, size);
 			
 			auto tmp_y = nn.apply(tmp_x);
