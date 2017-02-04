@@ -30,6 +30,10 @@ struct Matrix;
 
 #include "tMatrix.hpp"
 
+#ifdef USE_GPU
+template<class T>
+struct clMatrix;
+#endif
 
 template<class T>
 struct Matrix
@@ -100,6 +104,30 @@ struct Matrix
 
 		return *this;
 	}
+
+#ifdef USE_GPU
+	Matrix( const clMatrix<T>& mat )
+	{
+		auto tmp = mat.get_matrix();
+
+		this->m = mat.m; this->n = mat.n;
+		if( m == 0 || n == 0 ){
+			v = NULL;
+		}
+		else{
+			v = new T[m*n];
+#pragma omp parallel for
+			for( int i = 0; i < m*n; ++i )  v[i] = tmp.v[i];
+		}
+	}
+
+	Matrix<T>& operator = ( const clMatrix<T>& mat )
+	{
+		*this = mat.get_matrix();
+		
+		return *this;
+	}
+#endif
 
 	~Matrix ()
 	{

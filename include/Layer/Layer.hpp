@@ -14,6 +14,9 @@
 #endif
 
 #include "../Matrix.hpp"
+#ifdef USE_GPU
+#include "../clMatrix.hpp"
+#endif
 #include "../Function.hpp"
 
 template<template<typename> class Mat, typename Real>
@@ -21,7 +24,10 @@ class Layer
 {
 protected:
 	bool is_use_bias;
-
+#ifdef USE_GPU
+	cl_mem cl_use_bias;
+#endif
+	
 	int prev_num_map, num_map;
 	int prev_num_unit, num_unit;
 	
@@ -30,7 +36,7 @@ protected:
 	int rank, nprocs;
 #endif
 
-	std::vector<std::vector<Mat<Real>>> W;
+	std::vector<std::vector<Mat<Real>>> W, b;
 	std::shared_ptr<Function<Real>> func, prev_func;
 public:
 	double t_apply, t_delta, t_grad;
@@ -47,12 +53,13 @@ public:
 #endif
 	virtual void finalize () = 0;
 	virtual std::vector<Mat<Real>> calc_delta ( const std::vector<Mat<Real>>& U, const std::vector<Mat<Real>>& delta ) = 0;
-	virtual std::vector<std::vector<Mat<Real>>> calc_gradient ( const std::vector<Mat<Real>>& U, const std::vector<Mat<Real>>& delta ) = 0;
-	virtual void update_W ( const std::vector<std::vector<Mat<Real>>>& dW ) = 0;
+	virtual std::pair<std::vector<std::vector<Mat<Real>>>, std::vector<std::vector<Mat<Real>>>> calc_gradient ( const std::vector<Mat<Real>>& U, const std::vector<Mat<Real>>& delta ) = 0;
+	virtual void update_W ( const std::vector<std::vector<Mat<Real>>>& dW, const std::vector<std::vector<Mat<Real>>>& db ) = 0;
 
 	virtual std::vector<Mat<Real>> apply ( const std::vector<Mat<Real>>& U, bool use_func = true ) = 0;
 
 	virtual std::vector<std::vector<Mat<Real>>> get_W ();
+	virtual std::vector<std::vector<Mat<Real>>> get_b ();
 	virtual std::shared_ptr<Function<Real>> get_function ();
 	virtual std::shared_ptr<Function<Real>> get_prev_function ();
 
@@ -62,6 +69,7 @@ public:
 	virtual int get_prev_num_unit();
 	
 	virtual void set_W ( const std::vector<std::vector<Mat<Real>>>& W );
+	virtual void set_b ( const std::vector<std::vector<Mat<Real>>>& b );
 	virtual void set_function ( const std::shared_ptr<Function<Real>>& f );
 	virtual void set_prev_function ( const std::shared_ptr<Function<Real>>& f );
 	
@@ -77,6 +85,12 @@ template<template<typename> class Mat, typename Real>
 std::vector<std::vector<Mat<Real>>> Layer<Mat, Real>::get_W ()
 {
 	return this->W;
+}
+
+template<template<typename> class Mat, typename Real>
+std::vector<std::vector<Mat<Real>>> Layer<Mat, Real>::get_b ()
+{
+	return this->b;
 }
 
 template<template<typename> class Mat, typename Real>
@@ -122,6 +136,12 @@ void Layer<Mat, Real>::set_W ( const std::vector<std::vector<Mat<Real>>>& W )
 }
 
 template<template<typename> class Mat, typename Real>
+void Layer<Mat, Real>::set_b ( const std::vector<std::vector<Mat<Real>>>& b )
+{
+	this->b = b;
+}
+
+template<template<typename> class Mat, typename Real>
 void Layer<Mat, Real>::set_function ( const std::shared_ptr<Function<Real>>& f )
 {
 	func = f;
@@ -132,9 +152,4 @@ void Layer<Mat, Real>::set_prev_function ( const std::shared_ptr<Function<Real>>
 {
 	prev_func = f;
 }
-
-#ifdef USE_GPU
-#include "Layer_gpu.hpp"
-#endif
-
 #endif
