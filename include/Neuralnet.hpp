@@ -118,7 +118,6 @@ std::pair<std::vector<std::vector<Mat<Real>>>, std::vector<std::vector<Mat<Real>
 #ifdef DEBUG
 		auto end1 = std::chrono::system_clock::now();
 #endif
-
 		if( i == 0 ){
 #ifdef DEBUG
 			if( rank == 0 ) printf("  layer %d, calc grad : %3lld\n", i, std::chrono::duration_cast<std::chrono::milliseconds>(end1 - beg1).count());
@@ -156,7 +155,7 @@ void Neuralnet<Mat, Real>::check_gradient ( int cnt, const std::vector<int>& idx
 		for( int j = 0; j < BATCH_SIZE; ++j )
 			tmp_Y(i, j) = Y(i, idx[(cnt+j)%Y.n]);
 
-	const double delta_x = 1.0E-6;
+	const double delta_x = 1.0E-8;
 	// Calculate gradient numerically for confirmation of computing
 	for( int i = 0; i < num_layer; ++i ){
 		if( rank == target_rank ) printf("\tlayer %d\n", i);
@@ -174,54 +173,66 @@ void Neuralnet<Mat, Real>::check_gradient ( int cnt, const std::vector<int>& idx
 		for( int j = 0; j < std::min(2, J); ++j ){ // num_map
 			for( int k = 0; k < std::min(4, K); ++k ){
 				for( int l = 0; l < std::min(4, L); ++l ){
-					double tmp;
+					double tmp, org;
 					if( layer[i]->get_num_map() != 1 || rank == target_rank ){
-						tmp = W[j](k, l);
-						tmp = delta_x*(std::abs(tmp) < 1.0E0 ? 1.0 : std::abs(tmp));
+						org = W[j](k, l);
+						tmp = delta_x*(std::abs(org) < 1.0E0 ? 1.0 : std::abs(org));
 					}
 
 					if( layer[i]->get_num_map() != 1 || rank == target_rank ){
-						W[j](k,l) += tmp;
+						W[j](k,l) = org + tmp;
 						layer[i]->set_W(W);
 					}
 					auto tmp1 = apply(tmp_X);
 					double E1 = (*loss)(tmp1, tmp_Y, false)(0, 0);
 
 					if( layer[i]->get_num_map() != 1 || rank == target_rank ){
-						W[j](k,l) -= 2*tmp;
+						W[j](k,l) = org - tmp;
 						layer[i]->set_W(W);
 					}
 					auto tmp2 = apply(tmp_X);
 					double E2 = (*loss)(tmp2, tmp_Y, false)(0, 0);
-						
+
 					if( rank == target_rank ){
 						double grad = nabla_w[i][j](k,l);
 						printf("\t%3d, %3d, %3d : ( %.10E, %.10E = %.10E )\n",
 							   j, k, l,
 							   0.5*(E1 - E2)/tmp/BATCH_SIZE, grad, (std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE - grad))/std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE));
 					}
+
+					if( layer[i]->get_num_map() != 1 || rank == target_rank ){
+						W[j](k,l) = org;
+						layer[i]->set_W(W);
+					}
 				}
 			}
 		}
+
+		J = b.size(); K = b[0].m; L = b[0].n;
+#ifdef USE_MPI
+		MPI_Bcast(&J, 1, MPI_INT, target_rank, inner_world);
+		MPI_Bcast(&K, 1, MPI_INT, target_rank, inner_world);
+		MPI_Bcast(&L, 1, MPI_INT, target_rank, inner_world);
+#endif
 		if( rank == target_rank ) printf("\t  grad b\n");
 		for( int j = 0; j < std::min(2, J); ++j ){ // num_map
 			for( int k = 0; k < std::min(4, K); ++k ){
-				for( int l = 0; l < std::min(1, L); ++l ){
-					double tmp;
+				for( int l = 0; l < std::min(4, L); ++l ){
+					double tmp, org;
 					if( layer[i]->get_num_map() != 1 || rank == target_rank ){
-						tmp = b[j](k,l);
-						tmp = delta_x*(std::abs(tmp) < 1.0E0 ? 1.0 : std::abs(tmp));
+						org = b[j](k,l);
+						tmp = delta_x*(std::abs(org) < 1.0E0 ? 1.0 : std::abs(org));
 					}
 
 					if( layer[i]->get_num_map() != 1 || rank == target_rank ){
-						b[j](k,l) += tmp;
+						b[j](k,l) = org + tmp;
 						layer[i]->set_b(b);
 					}
 					auto tmp1 = apply(tmp_X);
 					double E1 = (*loss)(tmp1, tmp_Y, false)(0, 0);
 
 					if( layer[i]->get_num_map() != 1 || rank == target_rank ){
-						b[j](k,l) -= 2*tmp;
+						b[j](k,l) = org - tmp;
 						layer[i]->set_b(b);
 					}
 					auto tmp2 = apply(tmp_X);
@@ -232,6 +243,11 @@ void Neuralnet<Mat, Real>::check_gradient ( int cnt, const std::vector<int>& idx
 						printf("\t%3d, %3d, %3d : ( %.10E, %.10E = %.10E )\n",
 							   j, k, l,
 							   0.5*(E1 - E2)/tmp/BATCH_SIZE, grad, (std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE - grad))/std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE));
+					}
+
+					if( layer[i]->get_num_map() != 1 || rank == target_rank ){
+						b[j](k,l) = org;
+						layer[i]->set_b(b);
 					}
 				}
 			}
@@ -266,7 +282,7 @@ void Neuralnet<Mat, Real>::check_gradient ( int cnt, const std::vector<int>& idx
 	cl_device_manager.set_argument( PRG::ASSIGN_DATA, 4, &cl_N );
 	cl_device_manager.run_kernel( PRG::ASSIGN_DATA, tmp_Y.m, tmp_Y.n );
 
-	const double delta_x = 1.0E-2;
+	const double delta_x = 1.0E-3;
 	
 	// Calculate gradient numerically for confirmation of computing
 	for( int i = 0; i < num_layer; ++i ){
@@ -280,27 +296,26 @@ void Neuralnet<Mat, Real>::check_gradient ( int cnt, const std::vector<int>& idx
 		MPI_Bcast(&J, 1, MPI_INT, target_rank, inner_world);
 		MPI_Bcast(&K, 1, MPI_INT, target_rank, inner_world);
 		MPI_Bcast(&L, 1, MPI_INT, target_rank, inner_world);
-		MPI_Bcast(&M, 1, MPI_INT, target_rank, inner_world);
 #endif
 		if( rank == target_rank ) printf("\t  grad W\n");
 		for( int j = 0; j < std::min(2, J); ++j ){ // num_map
 			for( int k = 0; k < std::min(4, K); ++k ){
 				for( int l = 0; l < std::min(4, L); ++l ){
-					double tmp;
+					double tmp, org;
 					if( layer[i]->get_num_map() != 1 || rank == target_rank ){
-						tmp = W[j].get_element(k,l);
-						tmp = delta_x*(std::abs(tmp) < 1.0E0 ? 1.0 : std::abs(tmp));
+						org = W[j].get_element(k,l);
+						tmp = delta_x*(std::abs(org) < 1.0E0 ? 1.0 : std::abs(org));
 					}
 
 					if( layer[i]->get_num_map() != 1 || rank == target_rank ){
-						W[j].set_element(k,l, W[j].get_element(k,l)+tmp);
+						W[j].set_element(k,l, org+tmp);
 						layer[i]->set_W(W);
 					}
 					auto tmp1 = apply(tmp_X);
 					double E1 = (*loss)(tmp1, tmp_Y, false).get_element(0, 0);
 
 					if( layer[i]->get_num_map() != 1 || rank == target_rank ){
-						W[j].set_element(k,l, W[j].get_element(k,l) - 2*tmp);
+						W[j].set_element(k,l, org - tmp);
 						layer[i]->set_W(W);
 					}
 					auto tmp2 = apply(tmp_X);
@@ -312,21 +327,33 @@ void Neuralnet<Mat, Real>::check_gradient ( int cnt, const std::vector<int>& idx
 							   j, k, l,
 							   0.5*(E1 - E2)/tmp/BATCH_SIZE, grad, (std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE - grad))/std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE));
 					}
+					
+					if( layer[i]->get_num_map() != 1 || rank == target_rank ){
+						W[j].set_element(k,l, org);
+						layer[i]->set_W(W);
+					}
 				}
 			}
 		}
+
+		J = b.size(); K = b[0].m; L = b[0].n;
+#ifdef USE_MPI
+		MPI_Bcast(&J, 1, MPI_INT, target_rank, inner_world);
+		MPI_Bcast(&K, 1, MPI_INT, target_rank, inner_world);
+		MPI_Bcast(&L, 1, MPI_INT, target_rank, inner_world);
+#endif
 		if( rank == target_rank ) printf("\t  grad b\n");
 		for( int j = 0; j < std::min(2, J); ++j ){ // num_map
 			for( int k = 0; k < std::min(4, K); ++k ){ // prev_num_map
-				for( int l = 0; l < std::min(1, L); ++l ){
-					double tmp;
+				for( int l = 0; l < std::min(4, L); ++l ){
+					double tmp, org;
 					if( layer[i]->get_num_map() != 1 || rank == target_rank ){
-						tmp = b[j].get_element(k,l);
-						tmp = delta_x*(std::abs(tmp) < 1.0E0 ? 1.0 : std::abs(tmp));
+						org = b[j].get_element(k,l);
+						tmp = delta_x*(std::abs(org) < 1.0E0 ? 1.0 : std::abs(org));
 					}
 
 					if( layer[i]->get_num_map() != 1 || rank == target_rank ){
-						b[j].set_element(k,l, b[j].get_element(k,l)+tmp);
+						b[j].set_element(k,l, org+tmp);
 						layer[i]->set_b(b);
 					}
 
@@ -334,7 +361,7 @@ void Neuralnet<Mat, Real>::check_gradient ( int cnt, const std::vector<int>& idx
 					double E1 = (*loss)(tmp1, tmp_Y, false).get_element(0, 0);
 
 					if( layer[i]->get_num_map() != 1 || rank == target_rank ){
-						b[j].set_element(k,l, b[j].get_element(k,l) - 2*tmp);
+						b[j].set_element(k,l, org - tmp);
 						layer[i]->set_b(b);
 					}
 					auto tmp2 = apply(tmp_X);
@@ -345,6 +372,10 @@ void Neuralnet<Mat, Real>::check_gradient ( int cnt, const std::vector<int>& idx
 						printf("\t%3d, %3d, %3d : ( %.10E, %.10E = %.10E )\n",
 							   j, k, l,
 							   0.5*(E1 - E2)/tmp/BATCH_SIZE, grad, (std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE - grad))/std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE));
+					}
+					if( layer[i]->get_num_map() != 1 || rank == target_rank ){
+						b[j].set_element(k,l, org);
+						layer[i]->set_b(b);
 					}
 				}
 			}
@@ -539,8 +570,7 @@ void Neuralnet<Mat, Real>::learning ( const Matrix<Real>& X, const Matrix<Real>&
 				V = (*f)(V, false);
 			}
 
-			auto tmp = layer[i]->apply(V, false);
-			U[i+1] = tmp;
+			U[i+1] = layer[i]->apply(V, false);
 #ifdef DEBUG
 			auto end = std::chrono::system_clock::now();
 			if( myrank == 0 ) printf("  layer %d : %3lld\n", i, std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
@@ -758,18 +788,18 @@ void Neuralnet<Mat, Real>::learning ( const clMatrix<Real>& X, const clMatrix<Re
 		beg = std::chrono::system_clock::now();
 #endif
 		// feed forward calculation
+		clMatrix<Real> V = U[0];
 		for( int i = 0; i < num_layer; ++i ) {
 #ifdef DEBUG
 			auto beg = std::chrono::system_clock::now();
 #endif
-			auto V = U[i];
+			V = U[i];
 			if( i != 0 ){
 				std::shared_ptr<Function<Real>> f = layer[i-1]->get_function();
 				V = (*f)(V, false);
 			}
 
-			auto tmp = layer[i]->apply(V, false);
-			U[i+1] = tmp;
+			U[i+1] = layer[i]->apply(V, false);
 #ifdef DEBUG
 			auto end = std::chrono::system_clock::now();
 			if( myrank == 0 ) printf("  layer %d : %3lld\n", i, std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
@@ -829,10 +859,6 @@ void Neuralnet<Mat, Real>::learning ( const clMatrix<Real>& X, const clMatrix<Re
 				update_b(b.size(), Mat<Real>(b[0].m, b[0].n));
 			if( std::abs(LAMBDA) > 1.0E-15 ){
 				for( int j = 0; j < W.size(); ++j )
-					// cl_device_manager.set_argument( PRG::ADD_L2_REG, 0, &nabla_w[i][j][k].v );
-					// cl_device_manager.set_argument( PRG::ADD_L2_REG, 1, &W[j][k].v );
-					// cl_device_manager.set_argument( PRG::ADD_L2_REG, 2, &cl_lambda );
-					// cl_device_manager.run_kernel( PRG::ADD_L2_REG, W[j][k].m, W[j][k].n-1 );
 					nabla_W[i][j] += LAMBDA*W[j];
 			}
 

@@ -1,14 +1,21 @@
 CC = g++
 MPICC = mpic++ -DUSE_MPI
 CFLAGS = -O3 -std=c++0x
+BLAS_INC =
+BLAS_LIB = -DUSE_MPI
+OPENCL_INC = 
+OPENCL_LIB = -DUSE_GPU
 
 all: approx_cosine mnist_sample mnist_sample_dist
 
 mnist_sample: mnist_sample.cpp
-	${CC} ${CFLAGS} -o mnist_sample mnist_sample.cpp
+	${CC} ${CFLAGS} -o mnist_sample mnist_sample.cpp ${BLAS_INC} ${BLAS_LIB}
 
 mnist_sample_dist: mnist_sample_dist.cpp
-	${MPICC} ${CFLAGS} -o mnist_sample_dist mnist_sample_dist.cpp
+	${MPICC} ${CFLAGS} -o mnist_sample_dist mnist_sample_dist.cpp ${BLAS_INC} ${BLAS_LIB}
+
+mnist_sample_gpu: mnist_sample_dist_gpu.cpp
+	${CC} ${CFLAGS} -o mnist_sample_gpu mnist_sample_gpu.cpp ${BLAS_INC} ${BLAS_LIB} ${OPENCL_INC} ${OPENCL_LIB}
 
 approx_cosine: approx_cosine.cpp
 	${CC} ${CFLAGS} -o approx_cosine approx_cosine.cpp

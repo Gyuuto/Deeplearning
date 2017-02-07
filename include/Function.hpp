@@ -14,9 +14,9 @@ template<typename T>
 class Function
 {
 public:
-	virtual inline Matrix<T> operator() ( const Matrix<T>& x, const bool& isdiff ) = 0;
+	virtual Matrix<T> operator() ( const Matrix<T>& x, const bool& isdiff ) = 0;
 #ifdef USE_GPU
-	virtual inline clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ) = 0;
+	virtual clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ) = 0;
 #endif
 };
 
@@ -24,9 +24,9 @@ template<typename T>
 class LossFunction
 {
 public:
-	virtual inline Matrix<T> operator() ( const Matrix<T>& x, const Matrix<T>& d, const bool& isdiff ) = 0;
+	virtual Matrix<T> operator() ( const Matrix<T>& x, const Matrix<T>& d, const bool& isdiff ) = 0;
 #ifdef USE_GPU
-	virtual inline clMatrix<T> operator() ( const clMatrix<T>& x, const clMatrix<T>& d, const bool& isdiff ) = 0;	
+	virtual clMatrix<T> operator() ( const clMatrix<T>& x, const clMatrix<T>& d, const bool& isdiff ) = 0;	
 #endif
 };
 

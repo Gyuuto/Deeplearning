@@ -10,23 +10,25 @@
 #include "../include/Neuralnet.hpp"
 #include "../include/Layer/Layer.hpp"
 #include "../include/Layer/FullyConnected.hpp"
+#include "../include/Layer/Convolutional.hpp"
 
 using namespace std;
 
 // pixel normalize function
-void normalize ( vector<Matrix<double>>& image, vector<vector<double>>& ave )
+void normalize ( int num_map, Matrix<double>& image, vector<vector<double>>& ave )
 {
-    for( int i = 0; i < image.size(); ++i ){
-        ave.emplace_back(image[i].m, 0.0);
+	int leng = image.m / num_map;
+    for( int i = 0; i < num_map; ++i ){
+        ave.emplace_back(leng, 0.0);
 
-        for( int j = 0; j < image[i].m; ++j ){
-            for( int k = 0; k < image[i].n; ++k ) ave[i][j] += image[i](j,k);
+        for( int j = 0; j < leng; ++j ){
+            for( int k = 0; k < image.n; ++k ) ave[i][j] += image(leng*i + j,k);
         }
-        for( int j = 0; j < image[i].m; ++j ) ave[i][j] /= image[i].n;
+        for( int j = 0; j < leng; ++j ) ave[i][j] /= image.n;
 
-        for( int j = 0; j < image[i].m; ++j )
-			for( int k = 0; k < image[i].n; ++k )
-				image[i](j,k) -= ave[i][j];
+        for( int j = 0; j < leng; ++j )
+			for( int k = 0; k < image.n; ++k )
+				image(leng*i + j,k) -= ave[i][j];
     }
 }
 
@@ -98,7 +100,13 @@ int main( int argc, char* argv[] )
 	vector<shared_ptr<Layer<Matrix, double>>> layers;
 
 	// define layers.
-	layers.emplace_back(new FullyConnected<Matrix, double>(1, 28*28, 1, 1000, shared_ptr<Function<double>>(new ReLU<double>)));
+	layers.emplace_back(new Convolutional<Matrix, double>(1, 28*28, 28,
+														  32, 28*28, 28,
+														  3, 3, 1, shared_ptr<Function<double>>(new ReLU<double>)));
+	layers.emplace_back(new Convolutional<Matrix, double>(32, 28*28, 28,
+														  64, 14*14, 14,
+														  3, 3, 2, shared_ptr<Function<double>>(new ReLU<double>)));
+	layers.emplace_back(new FullyConnected<Matrix, double>(64, 14*14, 1, 1000, shared_ptr<Function<double>>(new ReLU<double>)));
 	layers.emplace_back(new FullyConnected<Matrix, double>(1, 1000, 1, 500, shared_ptr<Function<double>>(new ReLU<double>)));
 	layers.emplace_back(new FullyConnected<Matrix, double>(1, 500, 1, 10, shared_ptr<Function<double>>(new Softmax<double>)));
 
@@ -123,23 +131,23 @@ int main( int argc, char* argv[] )
 	N = N / outer_nprocs;
 	train_image.seekg(4*4 + 28*28*outer_rank * N, ios_base::beg);
 	train_label.seekg(4*2 + outer_rank * N, ios_base::beg);
-	vector<Matrix<double>> train_x(1, Matrix<double>(28*28, N)), train_d(1, Matrix<double>(10, N));
+	Matrix<double> train_x(28*28, N), train_d(10, N);
 	for( int i = 0; i < N; ++i ){
 		unsigned char tmp_lab;
 		train_label.read((char*)&tmp_lab, sizeof(unsigned char));
-		for( int j = 0; j < 10; ++j ) train_d[0](j, i) = 0.0;
-		train_d[0](tmp_lab, i) = 1.0;
+		for( int j = 0; j < 10; ++j ) train_d(j, i) = 0.0;
+		train_d(tmp_lab, i) = 1.0;
 		
 		for( int j = 0; j < 28*28; ++j ){
 			unsigned char c;
 			train_image.read((char*)&c, sizeof(unsigned char));
-			train_x[0](j, i) = (c/255.0);
+			train_x(j, i) = (c/255.0);
 		}
 	}
 	
 	vector<vector<double>> ave;
 	// normalize train image.
-	normalize(train_x, ave);
+	normalize(1, train_x, ave);
 
 	for( int i = 0; i < ave[0].size(); ++i ) ave[0][i] *= N;
 	MPI_Allreduce(MPI_IN_PLACE, &ave[0][0], ave[0].size(), MPI_DOUBLE_PRECISION, MPI_SUM, outer_world);
@@ -159,23 +167,23 @@ int main( int argc, char* argv[] )
 
 	test_image.seekg(4*4, ios_base::beg);
 	test_label.seekg(4*2, ios_base::beg);
-	vector<Matrix<double>> test_x(1, Matrix<double>(28*28, M)), test_d(1, Matrix<double>(10, M));
+	Matrix<double> test_x(28*28, M), test_d(10, M);
 	for( int i = 0; i < M; ++i ){
 		unsigned char tmp_lab;
 		test_label.read((char*)&tmp_lab, sizeof(unsigned char));
-		for( int j = 0; j < 10; ++j ) test_d[0](j, i) = 0.0;
-		test_d[0](tmp_lab, i) = 1.0;
+		for( int j = 0; j < 10; ++j ) test_d(j, i) = 0.0;
+		test_d(tmp_lab, i) = 1.0;
 		
 		for( int j = 0; j < 28*28; ++j ){
 			unsigned char c;
 			test_image.read((char*)&c, sizeof(unsigned char));
-			test_x[0](j, i) = (c/255.0);
+			test_x(j, i) = (c/255.0 - ave[0][j]);
 		}
 	}
 
 	// checking error function.
 	chrono::time_point<chrono::system_clock> prev_time, total_time;
-	auto check_error = [&](const Neuralnet<Matrix, double>& nn, const int iter, const std::vector<Matrix<double>>& x, const std::vector<Matrix<double>>& d ) -> void {
+	auto check_error = [&](const Neuralnet<Matrix, double>& nn, const int iter, const Matrix<double>& x, const Matrix<double>& d ) -> void {
 		if( iter%(N/BATCH_SIZE) != 0 ) return;
 
 		const int once_num = 1000;
@@ -189,20 +197,19 @@ int main( int argc, char* argv[] )
 		for( int i = 0; i < N; i += once_num ){
 			int size = min(once_num, N - i);
 
-			vector<Matrix<double>> tmp_x(train_x.size());
-			for( int j = 0; j < train_x.size(); ++j ) tmp_x[j] = train_x[j].sub(0, i, 28*28, size);
+			Matrix<double> tmp_x = train_x.sub(0, i, 28*28, size);
 
 			auto tmp_y = nn.apply(tmp_x);
 			for( int j = 0; j < size; ++j ){
 				int idx = 0, lab = -1;
 
-				double max_num = tmp_y[0](0, j);
+				double max_num = tmp_y(0, j);
 				for( int k = 0; k < 10; ++k ){
-					if( max_num < tmp_y[0](k, j) ){
-						max_num = tmp_y[0](k, j);
+					if( max_num < tmp_y(k, j) ){
+						max_num = tmp_y(k, j);
 						idx = k;
 					}
-					if( train_d[0](k, i+j) == 1.0 ) lab = k;
+					if( train_d(k, i+j) == 1.0 ) lab = k;
 				}
 				if( idx == lab ) ++train_ans_num;
 			}
@@ -213,20 +220,19 @@ int main( int argc, char* argv[] )
 		for( int i = 0; i < M; i += once_num ){
 			int size = min(once_num, M - i);
 
-			vector<Matrix<double>> tmp_x(test_x.size());
-			for( int j = 0; j < tmp_x.size(); ++j ) tmp_x[j] = test_x[j].sub(0, i, 28*28, size);
+			Matrix<double> tmp_x = test_x.sub(0, i, 28*28, size);
 
 			auto tmp_y = nn.apply(tmp_x);
 			for( int j = 0; j < size; ++j ){
 				int idx = 0, lab = -1;
 				
-				double max_num = tmp_y[0](0,j);
+				double max_num = tmp_y(0,j);
 				for( int k = 0; k < 10; ++k ){
-					if( max_num < tmp_y[0](k,j) ){
-						max_num = tmp_y[0](k,j);
+					if( max_num < tmp_y(k,j) ){
+						max_num = tmp_y(k,j);
 						idx = k;
 					}
-					if( test_d[0](k, i+j) == 1.0 ) lab = k;
+					if( test_d(k, i+j) == 1.0 ) lab = k;
 				}
 				if( idx == lab ) ++test_ans_num;
 			}

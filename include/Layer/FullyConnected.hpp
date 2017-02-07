@@ -115,8 +115,8 @@ void FullyConnected<Mat, Real>::init ( std::mt19937& m )
 	const Real r = sqrt(6.0/(this->num_unit + this->prev_num_unit));
 	std::uniform_real_distribution<Real> d_rand(-r, r);
 	for( int i = 0; i < this->num_map; ++i ){
-		Matrix<Real> tmp_W = this->W[i];
 
+		Matrix<Real> tmp_W = this->W[i];
 		for( int k = 0; k < this->num_unit; ++k ){
 			for( int l = 0; l < this->prev_num_map*this->prev_num_unit; ++l ){
 				double a = d_rand(m);
@@ -612,54 +612,50 @@ void FullyConnected<Mat, Real>::param_mix ()
 	MPI_Comm_size(this->outer_world, &nprocs);
 	if( this->W.size() == 0 ) return;
 
-	int cnt = this->W.size()*this->W[0].m*this->W[0].n +
-		this->b.size()*this->b[0].m;
+	int cnt = this->W.size()*this->W[0].m*this->W[0].n + this->b.size()*this->b[0].m;
+	int tmp = this->W.size()*this->W[0].m*this->W[0].n;
 	std::vector<Real> w(cnt);
 
-#pragma omp parallel
-	{
-		for( int i = 0; i < this->W.size(); ++i )
-#pragma omp for nowait
-			for( int j = 0; j < this->W[i].m; ++j )
-				for( int k = 0; k < this->W[i].n; ++k ){
-					int idx = i*(this->W[i].m*this->W[i].n) + j*(this->W[i].n) + k;
-						w[idx] = this->W[i](j,k);
-				}
-
-		int tmp = this->W.size()*this->W[0].m*this->W[0].n;
-		for( int i = 0; i < this->b.size(); ++i )
-#pragma omp for nowait
-			for( int j = 0; j < this->b[i].m; ++j ){
-				int idx = tmp + i*this->b[i].m + j;
-				w[idx] = this->b[i](j,0);
+	for( int i = 0; i < this->W.size(); ++i ){
+		Matrix<Real> tmp_W = this->W[i];
+#pragma omp parallel for
+		for( int j = 0; j < tmp_W.m; ++j )
+			for( int k = 0; k < tmp_W.n; ++k ){
+				int idx = i*(tmp_W.m*tmp_W.n) + j*(tmp_W.n) + k;
+				w[idx] = tmp_W(j,k);
 			}
+	}
+
+	for( int i = 0; i < this->b.size(); ++i ){
+		Matrix<Real> tmp_b = this->b[i];
+#pragma omp parallel for
+		for( int j = 0; j < tmp_b.m; ++j ){
+			int idx = tmp + i*tmp_b.m + j;
+			w[idx] = tmp_b(j,0);
+		}
 	}
 
 	MPI_Allreduce(MPI_IN_PLACE, &w[0], cnt, get_typecount(w[0]).mpi_type, MPI_SUM, this->outer_world);
 
-#pragma omp parallel
-	{
-		for( int i = 0; i < this->W.size(); ++i ){
-			Matrix<Real> tmp_W = this->W[i];
-#pragma omp for nowait
-			for( int j = 0; j < tmp_W.m; ++j )
-				for( int k = 0; k < tmp_W.n; ++k ){
-					int idx = i*(tmp_W.m*tmp_W.n) + j*tmp_W.n + k;
-					tmp_W(j,k) = w[idx]/nprocs;
-				}
-			this->W[i] = tmp_W;
-		}
-
-		int tmp = this->W.size()*this->W[0].m*this->W[0].n;
-		for( int i = 0; i < this->b.size(); ++i ){
-			Matrix<Real> tmp_b = this->b[i];
-#pragma omp for nowait
-			for( int j = 0; j < tmp_b.m; ++j ){
-				int idx = tmp + i*tmp_b.m + j;
-				tmp_b(j,0) = w[idx]/nprocs;
+	for( int i = 0; i < this->W.size(); ++i ){
+		Matrix<Real> tmp_W = this->W[i];
+#pragma omp parallel for
+		for( int j = 0; j < tmp_W.m; ++j )
+			for( int k = 0; k < tmp_W.n; ++k ){
+				int idx = i*(tmp_W.m*tmp_W.n) + j*tmp_W.n + k;
+				tmp_W(j,k) = w[idx]/nprocs;
 			}
-			this->b[i] = tmp_b;
+		this->W[i] = tmp_W;
+	}
+
+	for( int i = 0; i < this->b.size(); ++i ){
+		Matrix<Real> tmp_b = this->b[i];
+#pragma omp parallel for
+		for( int j = 0; j < tmp_b.m; ++j ){
+			int idx = tmp + i*tmp_b.m + j;
+			tmp_b(j,0) = w[idx]/nprocs;
 		}
+		this->b[i] = tmp_b;
 	}
 }
 #endif

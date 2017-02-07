@@ -253,6 +253,31 @@ struct clMatrix
 
 		return ret;
 	}
+
+	static T sum ( const clMatrix<T>& mat )
+	{
+		int m = mat.m, n = mat.n;
+		clMatrix<T> E = clMatrix<T>::ones(m, n);
+		
+		cl_int err;
+		cl_event event;
+
+		cl_mem buf = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_WRITE, sizeof(float), NULL, &err );
+		cl_mem scratch_buf = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_WRITE, m*n*sizeof(float), NULL, &err );
+				
+		clblasSdot( m*n, buf, 0, mat.v, 0, 1, E.v, 0, 1, scratch_buf,
+					1, cl_device_manager.get_queue_ptr(), 0, NULL, &event );
+		clWaitForEvents( 1, &event );
+		clReleaseEvent(event);
+
+		T ret;
+		clEnqueueReadBuffer( cl_device_manager.get_queue(), buf, CL_TRUE, 0, sizeof(T), &ret, 0, NULL, NULL );
+
+		clReleaseMemObject( buf );
+		clReleaseMemObject( scratch_buf );
+		
+		return ret;
+	}
 	
 	static T norm_fro ( const clMatrix<T>& mat )
 	{
