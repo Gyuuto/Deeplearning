@@ -70,19 +70,19 @@ struct clMatrix
 	{
 		m = mat.m; n = mat.n;
 		mem_size = m*n;
+
+		cl_int err;
+		M = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
+		err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->M, CL_TRUE, 0,
+									sizeof(int), &m, 0, NULL, NULL );
+		N = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
+		err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->N, CL_TRUE, 0,
+									sizeof(int), &n, 0, NULL, NULL );
+
 		if( m == 0 || n == 0 ){
 			v = NULL;
 		}
 		else{
-			cl_int err;
-			M = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
-			err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->M, CL_TRUE, 0,
-										sizeof(int), &m, 0, NULL, NULL );
-
-			N = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
-			err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->N, CL_TRUE, 0,
-										sizeof(int), &n, 0, NULL, NULL );
-
 			v = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_WRITE, m*n*sizeof(T), NULL, &err);
 			err = clEnqueueCopyBuffer( cl_device_manager.get_queue(), mat.v, v, 0, 0, m*n*sizeof(T), 0, NULL, NULL );
 		}
@@ -92,19 +92,20 @@ struct clMatrix
 	{
 		m = mat.m; n = mat.n;
 		mem_size = m*n;
+
+		cl_int err;
+		M = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
+		err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->M, CL_TRUE, 0,
+									sizeof(int), &m, 0, NULL, NULL );
+
+		N = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
+		err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->N, CL_TRUE, 0,
+									sizeof(int), &n, 0, NULL, NULL );
+
 		if( m == 0 || n == 0 ){
 			v = NULL;
 		}
 		else{
-			cl_int err;
-			M = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
-			err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->M, CL_TRUE, 0,
-										sizeof(int), &m, 0, NULL, NULL );
-
-			N = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
-			err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->N, CL_TRUE, 0,
-										sizeof(int), &n, 0, NULL, NULL );
-
 			v = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_WRITE, m*n*sizeof(T), NULL, &err);
 			err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), v, CL_TRUE, 0,
 										m*n*sizeof(T), mat.v, 0, NULL, NULL );
@@ -120,6 +121,7 @@ struct clMatrix
 			}
 
 			m = mat.m; n = mat.n;
+			mem_size = m*n;
 			err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->M, CL_TRUE, 0,
 										sizeof(int), &m, 0, NULL, NULL );
 			err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->N, CL_TRUE, 0,
@@ -132,18 +134,16 @@ struct clMatrix
 		if( mat.m*mat.n > mem_size ) {
 			clReleaseMemObject(v);
 			v = NULL;
+		}
 
-			mem_size = mat.m*mat.n;
-		}
-		if( !(m == mat.m && n == mat.n) ){
-			err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->M, CL_TRUE, 0,
-										sizeof(int), &mat.m, 0, NULL, NULL );
-			err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->N, CL_TRUE, 0,
-										sizeof(int), &mat.n, 0, NULL, NULL );
-		}
+		if( m != mat.m ) err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->M, CL_TRUE, 0,
+													 sizeof(int), &mat.m, 0, NULL, NULL );
+		if( n != mat.n ) err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->N, CL_TRUE, 0,
+													 sizeof(int), &mat.n, 0, NULL, NULL );
 
 		m = mat.m; n = mat.n;
 		if( v == NULL ){
+			mem_size = m*n;
 			v = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_WRITE, m*n*sizeof(T), NULL, &err);
 		}
 		err = clEnqueueCopyBuffer( cl_device_manager.get_queue(), mat.v, v, 0, 0, m*n*sizeof(T), 0, NULL, NULL );
@@ -160,6 +160,7 @@ struct clMatrix
 			}
 
 			m = mat.m; n = mat.n;
+			mem_size = m*n;
 			err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->M, CL_TRUE, 0,
 										sizeof(int), &m, 0, NULL, NULL );
 			err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->N, CL_TRUE, 0,
@@ -172,18 +173,16 @@ struct clMatrix
 		if( mat.m*mat.n > mem_size ) {
 			clReleaseMemObject(v);
 			v = NULL;
+		}
 
-			mem_size = mat.m*mat.n;
-		}
-		if( !(m == mat.m && n == mat.n) ){
-			err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->M, CL_TRUE, 0,
-										sizeof(int), &mat.m, 0, NULL, NULL );
-			err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->N, CL_TRUE, 0,
-										sizeof(int), &mat.n, 0, NULL, NULL );
-		}
+		if( m != mat.m ) err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->M, CL_TRUE, 0,
+													 sizeof(int), &mat.m, 0, NULL, NULL );
+		if( n != mat.n ) err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->N, CL_TRUE, 0,
+													 sizeof(int), &mat.n, 0, NULL, NULL );
 
 		m = mat.m; n = mat.n;
 		if( v == NULL ){
+			mem_size = m*n;
 			v = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_WRITE, m*n*sizeof(T), NULL, &err);
 		}
 		err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), v, CL_TRUE, 0,
@@ -194,9 +193,10 @@ struct clMatrix
 
 	~clMatrix ()
 	{
+		clReleaseMemObject( M );
+		clReleaseMemObject( N );
+
 		if( v != NULL ){
-			clReleaseMemObject( M );
-			clReleaseMemObject( N );
 			clReleaseMemObject( v );
 		}
 	}
@@ -266,13 +266,40 @@ struct clMatrix
 		clblasSdot( m*n, buf, 0, mat.v, 0, 1, mat.v, 0, 1, scratch_buf,
 					1, cl_device_manager.get_queue_ptr(), 0, NULL, &event );
 		clWaitForEvents( 1, &event );
+		clReleaseEvent(event);
 
 		T ret;
 		clEnqueueReadBuffer( cl_device_manager.get_queue(), buf, CL_TRUE, 0, sizeof(T), &ret, 0, NULL, NULL );
+
+		clReleaseMemObject( buf );
+		clReleaseMemObject( scratch_buf );
 		
 		return sqrt(ret);
 	}
 
+	static clMatrix<T> to_matrix ( const std::vector<clMatrix<T>>& tensor )
+	{
+		int num_map = tensor.size();
+		clMatrix<T> ret(num_map*tensor[0].m, tensor[0].n);
+
+		for( int i = 0; i < num_map; ++i ){
+			ret.sub(i*tensor[i].m, 0, tensor[i].m, tensor[i].n, tensor[i]);
+		}
+		
+		return ret;
+	}
+
+	static std::vector<clMatrix<T>> to_tensor ( const clMatrix<T>& mat, int num_map )
+	{
+		std::vector<clMatrix<T>> ret(num_map);
+
+		int leng = mat.m / num_map;
+		for( int i = 0; i < num_map; ++i ) ret[i] = mat.sub(i*leng, 0, leng, mat.n);
+
+		return ret;
+	}		
+
+	
 	T get_element ( int i, int j ) const
 	{
 		T ret;
@@ -296,6 +323,7 @@ struct clMatrix
 					 m1.v, 0, 1, this->v, 0, 1,
 					 1, cl_device_manager.get_queue_ptr(), 0, NULL, &event );
 		clWaitForEvents( 1, &event );
+		clReleaseEvent(event);
 		
 		cnt_flop += (long long)m*n;
 
@@ -311,6 +339,7 @@ struct clMatrix
 					 m1.v, 0, 1, this->v, 0, 1,
 					 1, cl_device_manager.get_queue_ptr(), 0, NULL, &event );
 		clWaitForEvents( 1, &event );
+		clReleaseEvent(event);
 
 		cnt_flop += (long long)m*n;
 
@@ -340,6 +369,7 @@ struct clMatrix
 					 this->v, 0, 1, this->v, 0, 1,
 					 1, cl_device_manager.get_queue_ptr(), 0, NULL, &event );
 		clWaitForEvents( 1, &event );
+		clReleaseEvent(event);
 
 		cnt_flop += (long long)m*n;
 
@@ -355,7 +385,8 @@ struct clMatrix
 					 this->v, 0, 1, this->v, 0, 1,
 					 1, cl_device_manager.get_queue_ptr(), 0, NULL, &event );
 		clWaitForEvents( 1, &event );
-
+		clReleaseEvent(event);
+	
 		cnt_flop += (long long)m*n;
 
 		return *this;
@@ -372,6 +403,7 @@ struct clMatrix
 					 m2.v, 0, 1, ret.v, 0, 1,
 					 1, cl_device_manager.get_queue_ptr(), 0, NULL, &event );
 		clWaitForEvents( 1, &event );
+		clReleaseEvent(event);
 
 		cnt_flop += (long long)m*n;
 
@@ -388,6 +420,7 @@ struct clMatrix
 					 m2.v, 0, 1, ret.v, 0, 1,
 					 1, cl_device_manager.get_queue_ptr(), 0, NULL, &event );
 		clWaitForEvents( 1, &event );
+		clReleaseEvent(event);
 
 		cnt_flop += (long long)m*n;
 
@@ -400,14 +433,15 @@ struct clMatrix
 		cl_event event;
 		clMatrix<float> ret(m, n);
 
-		clblasSgemm( clblasRowMajor, clblasNoTrans, clblasNoTrans,
-					 m, n, l, 1.0f,
-					 m1.v, 0, m1.n, m2.v, 0, m2.n,
-					 0.0, ret.v, 0, ret.n,
-					 1, cl_device_manager.get_queue_ptr(), 0, NULL, &event );
+		cl_int err = clblasSgemm( clblasRowMajor, clblasNoTrans, clblasNoTrans,
+								  m, n, l, 1.0f,
+								  m1.v, 0, m1.n, m2.v, 0, m2.n,
+								  0.0, ret.v, 0, ret.n,
+								  1, cl_device_manager.get_queue_ptr(), 0, NULL, &event );
 		clWaitForEvents( 1, &event );
+		clReleaseEvent(event);
 
-		cnt_flop += (long long)m*n*l;
+		cnt_flop += (long long)m*n*(2*l-1);
 
 		return ret;
 	}
@@ -423,7 +457,8 @@ struct clMatrix
 					 ret.v, 0, 1, ret.v, 0, 1,
 					 1, cl_device_manager.get_queue_ptr(), 0, NULL, &event );
 		clWaitForEvents( 1, &event );
-
+		clReleaseEvent(event);
+	
 		cnt_flop += (long long)m*n;
 
 		return ret;
@@ -459,8 +494,34 @@ struct clMatrix
 		cl_device_manager.set_argument( PRG::CLMAT_SUB, 4, &N );
 		
 		cl_device_manager.run_kernel( PRG::CLMAT_SUB, ret.m, ret.n );
+
+		clReleaseMemObject( buf_x );
+		clReleaseMemObject( buf_y );
 		
 		return ret;
+	}
+
+	void sub ( int y, int x, int h, int w, const clMatrix<T>& mat )
+	{
+		cl_int err;
+		cl_mem buf_x, buf_y;
+
+		buf_x = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
+		err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), buf_x, CL_TRUE, 0,
+									sizeof(int), &x, 0, NULL, NULL );
+		buf_y = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
+		err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), buf_y, CL_TRUE, 0,
+									sizeof(int), &y, 0, NULL, NULL );
+
+		cl_device_manager.set_argument( PRG::CLMAT_SUB_IN, 0, &v );
+		cl_device_manager.set_argument( PRG::CLMAT_SUB_IN, 1, &mat.v );
+		cl_device_manager.set_argument( PRG::CLMAT_SUB_IN, 2, &N );
+		cl_device_manager.set_argument( PRG::CLMAT_SUB_IN, 3, &buf_x );
+		cl_device_manager.set_argument( PRG::CLMAT_SUB_IN, 4, &buf_y );
+		cl_device_manager.run_kernel( PRG::CLMAT_SUB_IN, h, w );
+
+		clReleaseMemObject( buf_x );
+		clReleaseMemObject( buf_y );
 	}
 
 	Matrix<T> get_matrix ( ) const

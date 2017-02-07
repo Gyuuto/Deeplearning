@@ -36,7 +36,8 @@ protected:
 	int rank, nprocs;
 #endif
 
-	std::vector<std::vector<Mat<Real>>> W, b;
+	std::vector<Mat<Real>> W;
+	std::vector<Mat<Real>> b;
 	std::shared_ptr<Function<Real>> func, prev_func;
 public:
 	double t_apply, t_delta, t_grad;
@@ -52,14 +53,14 @@ public:
 	virtual void init ( std::mt19937& m ) = 0;
 #endif
 	virtual void finalize () = 0;
-	virtual std::vector<Mat<Real>> calc_delta ( const std::vector<Mat<Real>>& U, const std::vector<Mat<Real>>& delta ) = 0;
-	virtual std::pair<std::vector<std::vector<Mat<Real>>>, std::vector<std::vector<Mat<Real>>>> calc_gradient ( const std::vector<Mat<Real>>& U, const std::vector<Mat<Real>>& delta ) = 0;
-	virtual void update_W ( const std::vector<std::vector<Mat<Real>>>& dW, const std::vector<std::vector<Mat<Real>>>& db ) = 0;
+	virtual Mat<Real> calc_delta ( const Mat<Real>& U, const Mat<Real>& delta ) = 0;
+	virtual std::pair<std::vector<Mat<Real>>, std::vector<Mat<Real>>> calc_gradient ( const Mat<Real>& U, const Mat<Real>& delta ) = 0;
+	virtual void update_W ( const std::vector<Mat<Real>>& dW, const std::vector<Mat<Real>>& db ) = 0;
 
-	virtual std::vector<Mat<Real>> apply ( const std::vector<Mat<Real>>& U, bool use_func = true ) = 0;
+	virtual Mat<Real> apply ( const Mat<Real>& U, bool use_func = true ) = 0;
 
-	virtual std::vector<std::vector<Mat<Real>>> get_W ();
-	virtual std::vector<std::vector<Mat<Real>>> get_b ();
+	virtual std::vector<Mat<Real>> get_W ();
+	virtual std::vector<Mat<Real>> get_b ();
 	virtual std::shared_ptr<Function<Real>> get_function ();
 	virtual std::shared_ptr<Function<Real>> get_prev_function ();
 
@@ -68,8 +69,8 @@ public:
 	virtual int get_prev_num_map();
 	virtual int get_prev_num_unit();
 	
-	virtual void set_W ( const std::vector<std::vector<Mat<Real>>>& W );
-	virtual void set_b ( const std::vector<std::vector<Mat<Real>>>& b );
+	virtual void set_W ( const std::vector<Mat<Real>>& W );
+	virtual void set_b ( const std::vector<Mat<Real>>& b );
 	virtual void set_function ( const std::shared_ptr<Function<Real>>& f );
 	virtual void set_prev_function ( const std::shared_ptr<Function<Real>>& f );
 	
@@ -82,13 +83,13 @@ public:
 };
 
 template<template<typename> class Mat, typename Real>
-std::vector<std::vector<Mat<Real>>> Layer<Mat, Real>::get_W ()
+std::vector<Mat<Real>> Layer<Mat, Real>::get_W ()
 {
 	return this->W;
 }
 
 template<template<typename> class Mat, typename Real>
-std::vector<std::vector<Mat<Real>>> Layer<Mat, Real>::get_b ()
+std::vector<Mat<Real>> Layer<Mat, Real>::get_b ()
 {
 	return this->b;
 }
@@ -130,13 +131,13 @@ int Layer<Mat, Real>::get_prev_num_unit()
 }
 
 template<template<typename> class Mat, typename Real>
-void Layer<Mat, Real>::set_W ( const std::vector<std::vector<Mat<Real>>>& W )
+void Layer<Mat, Real>::set_W ( const std::vector<Mat<Real>>& W )
 {
 	this->W = W;
 }
 
 template<template<typename> class Mat, typename Real>
-void Layer<Mat, Real>::set_b ( const std::vector<std::vector<Mat<Real>>>& b )
+void Layer<Mat, Real>::set_b ( const std::vector<Mat<Real>>& b )
 {
 	this->b = b;
 }

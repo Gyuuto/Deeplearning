@@ -29,7 +29,7 @@ class Neuralnet
 {
 private:
 	Real adam_beta = 0.9, adam_gamma = 0.999, adam_eps = 1.0E-8;
-	std::vector<std::vector<std::vector<Mat<Real>>>> adam_v_W, adam_r_W, adam_v_b, adam_r_b;
+	std::vector<std::vector<Mat<Real>>> adam_v_W, adam_r_W, adam_v_b, adam_r_b;
 	Real adam_beta_ = 1.0, adam_gamma_ = 1.0;
 
 	int BATCH_SIZE, UPDATE_ITER;
@@ -45,10 +45,10 @@ private:
 	MPI_Comm outer_world, inner_world;
 #endif
 
-	std::pair<std::vector<std::vector<std::vector<Mat<Real>>>>, std::vector<std::vector<std::vector<Mat<Real>>>>> calc_gradient (const std::vector<std::vector<Mat<Real>>>& U, const std::vector<Mat<Real>>& d);
-	void check_gradient ( int cnt, const std::vector<int>& idx, const std::vector<Matrix<Real>>& X, const std::vector<Matrix<Real>>& Y, const std::vector<std::vector<std::vector<Matrix<Real>>>>& nabla_w, const std::vector<std::vector<std::vector<Matrix<Real>>>>& nabla_b );
+	std::pair<std::vector<std::vector<Mat<Real>>>, std::vector<std::vector<Mat<Real>>>> calc_gradient (const std::vector<Mat<Real>>& U, const Mat<Real>& d);
+	void check_gradient ( int cnt, const std::vector<int>& idx, const Matrix<Real>& X, const Matrix<Real>& Y, const std::vector<std::vector<Matrix<Real>>>& nabla_w, const std::vector<std::vector<Matrix<Real>>>& nabla_b );
 #ifdef USE_GPU
-	void check_gradient ( int cnt, const std::vector<int>& idx, const std::vector<clMatrix<Real>>& X, const std::vector<clMatrix<Real>>& Y, const std::vector<std::vector<std::vector<clMatrix<Real>>>>& nabla_w, const std::vector<std::vector<std::vector<clMatrix<Real>>>>& nabla_b, cl_mem& cl_N, cl_mem& cl_idx, cl_mem& cl_offset );
+	void check_gradient ( int cnt, const std::vector<int>& idx, const clMatrix<Real>& X, const clMatrix<Real>& Y, const std::vector<std::vector<clMatrix<Real>>>& nabla_w, const std::vector<std::vector<clMatrix<Real>>>& nabla_b, cl_mem& cl_N, cl_mem& cl_idx, cl_mem& cl_offset );
 #endif
 public:
 #ifdef USE_MPI
@@ -67,20 +67,26 @@ public:
 #ifdef USE_MPI
 	void averaging ();
 #endif
-	void learning ( const std::vector<Matrix<Real>>& X, const std::vector<Matrix<Real>>& Y,
+	void learning ( const std::vector<Mat<Real>>& X, const std::vector<Mat<Real>>& Y,
 					const int MAX_ITER = 1000,
-					const std::function<void(Neuralnet<Matrix, Real>&, const int, const std::vector<Matrix<Real>>&, const std::vector<Matrix<Real>>&)>& each_func
-					= [](Neuralnet<Matrix, Real>& nn, const int epoch, const std::vector<Matrix<Real>>& x, const std::vector<Matrix<Real>>& d) -> void {} );
+					const std::function<void(Neuralnet<Mat, Real>&, const int, const std::vector<Mat<Real>>&, const std::vector<Mat<Real>>&)>& each_func
+					= [](Neuralnet<Mat, Real>& nn, const int epoch, const std::vector<Mat<Real>>& x, const std::vector<Mat<Real>>& d) -> void {} );
+	void learning ( const Matrix<Real>& X, const Matrix<Real>& Y,
+					const int MAX_ITER = 1000,
+					const std::function<void(Neuralnet<Matrix, Real>&, const int, const Matrix<Real>&, const Matrix<Real>&)>& each_func
+					= [](Neuralnet<Matrix, Real>& nn, const int epoch, const Matrix<Real>& x, const Matrix<Real>& d) -> void {} );
 #ifdef USE_GPU
-	void learning ( const std::vector<clMatrix<Real>>& X, const std::vector<clMatrix<Real>>& Y,
+	void learning ( const clMatrix<Real>& X, const clMatrix<Real>& Y,
 					const int MAX_ITER = 1000,
-					const std::function<void(Neuralnet<clMatrix, Real>&, const int, const std::vector<clMatrix<Real>>&, const std::vector<clMatrix<Real>>&)>& each_func
-					= [](Neuralnet<clMatrix, Real>& nn, const int epoch, const std::vector<clMatrix<Real>>& x, const std::vector<clMatrix<Real>>& d) -> void {} );	
+					const std::function<void(Neuralnet<clMatrix, Real>&, const int, const clMatrix<Real>&, const clMatrix<Real>&)>& each_func
+					= [](Neuralnet<clMatrix, Real>& nn, const int epoch, const clMatrix<Real>& x, const clMatrix<Real>& d) -> void {} );	
 #endif
 
 	std::vector<Mat<Real>> apply ( const std::vector<Mat<Real>>& X ) const;
+	Mat<Real> apply ( const Mat<Real>& X ) const;
 
 	void print_cost ( const std::vector<Mat<Real>>& x, const std::vector<Mat<Real>>& y ) const;
+	void print_cost ( const Mat<Real>& x, const Mat<Real>& y ) const;
 
 	void set_W ( const std::string& filename );
 	void output_W ( const std::string& filename ) const;
@@ -88,16 +94,14 @@ public:
 
 //////////////////// PRIVATE FUNCTION ////////////////////
 template<template<typename> class Mat, typename Real>
-std::pair<std::vector<std::vector<std::vector<Mat<Real>>>>, std::vector<std::vector<std::vector<Mat<Real>>>>> Neuralnet<Mat, Real>::calc_gradient (const std::vector<std::vector<Mat<Real>>>& U, const std::vector<Mat<Real>>& d)
+std::pair<std::vector<std::vector<Mat<Real>>>, std::vector<std::vector<Mat<Real>>>> Neuralnet<Mat, Real>::calc_gradient (const std::vector<Mat<Real>>& U, const Mat<Real>& d)
 {
 	const int num_layer = layer.size();
 	
-	std::vector<Mat<Real>> delta(d.size());
-	for( int i = 0; i < d.size(); ++i ) delta[i] = Mat<Real>(d[i].m, d[i].n);
+	Mat<Real> delta;
 
 	std::shared_ptr<Function<Real>> f = layer[num_layer-1]->get_function();
-	for( int i = 0; i < d.size(); ++i )
-		delta[i] = Mat<Real>::hadamard((*loss)((*f)(U[num_layer][i], false), d[i], true), (*f)(U[num_layer][i], true));
+	delta = Mat<Real>::hadamard((*loss)((*f)(U[num_layer], false), d, true), (*f)(U[num_layer], true));
 
 #ifdef DEBUG
 	int rank = 0;
@@ -105,7 +109,7 @@ std::pair<std::vector<std::vector<std::vector<Mat<Real>>>>, std::vector<std::vec
 	MPI_Comm_rank(this->inner_world, &rank);
 #endif
 #endif
-	std::vector<std::vector<std::vector<Mat<Real>>>> nabla_W(num_layer), nabla_b(num_layer);
+	std::vector<std::vector<Mat<Real>>> nabla_W(num_layer), nabla_b(num_layer);
 	for( int i = num_layer-1; i >= 0; --i ){
 #ifdef DEBUG
 		auto beg1 = std::chrono::system_clock::now();
@@ -135,7 +139,7 @@ std::pair<std::vector<std::vector<std::vector<Mat<Real>>>>, std::vector<std::vec
 }
 
 template<template<typename> class Mat, typename Real>
-void Neuralnet<Mat, Real>::check_gradient ( int cnt, const std::vector<int>& idx, const std::vector<Matrix<Real>>& X, const std::vector<Matrix<Real>>& Y, const std::vector<std::vector<std::vector<Matrix<Real>>>>& nabla_w, const std::vector<std::vector<std::vector<Matrix<Real>>>>& nabla_b )
+void Neuralnet<Mat, Real>::check_gradient ( int cnt, const std::vector<int>& idx, const Matrix<Real>& X, const Matrix<Real>& Y, const std::vector<std::vector<Matrix<Real>>>& nabla_w, const std::vector<std::vector<Matrix<Real>>>& nabla_b )
 {
 	int rank = 0, target_rank = 0;
 	int num_layer = this->layer.size();
@@ -144,22 +148,15 @@ void Neuralnet<Mat, Real>::check_gradient ( int cnt, const std::vector<int>& idx
 	MPI_Comm_rank(inner_world, &rank);
 #endif
 	
-	std::vector<Matrix<Real>> tmp_X(X.size(), Matrix<Real>(X[0].m, BATCH_SIZE)),
-		tmp_Y(Y.size(), Matrix<Real>(Y[0].m, BATCH_SIZE));
-	for( int j = 0; j < X.size(); ++j ){
-		auto tmp_input = X[j];
-		for( int k = 0; k < X[0].m; ++k )
-			for( int l = 0; l < BATCH_SIZE; ++l )
-				tmp_X[j](k, l) = X[j](k, idx[(cnt+l)%X[j].n]);
-	}
-	for( int j = 0; j < Y.size(); ++j ){
-		for( int k = 0; k < Y[0].m; ++k )
-			for( int l = 0; l < BATCH_SIZE; ++l )
-				tmp_Y[j](k, l) = Y[j](k, idx[(cnt+l)%Y[j].n]);
-	}
+	Matrix<Real> tmp_X(X.m, BATCH_SIZE), tmp_Y(Y.m, BATCH_SIZE);
+	for( int i = 0; i < X.m; ++i )
+		for( int j = 0; j < BATCH_SIZE; ++j )
+			tmp_X(i, j) = X(i, idx[(cnt+j)%X.n]);
+	for( int i = 0; i < Y.m; ++i )
+		for( int j = 0; j < BATCH_SIZE; ++j )
+			tmp_Y(i, j) = Y(i, idx[(cnt+j)%Y.n]);
 
-	const double delta_x = 1.0E-3;
-
+	const double delta_x = 1.0E-6;
 	// Calculate gradient numerically for confirmation of computing
 	for( int i = 0; i < num_layer; ++i ){
 		if( rank == target_rank ) printf("\tlayer %d\n", i);
@@ -167,91 +164,74 @@ void Neuralnet<Mat, Real>::check_gradient ( int cnt, const std::vector<int>& idx
 		auto b = layer[i]->get_b();
 		if( W.size() == 0 ) continue;
 
-		int J = W.size(), K = W[0].size(), L = W[0][0].m, M = W[0][0].n;
+		int J = W.size(), K = W[0].m, L = W[0].n;
 #ifdef USE_MPI
 		MPI_Bcast(&J, 1, MPI_INT, target_rank, inner_world);
 		MPI_Bcast(&K, 1, MPI_INT, target_rank, inner_world);
 		MPI_Bcast(&L, 1, MPI_INT, target_rank, inner_world);
-		MPI_Bcast(&M, 1, MPI_INT, target_rank, inner_world);
 #endif
 		if( rank == target_rank ) printf("\t  grad W\n");
 		for( int j = 0; j < std::min(2, J); ++j ){ // num_map
-			for( int k = 0; k < std::min(2, K); ++k ){ // prev_num_map
+			for( int k = 0; k < std::min(4, K); ++k ){
 				for( int l = 0; l < std::min(4, L); ++l ){
-					for( int m = 0; m < std::min(4, M); ++m ){
-						double tmp;
-						if( layer[i]->get_num_map() != 1 || rank == target_rank ){
-							tmp = W[j][k](l,m);
-							tmp = delta_x*(std::abs(tmp) < 1.0E0 ? 1.0 : std::abs(tmp));
-						}
+					double tmp;
+					if( layer[i]->get_num_map() != 1 || rank == target_rank ){
+						tmp = W[j](k, l);
+						tmp = delta_x*(std::abs(tmp) < 1.0E0 ? 1.0 : std::abs(tmp));
+					}
 
-						if( layer[i]->get_num_map() != 1 || rank == target_rank ){
-							W[j][k](l,m) += tmp;
-							layer[i]->set_W(W);
-						}
-						double E1 = 0.0;
-						auto tmp1 = apply(tmp_X);
-						for( int n = 0; n < Y.size(); ++n ){
-							E1 += (*loss)(tmp1[n], tmp_Y[n], false)(0, 0);
-						}
+					if( layer[i]->get_num_map() != 1 || rank == target_rank ){
+						W[j](k,l) += tmp;
+						layer[i]->set_W(W);
+					}
+					auto tmp1 = apply(tmp_X);
+					double E1 = (*loss)(tmp1, tmp_Y, false)(0, 0);
 
-						if( layer[i]->get_num_map() != 1 || rank == target_rank ){
-							W[j][k](l,m) -= 2*tmp;
-							layer[i]->set_W(W);
-						}
-						double E2 = 0.0;
-						auto tmp2 = apply(tmp_X);
-						for( int n = 0; n < Y.size(); ++n ){
-							E2 += (*loss)(tmp2[n], tmp_Y[n], false)(0, 0);
-						}
+					if( layer[i]->get_num_map() != 1 || rank == target_rank ){
+						W[j](k,l) -= 2*tmp;
+						layer[i]->set_W(W);
+					}
+					auto tmp2 = apply(tmp_X);
+					double E2 = (*loss)(tmp2, tmp_Y, false)(0, 0);
 						
-						if( rank == target_rank ){
-							double grad = nabla_w[i][j][k](l,m);
-							printf("\t%3d, %3d, %3d, %3d : ( %.10E, %.10E = %.10E )\n",
-								   j, k, l, m,
-								   0.5*(E1 - E2)/tmp/BATCH_SIZE, grad, (std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE - grad))/std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE));
-						}
+					if( rank == target_rank ){
+						double grad = nabla_w[i][j](k,l);
+						printf("\t%3d, %3d, %3d : ( %.10E, %.10E = %.10E )\n",
+							   j, k, l,
+							   0.5*(E1 - E2)/tmp/BATCH_SIZE, grad, (std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE - grad))/std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE));
 					}
 				}
 			}
 		}
 		if( rank == target_rank ) printf("\t  grad b\n");
 		for( int j = 0; j < std::min(2, J); ++j ){ // num_map
-			for( int k = 0; k < std::min(2, K); ++k ){ // prev_num_map
-				for( int l = 0; l < std::min(4, L); ++l ){
-					for( int m = 0; m < std::min(1, M); ++m ){
-						double tmp;
-						if( layer[i]->get_num_map() != 1 || rank == target_rank ){
-							tmp = b[j][k](l,m);
-							tmp = delta_x*(std::abs(tmp) < 1.0E0 ? 1.0 : std::abs(tmp));
-						}
+			for( int k = 0; k < std::min(4, K); ++k ){
+				for( int l = 0; l < std::min(1, L); ++l ){
+					double tmp;
+					if( layer[i]->get_num_map() != 1 || rank == target_rank ){
+						tmp = b[j](k,l);
+						tmp = delta_x*(std::abs(tmp) < 1.0E0 ? 1.0 : std::abs(tmp));
+					}
 
-						if( layer[i]->get_num_map() != 1 || rank == target_rank ){
-							b[j][k](l,m) += tmp;
-							layer[i]->set_b(b);
-						}
-						double E1 = 0.0;
-						auto tmp1 = apply(tmp_X);
-						for( int n = 0; n < Y.size(); ++n ){
-							E1 += (*loss)(tmp1[n], tmp_Y[n], false)(0, 0);
-						}
+					if( layer[i]->get_num_map() != 1 || rank == target_rank ){
+						b[j](k,l) += tmp;
+						layer[i]->set_b(b);
+					}
+					auto tmp1 = apply(tmp_X);
+					double E1 = (*loss)(tmp1, tmp_Y, false)(0, 0);
 
-						if( layer[i]->get_num_map() != 1 || rank == target_rank ){
-							b[j][k](l,m) -= 2*tmp;
-							layer[i]->set_b(b);
-						}
-						double E2 = 0.0;
-						auto tmp2 = apply(tmp_X);
-						for( int n = 0; n < Y.size(); ++n ){
-							E2 += (*loss)(tmp2[n], tmp_Y[n], false)(0, 0);
-						}
+					if( layer[i]->get_num_map() != 1 || rank == target_rank ){
+						b[j](k,l) -= 2*tmp;
+						layer[i]->set_b(b);
+					}
+					auto tmp2 = apply(tmp_X);
+					double E2 = (*loss)(tmp2, tmp_Y, false)(0, 0);
 						
-						if( rank == target_rank ){
-							double grad = nabla_b[i][j][k](l,m);
-							printf("\t%3d, %3d, %3d, %3d : ( %.10E, %.10E = %.10E )\n",
-								   j, k, l, m,
-								   0.5*(E1 - E2)/tmp/BATCH_SIZE, grad, (std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE - grad))/std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE));
-						}
+					if( rank == target_rank ){
+						double grad = nabla_b[i][j](k,l);
+						printf("\t%3d, %3d, %3d : ( %.10E, %.10E = %.10E )\n",
+							   j, k, l,
+							   0.5*(E1 - E2)/tmp/BATCH_SIZE, grad, (std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE - grad))/std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE));
 					}
 				}
 			}
@@ -262,7 +242,7 @@ void Neuralnet<Mat, Real>::check_gradient ( int cnt, const std::vector<int>& idx
 
 #ifdef USE_GPU
 template<template<typename> class Mat, typename Real>
-void Neuralnet<Mat, Real>::check_gradient ( int cnt, const std::vector<int>& idx, const std::vector<clMatrix<Real>>& X, const std::vector<clMatrix<Real>>& Y, const std::vector<std::vector<std::vector<clMatrix<Real>>>>& nabla_w, const std::vector<std::vector<std::vector<clMatrix<Real>>>>& nabla_b, cl_mem& cl_N, cl_mem& cl_idx, cl_mem& cl_offset )
+void Neuralnet<Mat, Real>::check_gradient ( int cnt, const std::vector<int>& idx, const clMatrix<Real>& X, const clMatrix<Real>& Y, const std::vector<std::vector<clMatrix<Real>>>& nabla_w, const std::vector<std::vector<clMatrix<Real>>>& nabla_b, cl_mem& cl_N, cl_mem& cl_idx, cl_mem& cl_offset )
 {
 	int rank = 0, target_rank = 0;
 	int num_layer = this->layer.size();
@@ -271,26 +251,22 @@ void Neuralnet<Mat, Real>::check_gradient ( int cnt, const std::vector<int>& idx
 	MPI_Comm_rank(inner_world, &rank);
 #endif
 	
-	std::vector<clMatrix<Real>> tmp_X(X.size(), clMatrix<Real>(X[0].m, BATCH_SIZE)),
-		tmp_Y(Y.size(), clMatrix<Real>(Y[0].m, BATCH_SIZE));
-	for( int i = 0; i < X.size(); ++i ){
-		cl_device_manager.set_argument( PRG::ASSIGN_DATA, 0, &tmp_X[i].v );
-		cl_device_manager.set_argument( PRG::ASSIGN_DATA, 1, &X[i].v );
-		cl_device_manager.set_argument( PRG::ASSIGN_DATA, 2, &cl_idx );
-		cl_device_manager.set_argument( PRG::ASSIGN_DATA, 3, &cl_offset );
-		cl_device_manager.set_argument( PRG::ASSIGN_DATA, 4, &cl_N );
-		cl_device_manager.run_kernel( PRG::ASSIGN_DATA, tmp_X[i].m, tmp_X[i].n );
-	}
-	for( int i = 0; i < Y.size(); ++i ){
-		cl_device_manager.set_argument( PRG::ASSIGN_DATA, 0, &tmp_Y[i].v );
-		cl_device_manager.set_argument( PRG::ASSIGN_DATA, 1, &Y[i].v );
-		cl_device_manager.set_argument( PRG::ASSIGN_DATA, 2, &cl_idx );
-		cl_device_manager.set_argument( PRG::ASSIGN_DATA, 3, &cl_offset );
-		cl_device_manager.set_argument( PRG::ASSIGN_DATA, 4, &cl_N );
-		cl_device_manager.run_kernel( PRG::ASSIGN_DATA, tmp_Y[i].m, tmp_Y[i].n );
-	}
+	clMatrix<Real> tmp_X(X.m, BATCH_SIZE), tmp_Y(Y.m, BATCH_SIZE);
+	cl_device_manager.set_argument( PRG::ASSIGN_DATA, 0, &tmp_X.v );
+	cl_device_manager.set_argument( PRG::ASSIGN_DATA, 1, &X.v );
+	cl_device_manager.set_argument( PRG::ASSIGN_DATA, 2, &cl_idx );
+	cl_device_manager.set_argument( PRG::ASSIGN_DATA, 3, &cl_offset );
+	cl_device_manager.set_argument( PRG::ASSIGN_DATA, 4, &cl_N );
+	cl_device_manager.run_kernel( PRG::ASSIGN_DATA, tmp_X.m, tmp_X.n );
 
-	const double delta_x = 1.0E-4;
+	cl_device_manager.set_argument( PRG::ASSIGN_DATA, 0, &tmp_Y.v );
+	cl_device_manager.set_argument( PRG::ASSIGN_DATA, 1, &Y.v );
+	cl_device_manager.set_argument( PRG::ASSIGN_DATA, 2, &cl_idx );
+	cl_device_manager.set_argument( PRG::ASSIGN_DATA, 3, &cl_offset );
+	cl_device_manager.set_argument( PRG::ASSIGN_DATA, 4, &cl_N );
+	cl_device_manager.run_kernel( PRG::ASSIGN_DATA, tmp_Y.m, tmp_Y.n );
+
+	const double delta_x = 1.0E-2;
 	
 	// Calculate gradient numerically for confirmation of computing
 	for( int i = 0; i < num_layer; ++i ){
@@ -299,7 +275,7 @@ void Neuralnet<Mat, Real>::check_gradient ( int cnt, const std::vector<int>& idx
 		auto b = layer[i]->get_b();
 		if( W.size() == 0 ) continue;
 
-		int J = W.size(), K = W[0].size(), L = W[0][0].m, M = W[0][0].n;
+		int J = W.size(), K = W[0].m, L = W[0].n;
 #ifdef USE_MPI
 		MPI_Bcast(&J, 1, MPI_INT, target_rank, inner_world);
 		MPI_Bcast(&K, 1, MPI_INT, target_rank, inner_world);
@@ -308,82 +284,67 @@ void Neuralnet<Mat, Real>::check_gradient ( int cnt, const std::vector<int>& idx
 #endif
 		if( rank == target_rank ) printf("\t  grad W\n");
 		for( int j = 0; j < std::min(2, J); ++j ){ // num_map
-			for( int k = 0; k < std::min(2, K); ++k ){ // prev_num_map
+			for( int k = 0; k < std::min(4, K); ++k ){
 				for( int l = 0; l < std::min(4, L); ++l ){
-					for( int m = 0; m < std::min(4, M); ++m ){
-						double tmp;
-						if( layer[i]->get_num_map() != 1 || rank == target_rank ){
-							tmp = W[j][k].get_element(l,m);
-							tmp = delta_x*(std::abs(tmp) < 1.0E0 ? 1.0 : std::abs(tmp));
-						}
+					double tmp;
+					if( layer[i]->get_num_map() != 1 || rank == target_rank ){
+						tmp = W[j].get_element(k,l);
+						tmp = delta_x*(std::abs(tmp) < 1.0E0 ? 1.0 : std::abs(tmp));
+					}
 
-						if( layer[i]->get_num_map() != 1 || rank == target_rank ){
-							W[j][k].set_element(l,m, W[j][k].get_element(l,m)+tmp);
-							layer[i]->set_W(W);
-						}
-						double E1 = 0.0;
-						auto tmp1 = apply(tmp_X);
-						for( int n = 0; n < Y.size(); ++n ){
-							E1 += (*loss)(tmp1[n], tmp_Y[n], false).get_element(0, 0);
-						}
+					if( layer[i]->get_num_map() != 1 || rank == target_rank ){
+						W[j].set_element(k,l, W[j].get_element(k,l)+tmp);
+						layer[i]->set_W(W);
+					}
+					auto tmp1 = apply(tmp_X);
+					double E1 = (*loss)(tmp1, tmp_Y, false).get_element(0, 0);
 
-						if( layer[i]->get_num_map() != 1 || rank == target_rank ){
-							W[j][k].set_element(l,m, W[j][k].get_element(l,m) - 2*tmp);
-							layer[i]->set_W(W);
-						}
-						double E2 = 0.0;
-						auto tmp2 = apply(tmp_X);
-						for( int n = 0; n < Y.size(); ++n ){
-							E2 += (*loss)(tmp2[n], tmp_Y[n], false).get_element(0, 0);
-						}
+					if( layer[i]->get_num_map() != 1 || rank == target_rank ){
+						W[j].set_element(k,l, W[j].get_element(k,l) - 2*tmp);
+						layer[i]->set_W(W);
+					}
+					auto tmp2 = apply(tmp_X);
+					double E2 = (*loss)(tmp2, tmp_Y, false).get_element(0, 0);
 
-						if( rank == target_rank ){
-							double grad = nabla_w[i][j][k].get_element(l,m);
-							printf("\t%3d, %3d, %3d, %3d : ( %.10E, %.10E = %.10E )\n",
-								   j, k, l, m,
-								   0.5*(E1 - E2)/tmp/BATCH_SIZE, grad, (std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE - grad))/std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE));
-						}
+					if( rank == target_rank ){
+						double grad = nabla_w[i][j].get_element(k,l);
+						printf("\t%3d, %3d, %3d : ( %.10E, %.10E = %.10E )\n",
+							   j, k, l,
+							   0.5*(E1 - E2)/tmp/BATCH_SIZE, grad, (std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE - grad))/std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE));
 					}
 				}
 			}
 		}
 		if( rank == target_rank ) printf("\t  grad b\n");
 		for( int j = 0; j < std::min(2, J); ++j ){ // num_map
-			for( int k = 0; k < std::min(2, K); ++k ){ // prev_num_map
-				for( int l = 0; l < std::min(4, L); ++l ){
-					for( int m = 0; m < std::min(1, M); ++m ){
-						double tmp;
-						if( layer[i]->get_num_map() != 1 || rank == target_rank ){
-							tmp = b[j][k].get_element(l,m);
-							tmp = delta_x*(std::abs(tmp) < 1.0E0 ? 1.0 : std::abs(tmp));
-						}
+			for( int k = 0; k < std::min(4, K); ++k ){ // prev_num_map
+				for( int l = 0; l < std::min(1, L); ++l ){
+					double tmp;
+					if( layer[i]->get_num_map() != 1 || rank == target_rank ){
+						tmp = b[j].get_element(k,l);
+						tmp = delta_x*(std::abs(tmp) < 1.0E0 ? 1.0 : std::abs(tmp));
+					}
 
-						if( layer[i]->get_num_map() != 1 || rank == target_rank ){
-							b[j][k].set_element(l,m, b[j][k].get_element(l,m)+tmp);
-							layer[i]->set_b(b);
-						}
-						double E1 = 0.0;
-						auto tmp1 = apply(tmp_X);
-						for( int n = 0; n < Y.size(); ++n ){
-							E1 += (*loss)(tmp1[n], tmp_Y[n], false).get_element(0, 0);
-						}
+					if( layer[i]->get_num_map() != 1 || rank == target_rank ){
+						b[j].set_element(k,l, b[j].get_element(k,l)+tmp);
+						layer[i]->set_b(b);
+					}
 
-						if( layer[i]->get_num_map() != 1 || rank == target_rank ){
-							b[j][k].set_element(l,m, b[j][k].get_element(l,m) - 2*tmp);
-							layer[i]->set_b(b);
-						}
-						double E2 = 0.0;
-						auto tmp2 = apply(tmp_X);
-						for( int n = 0; n < Y.size(); ++n ){
-							E2 += (*loss)(tmp2[n], tmp_Y[n], false).get_element(0, 0);
-						}
+					auto tmp1 = apply(tmp_X);
+					double E1 = (*loss)(tmp1, tmp_Y, false).get_element(0, 0);
+
+					if( layer[i]->get_num_map() != 1 || rank == target_rank ){
+						b[j].set_element(k,l, b[j].get_element(k,l) - 2*tmp);
+						layer[i]->set_b(b);
+					}
+					auto tmp2 = apply(tmp_X);
+					double E2 = (*loss)(tmp2, tmp_Y, false).get_element(0, 0);
 						
-						if( rank == target_rank ){
-							double grad = nabla_b[i][j][k].get_element(l,m);
-							printf("\t%3d, %3d, %3d, %3d : ( %.10E, %.10E = %.10E )\n",
-								   j, k, l, m,
-								   0.5*(E1 - E2)/tmp/BATCH_SIZE, grad, (std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE - grad))/std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE));
-						}
+					if( rank == target_rank ){
+						double grad = nabla_b[i][j].get_element(k,l);
+						printf("\t%3d, %3d, %3d : ( %.10E, %.10E = %.10E )\n",
+							   j, k, l,
+							   0.5*(E1 - E2)/tmp/BATCH_SIZE, grad, (std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE - grad))/std::abs(0.5*(E1 - E2)/tmp/BATCH_SIZE));
 					}
 				}
 			}
@@ -480,24 +441,20 @@ void Neuralnet<Mat, Real>::add_layer( const std::shared_ptr<Layer<Mat, Real>>& l
 	this->layer[idx]->init(mt);
 #endif
 
-	auto w = layer->get_W();
-	adam_v_W.push_back(std::vector<std::vector<Mat<Real>>>(w.size()));
-	adam_r_W.push_back(std::vector<std::vector<Mat<Real>>>(w.size()));
-	for( int j = 0; j < w.size(); ++j ){
-		for( int k = 0; k < w[j].size(); ++k ){
-			adam_v_W[idx][j].push_back(Mat<Real>::zeros(w[j][k].m, w[j][k].n));
-			adam_r_W[idx][j].push_back(Mat<Real>::zeros(w[j][k].m, w[j][k].n));
-		}
+	auto W = layer->get_W();
+	adam_v_W.push_back(std::vector<Mat<Real>>(W.size()));
+	adam_r_W.push_back(std::vector<Mat<Real>>(W.size()));
+	for( int j = 0; j < W.size(); ++j ){
+		adam_v_W[idx][j] = Mat<Real>::zeros(W[j].m, W[j].n);
+		adam_r_W[idx][j] = Mat<Real>::zeros(W[j].m, W[j].n);
 	}
 
 	auto b = layer->get_b();
-	adam_v_b.push_back(std::vector<std::vector<Mat<Real>>>(b.size()));
-	adam_r_b.push_back(std::vector<std::vector<Mat<Real>>>(b.size()));
+	adam_v_b.push_back(std::vector<Mat<Real>>(b.size()));
+	adam_r_b.push_back(std::vector<Mat<Real>>(b.size()));
 	for( int j = 0; j < b.size(); ++j ){
-		for( int k = 0; k < b[j].size(); ++k ){
-			adam_v_b[idx][j].push_back(Mat<Real>::zeros(b[j][k].m, b[j][k].n));
-			adam_r_b[idx][j].push_back(Mat<Real>::zeros(b[j][k].m, b[j][k].n));
-		}
+		adam_v_b[idx][j] = Mat<Real>::zeros(b[j].m, b[j].n);
+		adam_r_b[idx][j] = Mat<Real>::zeros(b[j].m, b[j].n);
 	}
 }
 
@@ -512,9 +469,9 @@ void Neuralnet<Mat, Real>::averaging ()
 #endif
 
 template<template<typename> class Mat, typename Real>
-void Neuralnet<Mat, Real>::learning ( const std::vector<Matrix<Real>>& X, const std::vector<Matrix<Real>>& Y,
+void Neuralnet<Mat, Real>::learning ( const Matrix<Real>& X, const Matrix<Real>& Y,
 									  const int MAX_ITER,
-									  const std::function<void(Neuralnet<Matrix, Real>&, const int, const std::vector<Matrix<Real>>&, const std::vector<Matrix<Real>>&)>& each_func )
+									  const std::function<void(Neuralnet<Matrix, Real>&, const int, const Matrix<Real>&, const Matrix<Real>&)>& each_func )
 {
 	int nprocs = 1, myrank = 0;
 #ifdef USE_MPI
@@ -523,7 +480,7 @@ void Neuralnet<Mat, Real>::learning ( const std::vector<Matrix<Real>>& X, const 
 #endif
 
 	const int num_layer = layer.size();
-	const int num_data = X[0].n;
+	const int num_data = X.n;
 
 	int seed = time(NULL);
 #ifdef USE_MPI
@@ -537,11 +494,11 @@ void Neuralnet<Mat, Real>::learning ( const std::vector<Matrix<Real>>& X, const 
 	std::shuffle( idx.begin(), idx.end(), mt );
 
 	// memory allocation for matrix U and D.
-	std::vector<Mat<Real>> D(Y.size(), Mat<Real>(Y[0].m, BATCH_SIZE));
-	std::vector<std::vector<Mat<Real>>> U(num_layer+1);
-	U[0] = std::vector<Mat<Real>>(layer[0]->get_prev_num_map(), Mat<Real>(layer[0]->get_prev_num_unit(), BATCH_SIZE));
+	Mat<Real> D(Y.m, BATCH_SIZE);
+	std::vector<Matrix<Real>> U(num_layer+1);
+	U[0] = Matrix<Real>(X.m, BATCH_SIZE);
 	for( int i = 0; i < U.size()-1; ++i ){
-		U[i+1] = std::vector<Mat<Real>>(layer[i]->get_num_map(), Mat<Real>(layer[i]->get_num_unit(), BATCH_SIZE));
+		U[i+1] = Matrix<Real>(layer[i]->get_num_map()*layer[i]->get_num_unit(), BATCH_SIZE);
 	}
 
 	each_func(*this, 0, U[0], D);
@@ -554,17 +511,15 @@ void Neuralnet<Mat, Real>::learning ( const std::vector<Matrix<Real>>& X, const 
 		// assign data to mini-batch
 #pragma omp parallel
 		{
-			for( int i = 0; i < X.size(); ++i )
-#pragma omp for schedule(auto) nowait
-				for( int j = 0; j < U[0][i].m; ++j )
-					for( int k = 0; k < BATCH_SIZE; ++k )
-						U[0][i](j,k) = X[i](j, idx[(cnt+k)%num_data]);
+#pragma omp for nowait
+			for( int i = 0; i < X.m; ++i )
+				for( int j = 0; j < BATCH_SIZE; ++j )
+					U[0](i, j) = X(i, idx[(cnt+j)%num_data]);
 		
-			for( int i = 0; i < Y.size(); ++i )
-#pragma omp for schedule(auto) nowait
-				for( int j = 0; j < D[i].m; ++j )
-					for( int k = 0; k < BATCH_SIZE; ++k )
-						D[i](j,k) = Y[i](j, idx[(cnt+k)%num_data]);
+#pragma omp for nowait
+			for( int i = 0; i < D.m; ++i )
+				for( int j = 0; j < BATCH_SIZE; ++j )
+					D(i,j) = Y(i, idx[(cnt+j)%num_data]);
 		}
 #ifdef DEBUG
 		auto end = std::chrono::system_clock::now();
@@ -581,15 +536,11 @@ void Neuralnet<Mat, Real>::learning ( const std::vector<Matrix<Real>>& X, const 
 			auto V = U[i];
 			if( i != 0 ){
 				std::shared_ptr<Function<Real>> f = layer[i-1]->get_function();
-				
-				for( int j = 0; j < V.size(); ++j )
-					V[j] = (*f)(V[j], false);
+				V = (*f)(V, false);
 			}
 
 			auto tmp = layer[i]->apply(V, false);
-			for( int j = 0; j < tmp.size(); ++j ){
-				U[i+1][j] = tmp[j];
-			}
+			U[i+1] = tmp;
 #ifdef DEBUG
 			auto end = std::chrono::system_clock::now();
 			if( myrank == 0 ) printf("  layer %d : %3lld\n", i, std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
@@ -604,7 +555,7 @@ void Neuralnet<Mat, Real>::learning ( const std::vector<Matrix<Real>>& X, const 
 #ifdef DEBUG
 		beg = std::chrono::system_clock::now();
 #endif
-		std::vector<std::vector<std::vector<Matrix<Real>>>> nabla_W, nabla_b;
+		std::vector<std::vector<Matrix<Real>>> nabla_W, nabla_b;
 		tie(nabla_W, nabla_b) = calc_gradient(U, D);
 #ifdef DEBUG
 		end = std::chrono::system_clock::now();
@@ -617,12 +568,10 @@ void Neuralnet<Mat, Real>::learning ( const std::vector<Matrix<Real>>& X, const 
 		// averaging all gradients of weights of mini-batches
 		for( int i = 0; i < nabla_W.size(); ++i )
 			for( int j = 0; j < nabla_W[i].size(); ++j )
-				for( int k = 0; k < nabla_W[i][j].size(); ++k )
-					nabla_W[i][j][k] *= 1.0/BATCH_SIZE;	
+				nabla_W[i][j] *= 1.0/BATCH_SIZE;	
 		for( int i = 0; i < nabla_b.size(); ++i )
 			for( int j = 0; j < nabla_b[i].size(); ++j )
-				for( int k = 0; k < nabla_b[i][j].size(); ++k )
-					nabla_b[i][j][k] *= 1.0/BATCH_SIZE;
+				nabla_b[i][j] *= 1.0/BATCH_SIZE;
 	
 #ifdef CHECK_GRAD
 		check_gradient(cnt, idx, X, Y, nabla_W, nabla_b);
@@ -642,60 +591,54 @@ void Neuralnet<Mat, Real>::learning ( const std::vector<Matrix<Real>>& X, const 
 
 			if( W.size() == 0 ) continue;
 
-			std::vector<std::vector<Mat<Real>>> update_W(W.size(), std::vector<Mat<Real>>(W[0].size(), Mat<Real>(W[0][0].m, W[0][0].n))), update_b(b.size(), std::vector<Mat<Real>>(b[0].size(), Mat<Real>(b[0][0].m, b[0][0].n)));
+			std::vector<Matrix<Real>> update_W(W.size(), Matrix<Real>(W[0].m, W[0].n)),
+				update_b(b.size(), Matrix<Real>(b[0].m, b[0].n));
 			if( std::abs(LAMBDA) > 1.0E-15 ){
 				// L2 norm regularization
 				for( int j = 0; j < W.size(); ++j )
-					for( int k = 0; k < W[j].size(); ++k )
-						nabla_W[i][j][k] += LAMBDA*W[j][k];
+					nabla_W[i][j] += LAMBDA*W[j];
 			}
 
 #pragma omp parallel
 			{
 				// ADAM
 				for( int j = 0; j < nabla_W[i].size(); ++j )
-					for( int k = 0; k < nabla_W[i][j].size(); ++k )
-#pragma omp for schedule(auto) nowait
-						for( int l = 0; l < nabla_W[i][j][k].m; ++l )
-							for( int m = 0; m < nabla_W[i][j][k].n; ++m ){
-								adam_v_W[i][j][k](l,m) = adam_beta*adam_v_W[i][j][k](l,m) + (1.0 - adam_beta)*nabla_W[i][j][k](l,m);
-								adam_r_W[i][j][k](l,m) = adam_gamma*adam_r_W[i][j][k](l,m) + (1.0 - adam_gamma)*(nabla_W[i][j][k](l,m)*nabla_W[i][j][k](l,m));
-							}
+#pragma omp for nowait
+					for( int k = 0; k < nabla_W[i][j].m; ++k )
+						for( int l = 0; l < nabla_W[i][j].n; ++l ){
+							adam_v_W[i][j](k,l) = adam_beta*adam_v_W[i][j](k,l) + (1.0 - adam_beta)*nabla_W[i][j](k,l);
+							adam_r_W[i][j](k,l) = adam_gamma*adam_r_W[i][j](k,l) + (1.0 - adam_gamma)*(nabla_W[i][j](k,l)*nabla_W[i][j](k,l));
+						}
 
 #pragma omp barrier
 				
 				for( int j = 0; j < W.size(); ++j )
-					for( int k = 0; k < W[j].size(); ++k ){
-#pragma omp for schedule(auto) nowait
-						for( int l = 0; l < update_W[j][k].m; ++l )
-							for( int m = 0; m < update_W[j][k].n; ++m ){
-								auto v_hat = adam_v_W[i][j][k](l,m) / (1.0 - adam_beta_);
-								auto r_hat = adam_r_W[i][j][k](l,m) / (1.0 - adam_gamma_);
-								update_W[j][k](l,m) = -EPS*v_hat/(sqrt(r_hat)+adam_eps);
-							}
-					}
+#pragma omp for nowait
+					for( int k = 0; k < update_W[j].m; ++k )
+						for( int l = 0; l < update_W[j].n; ++l ){
+							auto v_hat = adam_v_W[i][j](k,l) / (1.0 - adam_beta_);
+							auto r_hat = adam_r_W[i][j](k,l) / (1.0 - adam_gamma_);
+							update_W[j](k,l) = -EPS*v_hat/(sqrt(r_hat)+adam_eps);
+						}
 				
 				for( int j = 0; j < nabla_b[i].size(); ++j )
-					for( int k = 0; k < nabla_b[i][j].size(); ++k )
-#pragma omp for schedule(auto) nowait
-						for( int l = 0; l < nabla_b[i][j][k].m; ++l )
-							for( int m = 0; m < nabla_b[i][j][k].n; ++m ){
-								adam_v_b[i][j][k](l,m) = adam_beta*adam_v_b[i][j][k](l,m) + (1.0 - adam_beta)*nabla_b[i][j][k](l,m);
-								adam_r_b[i][j][k](l,m) = adam_gamma*adam_r_b[i][j][k](l,m) + (1.0 - adam_gamma)*(nabla_b[i][j][k](l,m)*nabla_b[i][j][k](l,m));
-							}
+#pragma omp for nowait
+					for( int k = 0; k < nabla_b[i][j].m; ++k )
+						for( int l = 0; l < nabla_b[i][j].n; ++l ){
+							adam_v_b[i][j](k,l) = adam_beta*adam_v_b[i][j](k,l) + (1.0 - adam_beta)*nabla_b[i][j](k,l);
+							adam_r_b[i][j](k,l) = adam_gamma*adam_r_b[i][j](k,l) + (1.0 - adam_gamma)*(nabla_b[i][j](k,l)*nabla_b[i][j](k,l));
+						}
 
 #pragma omp barrier
 				
 				for( int j = 0; j < W.size(); ++j )
-					for( int k = 0; k < W[j].size(); ++k ){
-#pragma omp for schedule(auto) nowait
-						for( int l = 0; l < update_b[j][k].m; ++l )
-							for( int m = 0; m < update_b[j][k].n; ++m ){
-								auto v_hat = adam_v_b[i][j][k](l,m) / (1.0 - adam_beta_);
-								auto r_hat = adam_r_b[i][j][k](l,m) / (1.0 - adam_gamma_);
-								update_b[j][k](l,m) = -EPS*v_hat/(sqrt(r_hat)+adam_eps);
-							}
-					}
+#pragma omp for nowait
+					for( int k = 0; k < update_b[j].m; ++k )
+						for( int l = 0; l < update_b[j].n; ++l ){
+							auto v_hat = adam_v_b[i][j](k,l) / (1.0 - adam_beta_);
+							auto r_hat = adam_r_b[i][j](k,l) / (1.0 - adam_gamma_);
+							update_b[j](k,l) = -EPS*v_hat/(sqrt(r_hat)+adam_eps);
+						}
 			}
 			layer[i]->update_W(update_W, update_b);
 		}
@@ -725,9 +668,9 @@ void Neuralnet<Mat, Real>::learning ( const std::vector<Matrix<Real>>& X, const 
 
 #ifdef USE_GPU
 template<template<typename> class Mat, typename Real>
-void Neuralnet<Mat, Real>::learning ( const std::vector<clMatrix<Real>>& X, const std::vector<clMatrix<Real>>& Y,
+void Neuralnet<Mat, Real>::learning ( const clMatrix<Real>& X, const clMatrix<Real>& Y,
 									  const int MAX_ITER,
-									  const std::function<void(Neuralnet<clMatrix, Real>&, const int, const std::vector<clMatrix<Real>>&, const std::vector<clMatrix<Real>>&)>& each_func )
+									  const std::function<void(Neuralnet<clMatrix, Real>&, const int, const clMatrix<Real>&, const clMatrix<Real>&)>& each_func )
 {
 	int nprocs = 1, myrank = 0;
 #ifdef USE_MPI
@@ -736,7 +679,7 @@ void Neuralnet<Mat, Real>::learning ( const std::vector<clMatrix<Real>>& X, cons
 #endif
 
 	const int num_layer = layer.size();
-	const int num_data = X[0].n;
+	const int num_data = X.n;
 
 	int seed = time(NULL);
 #ifdef USE_MPI
@@ -750,13 +693,13 @@ void Neuralnet<Mat, Real>::learning ( const std::vector<clMatrix<Real>>& X, cons
 	std::shuffle( idx.begin(), idx.end(), mt );
 
 	// memory allocation for matrix U and D.
-	std::vector<Mat<Real>> D(Y.size(), Mat<Real>(Y[0].m, BATCH_SIZE));
-	std::vector<std::vector<Mat<Real>>> U(num_layer+1);
-	U[0] = std::vector<Mat<Real>>(layer[0]->get_prev_num_map(), Mat<Real>(layer[0]->get_prev_num_unit(), BATCH_SIZE));
+	clMatrix<Real> D(Y.m, BATCH_SIZE);
+	std::vector<clMatrix<Real>> U(num_layer+1);
+	U[0] = clMatrix<Real>(X.m, BATCH_SIZE);
 	for( int i = 0; i < U.size()-1; ++i ){
-		U[i+1] = std::vector<Mat<Real>>(layer[i]->get_num_map(), Mat<Real>(layer[i]->get_num_unit(), BATCH_SIZE));
+		U[i+1] = clMatrix<Real>(layer[i]->get_num_map()*layer[i]->get_num_unit(), BATCH_SIZE);
 	}
-
+	
 	each_func(*this, 0, U[0], D);
 
 	int cnt = 0;
@@ -794,22 +737,19 @@ void Neuralnet<Mat, Real>::learning ( const std::vector<clMatrix<Real>>& X, cons
 		auto beg = std::chrono::system_clock::now();
 #endif
 		// assign data to mini-batch
-		for( int i = 0; i < X.size(); ++i ){
-			cl_device_manager.set_argument( PRG::ASSIGN_DATA, 0, &U[0][i].v );
-			cl_device_manager.set_argument( PRG::ASSIGN_DATA, 1, &X[i].v );
-			cl_device_manager.set_argument( PRG::ASSIGN_DATA, 2, &cl_idx );
-			cl_device_manager.set_argument( PRG::ASSIGN_DATA, 3, &cl_offset );
-			cl_device_manager.set_argument( PRG::ASSIGN_DATA, 4, &cl_N );
-			cl_device_manager.run_kernel( PRG::ASSIGN_DATA, U[0][i].m, U[0][i].n );
-		}
-		for( int i = 0; i < Y.size(); ++i ){
-			cl_device_manager.set_argument( PRG::ASSIGN_DATA, 0, &D[i].v );
-			cl_device_manager.set_argument( PRG::ASSIGN_DATA, 1, &Y[i].v );
-			cl_device_manager.set_argument( PRG::ASSIGN_DATA, 2, &cl_idx );
-			cl_device_manager.set_argument( PRG::ASSIGN_DATA, 3, &cl_offset );
-			cl_device_manager.set_argument( PRG::ASSIGN_DATA, 4, &cl_N );
-			cl_device_manager.run_kernel( PRG::ASSIGN_DATA, D[i].m, D[i].n );
-		}
+		cl_device_manager.set_argument( PRG::ASSIGN_DATA, 0, &U[0].v );
+		cl_device_manager.set_argument( PRG::ASSIGN_DATA, 1, &X.v );
+		cl_device_manager.set_argument( PRG::ASSIGN_DATA, 2, &cl_idx );
+		cl_device_manager.set_argument( PRG::ASSIGN_DATA, 3, &cl_offset );
+		cl_device_manager.set_argument( PRG::ASSIGN_DATA, 4, &cl_N );
+		cl_device_manager.run_kernel( PRG::ASSIGN_DATA, U[0].m, U[0].n );
+
+		cl_device_manager.set_argument( PRG::ASSIGN_DATA, 0, &D.v );
+		cl_device_manager.set_argument( PRG::ASSIGN_DATA, 1, &Y.v );
+		cl_device_manager.set_argument( PRG::ASSIGN_DATA, 2, &cl_idx );
+		cl_device_manager.set_argument( PRG::ASSIGN_DATA, 3, &cl_offset );
+		cl_device_manager.set_argument( PRG::ASSIGN_DATA, 4, &cl_N );
+		cl_device_manager.run_kernel( PRG::ASSIGN_DATA, D.m, D.n );
 #ifdef DEBUG
 		auto end = std::chrono::system_clock::now();
 		if( myrank == 0 ) printf("Init : %3lld %d\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count(), n);
@@ -825,15 +765,11 @@ void Neuralnet<Mat, Real>::learning ( const std::vector<clMatrix<Real>>& X, cons
 			auto V = U[i];
 			if( i != 0 ){
 				std::shared_ptr<Function<Real>> f = layer[i-1]->get_function();
-				
-				for( int j = 0; j < V.size(); ++j )
-					V[j] = (*f)(V[j], false);
+				V = (*f)(V, false);
 			}
 
 			auto tmp = layer[i]->apply(V, false);
-			for( int j = 0; j < tmp.size(); ++j ){
-				U[i+1][j] = tmp[j];
-			}
+			U[i+1] = tmp;
 #ifdef DEBUG
 			auto end = std::chrono::system_clock::now();
 			if( myrank == 0 ) printf("  layer %d : %3lld\n", i, std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
@@ -848,7 +784,7 @@ void Neuralnet<Mat, Real>::learning ( const std::vector<clMatrix<Real>>& X, cons
 #ifdef DEBUG
 		beg = std::chrono::system_clock::now();
 #endif
-		std::vector<std::vector<std::vector<clMatrix<Real>>>> nabla_W, nabla_b;
+		std::vector<std::vector<clMatrix<Real>>> nabla_W, nabla_b;
 		tie(nabla_W, nabla_b) = calc_gradient(U, D);
 #ifdef DEBUG
 		end = std::chrono::system_clock::now();
@@ -861,12 +797,10 @@ void Neuralnet<Mat, Real>::learning ( const std::vector<clMatrix<Real>>& X, cons
 		// averaging all gradients of weights of mini-batches
 		for( int i = 0; i < nabla_W.size(); ++i )
 			for( int j = 0; j < nabla_W[i].size(); ++j )
-				for( int k = 0; k < nabla_W[i][j].size(); ++k )
-					nabla_W[i][j][k] *= 1.0/BATCH_SIZE;
+				nabla_W[i][j] *= 1.0/BATCH_SIZE;
 		for( int i = 0; i < nabla_b.size(); ++i )
 			for( int j = 0; j < nabla_b[i].size(); ++j )
-				for( int k = 0; k < nabla_b[i][j].size(); ++k )
-					nabla_b[i][j][k] *= 1.0/BATCH_SIZE;
+				nabla_b[i][j] *= 1.0/BATCH_SIZE;
 		
 #ifdef CHECK_GRAD
 		check_gradient(cnt, idx, X, Y, nabla_W, nabla_b, cl_N, cl_idx, cl_offset);
@@ -891,47 +825,44 @@ void Neuralnet<Mat, Real>::learning ( const std::vector<clMatrix<Real>>& X, cons
 
 			if( W.size() == 0 ) continue;
 
-			std::vector<std::vector<clMatrix<Real>>> update_W(W.size(), std::vector<Mat<Real>>(W[0].size(), Mat<Real>(W[0][0].m, W[0][0].n))), update_b(b.size(), std::vector<Mat<Real>>(b[0].size(), Mat<Real>(b[0][0].m, b[0][0].n)));
+			std::vector<clMatrix<Real>> update_W(W.size(), Mat<Real>(W[0].m, W[0].n)),
+				update_b(b.size(), Mat<Real>(b[0].m, b[0].n));
 			if( std::abs(LAMBDA) > 1.0E-15 ){
 				for( int j = 0; j < W.size(); ++j )
-					for( int k = 0; k < W[j].size(); ++k ){
-						// cl_device_manager.set_argument( PRG::ADD_L2_REG, 0, &nabla_w[i][j][k].v );
-						// cl_device_manager.set_argument( PRG::ADD_L2_REG, 1, &W[j][k].v );
-						// cl_device_manager.set_argument( PRG::ADD_L2_REG, 2, &cl_lambda );
-						// cl_device_manager.run_kernel( PRG::ADD_L2_REG, W[j][k].m, W[j][k].n-1 );
-						nabla_W[i][j][k] += LAMBDA*W[j][k];
-					}
+					// cl_device_manager.set_argument( PRG::ADD_L2_REG, 0, &nabla_w[i][j][k].v );
+					// cl_device_manager.set_argument( PRG::ADD_L2_REG, 1, &W[j][k].v );
+					// cl_device_manager.set_argument( PRG::ADD_L2_REG, 2, &cl_lambda );
+					// cl_device_manager.run_kernel( PRG::ADD_L2_REG, W[j][k].m, W[j][k].n-1 );
+					nabla_W[i][j] += LAMBDA*W[j];
 			}
 
-			for( int j = 0; j < nabla_W[i].size(); ++j )
-				for( int k = 0; k < nabla_W[i][j].size(); ++k ){
-					cl_device_manager.set_argument( PRG::ADAM, 0, &adam_v_W[i][j][k].v );
-					cl_device_manager.set_argument( PRG::ADAM, 1, &adam_r_W[i][j][k].v );
-					cl_device_manager.set_argument( PRG::ADAM, 2, &update_W[j][k].v );
-					cl_device_manager.set_argument( PRG::ADAM, 3, &nabla_W[i][j][k].v );
-					cl_device_manager.set_argument( PRG::ADAM, 4, &cl_adam_beta );
-					cl_device_manager.set_argument( PRG::ADAM, 5, &cl_adam_gamma );
-					cl_device_manager.set_argument( PRG::ADAM, 6, &cl_adam_beta_ );
-					cl_device_manager.set_argument( PRG::ADAM, 7, &cl_adam_gamma_ );
-					cl_device_manager.set_argument( PRG::ADAM, 8, &cl_eps );
-					cl_device_manager.set_argument( PRG::ADAM, 9, &cl_adam_eps );
-					cl_device_manager.run_kernel( PRG::ADAM, W[j][k].m*W[j][k].n, 1 );
-				}
+			for( int j = 0; j < nabla_W[i].size(); ++j ){
+				cl_device_manager.set_argument( PRG::ADAM, 0, &adam_v_W[i][j].v );
+				cl_device_manager.set_argument( PRG::ADAM, 1, &adam_r_W[i][j].v );
+				cl_device_manager.set_argument( PRG::ADAM, 2, &update_W[j].v );
+				cl_device_manager.set_argument( PRG::ADAM, 3, &nabla_W[i][j].v );
+				cl_device_manager.set_argument( PRG::ADAM, 4, &cl_adam_beta );
+				cl_device_manager.set_argument( PRG::ADAM, 5, &cl_adam_gamma );
+				cl_device_manager.set_argument( PRG::ADAM, 6, &cl_adam_beta_ );
+				cl_device_manager.set_argument( PRG::ADAM, 7, &cl_adam_gamma_ );
+				cl_device_manager.set_argument( PRG::ADAM, 8, &cl_eps );
+				cl_device_manager.set_argument( PRG::ADAM, 9, &cl_adam_eps );
+				cl_device_manager.run_kernel( PRG::ADAM, W[j].m*W[j].n, 1 );
+			}
 
-			for( int j = 0; j < nabla_b[i].size(); ++j )
-				for( int k = 0; k < nabla_b[i][j].size(); ++k ){
-					cl_device_manager.set_argument( PRG::ADAM, 0, &adam_v_b[i][j][k].v );
-					cl_device_manager.set_argument( PRG::ADAM, 1, &adam_r_b[i][j][k].v );
-					cl_device_manager.set_argument( PRG::ADAM, 2, &update_b[j][k].v );
-					cl_device_manager.set_argument( PRG::ADAM, 3, &nabla_b[i][j][k].v );
-					cl_device_manager.set_argument( PRG::ADAM, 4, &cl_adam_beta );
-					cl_device_manager.set_argument( PRG::ADAM, 5, &cl_adam_gamma );
-					cl_device_manager.set_argument( PRG::ADAM, 6, &cl_adam_beta_ );
-					cl_device_manager.set_argument( PRG::ADAM, 7, &cl_adam_gamma_ );
-					cl_device_manager.set_argument( PRG::ADAM, 8, &cl_eps );
-					cl_device_manager.set_argument( PRG::ADAM, 9, &cl_adam_eps );
-					cl_device_manager.run_kernel( PRG::ADAM, b[j][k].m*b[j][k].n, 1 );
-				}
+			for( int j = 0; j < nabla_b[i].size(); ++j ){
+				cl_device_manager.set_argument( PRG::ADAM, 0, &adam_v_b[i][j].v );
+				cl_device_manager.set_argument( PRG::ADAM, 1, &adam_r_b[i][j].v );
+				cl_device_manager.set_argument( PRG::ADAM, 2, &update_b[j].v );
+				cl_device_manager.set_argument( PRG::ADAM, 3, &nabla_b[i][j].v );
+				cl_device_manager.set_argument( PRG::ADAM, 4, &cl_adam_beta );
+				cl_device_manager.set_argument( PRG::ADAM, 5, &cl_adam_gamma );
+				cl_device_manager.set_argument( PRG::ADAM, 6, &cl_adam_beta_ );
+				cl_device_manager.set_argument( PRG::ADAM, 7, &cl_adam_gamma_ );
+				cl_device_manager.set_argument( PRG::ADAM, 8, &cl_eps );
+				cl_device_manager.set_argument( PRG::ADAM, 9, &cl_adam_eps );
+				cl_device_manager.run_kernel( PRG::ADAM, b[j].m*b[j].n, 1 );
+			}
 			layer[i]->update_W(update_W, update_b);
 		}
 #ifdef DEBUG
@@ -955,16 +886,28 @@ void Neuralnet<Mat, Real>::learning ( const std::vector<clMatrix<Real>>& X, cons
 		each_func(*this, n+1, U[0], D);
 	}
 
-	for( int i = 0; i < num_layer; ++i ) layer[i]->finalize();	
+	for( int i = 0; i < num_layer; ++i ) layer[i]->finalize();
+
+	clReleaseMemObject(cl_N);
+	clReleaseMemObject(cl_offset);
+	clReleaseMemObject(cl_idx);
+
+	clReleaseMemObject(cl_eps);
+	clReleaseMemObject(cl_lambda);
+	
+	clReleaseMemObject(cl_adam_beta);
+	clReleaseMemObject(cl_adam_gamma);
+	clReleaseMemObject(cl_adam_beta_);
+	clReleaseMemObject(cl_adam_gamma_);
+	clReleaseMemObject(cl_adam_eps);
 }
 #endif
 
 template<template<typename> class Mat, typename Real>
-std::vector<Mat<Real>> Neuralnet<Mat, Real>::apply ( const std::vector<Mat<Real>>& X ) const
+Mat<Real> Neuralnet<Mat, Real>::apply ( const Mat<Real>& X ) const
 {
 	const int num_layer = layer.size();
-	std::vector<Mat<Real>> U(X.size());
-	for( int i = 0; i < X.size(); ++i ) U[i] = X[i];
+	Mat<Real> U = X;
 	
 	for( int i = 0; i < num_layer; ++i ){
 		U = layer[i]->apply(U);

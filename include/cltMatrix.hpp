@@ -39,8 +39,9 @@ struct cltMatrix
 					 0.0, ret.v, 0, ret.n,
 					 1, cl_device_manager.get_queue_ptr(), 0, NULL, &event );
 		clWaitForEvents( 1, &event );
+		clReleaseEvent(event);
 
-		cnt_flop += (long long)m*n*l;
+		cnt_flop += (long long)m*n*(2*l-1);
 
 		return ret;
 	}
@@ -57,8 +58,9 @@ struct cltMatrix
 								  0.0, ret.v, 0, ret.n,
 								  1, cl_device_manager.get_queue_ptr(), 0, NULL, &event );
 		clWaitForEvents( 1, &event );
+		clReleaseEvent(event);
 
-		cnt_flop += (long long)m*n*l;
+		cnt_flop += (long long)m*n*(2*l-1);
 
 		return ret;
 	}
@@ -75,8 +77,9 @@ struct cltMatrix
 					 0.0, ret.v, 0, ret.n,
 					 1, cl_device_manager.get_queue_ptr(), 0, NULL, &event );
 		clWaitForEvents( 1, &event );
+		clReleaseEvent(event);
 
-		cnt_flop += (long long)m*n*l;
+		cnt_flop += (long long)m*n*(2*l-1);
 
 		return ret;
 	}

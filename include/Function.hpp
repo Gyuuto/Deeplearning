@@ -613,7 +613,7 @@ public:
 			cl_device_manager.set_argument( PRG::FUNC_CROSSENTROPY, 2, &d.v );
 			cl_device_manager.set_argument( PRG::FUNC_CROSSENTROPY, 3, cl_device_manager.get_max_work_item(0)*sizeof(T) );
 			cl_device_manager.run_kernel( PRG::FUNC_CROSSENTROPY, x.m*x.n, 1 );
-
+			
 			auto y_mat = y_.get_matrix();
 			T sum = 0.0;
 #pragma omp parallel for schedule(auto) reduction(+:sum)

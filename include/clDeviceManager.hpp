@@ -12,6 +12,7 @@ enum PRG{
 	CLMAT_ZEROS,
 	CLMAT_HADAMARD,
 	CLMAT_SUB,
+	CLMAT_SUB_IN,
 	FUNC_RELU_DIFF, FUNC_RELU,
 	FUNC_SIGMOID_DIFF, FUNC_SIGMOID,
 	FUNC_TANH_DIFF, FUNC_TANH,
@@ -25,9 +26,16 @@ enum PRG{
 	FUNC_CROSSENTROPY,
 	FULL_APPLY_INIT,
 	FULL_DELTA_INIT,
+	CONV_APPLY_KERNEL_SET,
+	CONV_APPLY_IMG_SET,
+	CONV_APPLY_RET_SET,
+	CONV_APPLY_ADD_BIAS,
 	ASSIGN_DATA,
 	ADD_L2_REG,
 	ADAM,
+	ADD_VEC_MAT,
+	ADD_SCALAR_MAT,
+	MULT_VEC_MAT,
 	LENG
 };
 
@@ -37,6 +45,7 @@ const static std::string PRG_NAME[] = {
 	"clMatrix_zeros",
 	"clMatrix_hadamard",
 	"clMatrix_sub",
+	"clMatrix_sub_in",
 	"function_ReLU_diff", "function_ReLU",
 	"function_Sigmoid_diff", "function_Sigmoid",
 	"function_Tanh_diff", "function_Tanh",
@@ -50,9 +59,16 @@ const static std::string PRG_NAME[] = {
 	"function_CrossEntropy",
 	"full_apply_init",
 	"full_delta_init",
+	"conv_apply_kernel_set",
+	"conv_apply_img_set",
+	"conv_apply_ret_set",
+	"conv_apply_add_bias",
 	"assign_data",
 	"add_L2_regular",
-	"adam"
+	"adam",
+	"add_vector_matrix",
+	"add_scalar_matrix",
+	"mult_vector_matrix"
 };
 
 class clDeviceManager
@@ -67,7 +83,8 @@ private:
 	size_t maximum_work_group;
 	
 	cl_kernel kernel[PRG::LENG];
-	
+	cl_program program[PRG::LENG];
+
     cl_context_properties props[3] = { CL_CONTEXT_PLATFORM, 0, 0 };
 
 	std::string read_program ( const std::string& filename );
@@ -82,7 +99,7 @@ public:
 
 	cl_command_queue* get_queue_ptr ();
 
-	void run_kernel ( int kernel_idx, size_t gl_work_size, size_t lc_work_size );
+	void run_kernel ( int kernel_idx, size_t gl_work_size1, size_t gl_work_size2 = 1, size_t gl_work_size3 = 1 );
 	void set_argument ( int kernel_idx, int arg_idx, const void* val );
 	void set_argument ( int kernel_idx, int arg_idx, const size_t size );
 }cl_device_manager;
@@ -125,21 +142,26 @@ clDeviceManager::clDeviceManager()
 		size_t source_size = source.size();
 		cl_int err;
 		
-		cl_program program = clCreateProgramWithSource(ctx, 1, &c_source, &source_size, &err);
-		err = clBuildProgram(program, 1, &device, NULL, NULL, NULL);
+		program[i] = clCreateProgramWithSource(ctx, 1, &c_source, &source_size, &err);
+		err = clBuildProgram(program[i], 1, &device, NULL, NULL, NULL);
 		if( err != 0 ){
 			printf("Compile error : %s, error code %d\n", PRG_NAME[i].c_str(), err);
-			char buf[1024];
-			clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, 1024, buf, NULL);
+			char buf[32768];
+			clGetProgramBuildInfo(program[i], device, CL_PROGRAM_BUILD_LOG, 32768, buf, NULL);
 			printf("  %s\n", buf);
 		}
-		kernel[i] = clCreateKernel(program, PRG_NAME[i].c_str(), &err);
+		kernel[i] = clCreateKernel(program[i], PRG_NAME[i].c_str(), &err);
 		if( err != 0 ) printf("Failed CreateKernel : %s, error code %d\n", PRG_NAME[i].c_str(), err);
 	}
 }
 
 clDeviceManager::~clDeviceManager()
 {
+	for( int i = 0; i < PRG::LENG; ++i ){
+		clReleaseProgram(program[i]);
+		clReleaseKernel(kernel[i]);
+	}
+	
     clblasTeardown( );
     clReleaseCommandQueue( queue );
     clReleaseContext( ctx );
@@ -171,16 +193,17 @@ cl_command_queue* clDeviceManager::get_queue_ptr ()
 	return &queue;
 }
 
-void clDeviceManager::run_kernel ( int kernel_idx, size_t gl_work_size, size_t lc_work_size )
+void clDeviceManager::run_kernel ( int kernel_idx, size_t gl_work_size1, size_t gl_work_size2, size_t gl_work_size3 )
 {
 	cl_event event;
 
-	size_t global_work_size[3] = { gl_work_size, lc_work_size, 0 },
+	size_t global_work_size[3] = { gl_work_size1, gl_work_size2, gl_work_size3 },
 		local_work_size[3] = { 1, 1, 0 };
 	
-	cl_int err = clEnqueueNDRangeKernel(queue, kernel[kernel_idx], 2, NULL, global_work_size, NULL, 0, NULL, &event);
+	cl_int err = clEnqueueNDRangeKernel(queue, kernel[kernel_idx], 3, NULL, global_work_size, NULL, 0, NULL, &event);
 	if( err != 0 ) printf("Kernel runnning failed : %s, error_code = %d\n", PRG_NAME[kernel_idx].c_str(), err);
 	clWaitForEvents(1, &event);
+	clReleaseEvent(event);
 }
 
 void clDeviceManager::set_argument ( int kernel_idx, int arg_idx, const void* val )
