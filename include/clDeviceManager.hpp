@@ -33,6 +33,8 @@ enum PRG{
 	CONV_DELTA_IMG_SET,
 	CONV_GRAD_DELTA_SET,
 	CONV_GRAD_IMG_SET,
+	MAXPOOL_DELTA,
+	MAXPOOL_APPLY,
 	ASSIGN_DATA,
 	ADD_L2_REG,
 	ADAM,
@@ -69,6 +71,8 @@ const static std::string PRG_NAME[] = {
 	"conv_delta_img_set",
 	"conv_grad_delta_set",
 	"conv_grad_img_set",
+	"maxpool_delta",
+	"maxpool_apply",
 	"assign_data",
 	"add_L2_regular",
 	"adam",
@@ -94,6 +98,7 @@ private:
     cl_context_properties props[3] = { CL_CONTEXT_PLATFORM, 0, 0 };
 
 	std::string read_program ( const std::string& filename );
+	int build_program ( const int idx );
 public:
 	clDeviceManager();
 	~clDeviceManager();
@@ -110,10 +115,29 @@ public:
 	void set_argument ( int kernel_idx, int arg_idx, const size_t size );
 }cl_device_manager;
 
+int clDeviceManager::build_program ( const int idx )
+{
+	std::string source = read_program(PRG_NAME[idx]);
+	const char* c_source = source.data();
+	size_t source_size = source.size();
+	cl_int err;
+		
+	program[idx] = clCreateProgramWithSource(ctx, 1, &c_source, &source_size, &err);
+	err = clBuildProgram(program[idx], 1, &device, NULL, NULL, NULL);
+	if( err != 0 ){
+		printf("Compile error : %s, error code %d\n", PRG_NAME[idx].c_str(), err);
+		char buf[32768];
+		clGetProgramBuildInfo(program[idx], device, CL_PROGRAM_BUILD_LOG, 32768, buf, NULL);
+		printf("  %s\n", buf);
+	}
+	kernel[idx] = clCreateKernel(program[idx], PRG_NAME[idx].c_str(), &err);
+	if( err != 0 ) printf("Failed CreateKernel : %s, error code %d\n", PRG_NAME[idx].c_str(), err);
+}
+
 std::string clDeviceManager::read_program ( const std::string& filename )
 {
-	const std::string FILE_HEADER = "../include";
-	std::string fn = FILE_HEADER + "/CL/" + filename + ".cl";
+	const std::string FILE_HEADER = "../include/CL/";
+	std::string fn = FILE_HEADER + filename + ".cl";
 	std::ifstream ifs(fn);
 	std::string ret = "";
 
@@ -143,21 +167,7 @@ clDeviceManager::clDeviceManager()
 	clGetDeviceInfo(device, CL_DEVICE_MAX_WORK_GROUP_SIZE, sizeof(size_t), &maximum_work_group, NULL);
 
 	for( int i = 0; i < PRG::LENG; ++i ){
-		std::string source = read_program(PRG_NAME[i]);
-		const char* c_source = source.data();
-		size_t source_size = source.size();
-		cl_int err;
-		
-		program[i] = clCreateProgramWithSource(ctx, 1, &c_source, &source_size, &err);
-		err = clBuildProgram(program[i], 1, &device, NULL, NULL, NULL);
-		if( err != 0 ){
-			printf("Compile error : %s, error code %d\n", PRG_NAME[i].c_str(), err);
-			char buf[32768];
-			clGetProgramBuildInfo(program[i], device, CL_PROGRAM_BUILD_LOG, 32768, buf, NULL);
-			printf("  %s\n", buf);
-		}
-		kernel[i] = clCreateKernel(program[i], PRG_NAME[i].c_str(), &err);
-		if( err != 0 ) printf("Failed CreateKernel : %s, error code %d\n", PRG_NAME[i].c_str(), err);
+		build_program(i); //program[i] = NULL;
 	}
 }
 
@@ -201,6 +211,10 @@ cl_command_queue* clDeviceManager::get_queue_ptr ()
 
 void clDeviceManager::run_kernel ( int kernel_idx, size_t gl_work_size1, size_t gl_work_size2, size_t gl_work_size3 )
 {
+	if( program[kernel_idx] == NULL ){
+		build_program( kernel_idx );
+	}
+
 	cl_event event;
 
 	size_t global_work_size[3] = { gl_work_size1, gl_work_size2, gl_work_size3 },

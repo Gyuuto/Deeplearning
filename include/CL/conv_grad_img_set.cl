@@ -12,4 +12,7 @@ __kernel void conv_grad_img_set ( __global float* U_mat, __global int* ld_Umat,
 		U_mat[kst* *ld_Umat + (j - *l_idx) + l*my_size] =
 			U_[(k* *nrows + delta_idx[idx])* *ldu + l + *i];
 	}
+	else{
+		U_mat[kst* *ld_Umat + (j - *l_idx) + l*my_size] = 0.0;
+	}
 }
