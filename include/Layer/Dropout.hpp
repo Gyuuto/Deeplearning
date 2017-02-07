@@ -6,18 +6,23 @@
 
 #include "Layer.hpp"
 
-class Dropout : public Layer
+template<template<typename> class Mat, typename Real>
+class Dropout : public Layer<Mat, Real>
 {
 private:
-	double dropout_p;
+	Real dropout_p;
 	bool islearning;
-
+#ifdef USE_GPU
+	cl_mem cl_offset;
+#endif
+	
 	std::mt19937 mt;
-	std::uniform_real_distribution<double> d_rand;
-	Mat mask;
+	std::uniform_real_distribution<Real> d_rand;
+	Mat<Real> mask;
 public:
-	Dropout ( int prev_num_map, int prev_num_unit, double dropout_p, 
-			  const std::shared_ptr<Function>& f );
+	Dropout ( int prev_num_map, int prev_num_unit, Real dropout_p, 
+			  const std::shared_ptr<Function<Real>>& f );
+	~Dropout ();
 	
 #ifdef USE_MPI
 	void init( std::mt19937& m, MPI_Comm inner_world, MPI_Comm outer_world );
@@ -26,12 +31,18 @@ public:
 #endif
 	void finalize();
 	
-	std::vector<std::vector<Mat>> calc_gradient ( const std::vector<Mat>& U, const std::vector<Mat>& delta );
-	std::vector<Mat> calc_delta ( const std::vector<Mat>& U, const std::vector<Mat>& delta );
-	void update_W ( const std::vector<std::vector<Mat>>& dW );
+	std::pair<std::vector<Mat<Real>>, std::vector<Mat<Real>>> calc_gradient ( const Mat<Real>& U, const Mat<Real>& delta );
+
+	Matrix<Real> calc_delta ( const Matrix<Real>& U, const Matrix<Real>& delta );
+#ifdef USE_GPU
+	clMatrix<Real> calc_delta ( const std::clMatrix<Real>& U, const clMatrix<Real>& delta );
+#endif
+	void update_W ( const std::vector<Mat<Real>>& dW, const std::vector<Mat<Real>>& db );
 	
-	std::vector<Mat> apply ( const std::vector<Mat>& U, bool use_func = true );
-	std::vector<std::vector<Vec>> apply ( const std::vector<std::vector<Vec>>& u, bool use_func = true );
+	Matrix<Real> apply ( const Matrix<Real>& U, bool use_func = true );
+#ifdef USE_GPU
+	clMatrix<Real> apply ( clMatrix<Real>& U, bool use_func = true );
+#endif
 
 	void set_W( const std::string& filename );
 	void output_W ( const std::string& filename );
@@ -41,27 +52,42 @@ public:
 #endif
 };
 
-Dropout::Dropout( int prev_num_map, int prev_num_unit, double dropout_p,
-				  const std::shared_ptr<Function>& f )
+template<template<typename> class Mat, typename Real>
+Dropout<Mat, Real>::Dropout( int prev_num_map, int prev_num_unit, Real dropout_p,
+							 const std::shared_ptr<Function<Real>>& f )
 {
 	this->prev_num_map = this->num_map = prev_num_map;
 	this->prev_num_unit = this->num_unit = prev_num_unit;
 	this->dropout_p = dropout_p;
 	this->islearning = false;
 
-	t_apply = t_delta = t_grad = 0.0;
-	t_apply_init = t_apply_gemm = t_apply_repl = 0.0;
-	t_delta_init = t_delta_gemm = t_delta_repl = 0.0;
-	t_grad_init = t_grad_gemm = t_grad_repl = 0.0;
+	this->t_apply = this->t_delta = this->t_grad = 0.0;
+	this->t_apply_init = this->t_apply_gemm = this->t_apply_repl = 0.0;
+	this->t_delta_init = this->t_delta_gemm = this->t_delta_repl = 0.0;
+	this->t_grad_init = this->t_grad_gemm = this->t_grad_repl = 0.0;
 
-	func = f;
-	d_rand = std::uniform_real_distribution<double>(0.0, 1.0);
+	this->func = f;
+	d_rand = std::uniform_real_distribution<Real>(0.0, 1.0);
+
+#ifdef USE_GPU
+	cl_int err;
+	cl_offset = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
+#endif
 }
 
+template<template<typename> class Mat, typename Real>
+Dropout<Mat, Real>::~Dropout()
+{
+#ifdef USE_GPU
+	clReleaseMemObject(cl_offset);
+#endif
+}
+
+template<template<typename> class Mat, typename Real>
 #ifdef USE_MPI
-void Dropout::init ( std::mt19937& m, MPI_Comm outer_world, MPI_Comm inner_world )
+void Dropout<Mat, Real>::init ( std::mt19937& m, MPI_Comm outer_world, MPI_Comm inner_world )
 #else
-void Dropout::init ( std::mt19937& m )
+void Dropout<Mat, Real>::init ( std::mt19937& m )
 #endif
 {
 #ifdef USE_MPI
@@ -78,163 +104,243 @@ void Dropout::init ( std::mt19937& m )
 	mt = std::mt19937(seed);
 
 	islearning = true;
-	mask = Mat(prev_num_unit, prev_num_map);
-	for( int i = 0; i < prev_num_unit; ++i )
-		for( int j = 0; j < prev_num_map; ++j )
-			mask(i,j) = this->d_rand(mt) < dropout_p ? 0 : 1;
+	Matrix<Real> tmp_mask(this->prev_num_unit, this->prev_num_map);
+	for( int i = 0; i < this->prev_num_unit; ++i )
+		for( int j = 0; j < this->prev_num_map; ++j )
+			tmp_mask(i,j) = this->d_rand(mt) < dropout_p ? 0 : 1;
+	mask = tmp_mask;
 }
 
-void Dropout::finalize ()
+template<template<typename> class Mat, typename Real>
+void Dropout<Mat, Real>::finalize ()
 {
 	islearning = false;
 }
 
-std::vector<std::vector<Dropout::Mat>> Dropout::calc_gradient ( const std::vector<Mat>& U, const std::vector<Mat>& delta )
+template<template<typename> class Mat, typename Real>
+std::pair<std::vector<Mat<Real>>, std::vector<Mat<Real>>> Dropout<Mat, Real>::calc_gradient ( const Mat<Real>& U, const Mat<Real>& delta )
 {
-	return std::vector<std::vector<Mat>>();
+	return std::make_pair(std::vector<Mat<Real>>(), std::vector<Mat<Real>>());
 }
 
-std::vector<Dropout::Mat> Dropout::calc_delta ( const std::vector<Mat>& U, const std::vector<Mat>& delta )
+template<template<typename> class Mat, typename Real>
+Matrix<Real> Dropout<Mat, Real>::calc_delta ( const Matrix<Real>& U, const Matrix<Real>& delta )
 {
 	auto tot_beg = std::chrono::system_clock::now();
 	auto beg = tot_beg;
 
-	int my_size = num_unit, my_offset = 0;
+	int my_size = this->num_unit, my_offset = 0;
 #ifdef USE_MPI
-	std::vector<int> size(nprocs), offset(nprocs);
-	for( int i = 0; i < nprocs; ++i ){
-		size[i] = ((i+1)*num_unit/nprocs - i*num_unit/nprocs)*U[0].n;
-		offset[i] = i*num_unit/nprocs*U[0].n;
+	std::vector<int> size(this->nprocs), offset(this->nprocs);
+	for( int i = 0; i < this->nprocs; ++i ){
+		size[i] = ((i+1)*this->num_unit/this->nprocs - i*this->num_unit/this->nprocs)*U.n;
+		offset[i] = i*this->num_unit/this->nprocs*U.n;
 	}
 
-	my_size = size[rank]/U[0].n;
-	my_offset = offset[rank]/U[0].n;
+	my_size = size[this->rank]/U.n;
+	my_offset = offset[this->rank]/U.n;
 #endif
-	std::vector<Mat> nx_delta(prev_num_map);
+	Matrix<Real> nx_delta(this->num_map*this->num_unit, delta.n);
 
+	auto U_diff = (*this->prev_func)(U, true);
 #pragma omp parallel
 	{
-		for( int i = 0; i < num_map; ++i ){
-			auto U_diff = (*prev_func)(U[i], true);
-			nx_delta[i] = Mat(num_unit, delta[i].n);
-
-#pragma omp for schedule(auto) nowait
+		for( int i = 0; i < this->prev_num_map; ++i ){
+#pragma omp for nowait
 			for( int j = 0; j < my_size; ++j ){
-				for( int k = 0; k < delta[i].n; ++k )
-					nx_delta[i](my_offset + j, k) = delta[i](my_offset + j, k) * U_diff(my_offset + j, k) * mask(j, i);
+				for( int k = 0; k < delta.n; ++k )
+					nx_delta(i*this->num_unit + my_offset + j, k) = delta(i*this->prev_num_map + my_offset + j, k) * U_diff(my_offset + j, k) * mask(my_offset + j, i);
 			}
 		}
 	}
 
 #ifdef USE_MPI
-	for( int i = 0; i < prev_num_map; ++i )
+	for( int i = 0; i < this->prev_num_map; ++i )
 		MPI_Allgatherv(MPI_IN_PLACE, size[rank], MPI_DOUBLE_PRECISION,
-					   &nx_delta[i](0,0), &size[0], &offset[0], MPI_DOUBLE_PRECISION, inner_world);
+					   &nx_delta(i*this->num_unit,0), &size[0], &offset[0], MPI_DOUBLE_PRECISION, inner_world);
 #endif
 	auto end = std::chrono::system_clock::now();
 
-	t_delta_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
-	t_delta += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
+	this->t_delta_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+	this->t_delta += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
 	
 	return nx_delta;
 }
 
-void Dropout::update_W ( const std::vector<std::vector<Mat>>& dW )
-{
-	for( int i = 0; i < prev_num_map; ++i )
-		for( int j = 0; j < prev_num_unit; ++j )
-			mask(j,i) = d_rand(mt) < dropout_p ? 0 : 1;
-
-}
-
-std::vector<Dropout::Mat> Dropout::apply ( const std::vector<Mat>& U, bool use_func )
+#ifdef USE_GPU
+template<template<typename> class Mat, typename Real>
+clMatrix<Real> Dropout<Mat, Real>::calc_delta ( const clMatrix<Real>& U, const clMatrix<Real>& delta )
 {
 	auto tot_beg = std::chrono::system_clock::now();
 	auto beg = tot_beg;
 
-	std::vector<Mat> ret(num_map), tmp_ret(num_map);
-	int my_size = num_unit, my_offset = 0;
+	int my_size = this->num_unit, my_offset = 0;
 #ifdef USE_MPI
-	std::vector<int> size(nprocs), offset(nprocs);
-	for( int i = 0; i < nprocs; ++i ){
-		size[i] = ((i+1)*num_unit/nprocs - i*num_unit/nprocs)*U[0].n;
-		offset[i] = i*num_unit/nprocs*U[0].n;
+	std::vector<int> size(this->nprocs), offset(this->nprocs);
+	for( int i = 0; i < this->nprocs; ++i ){
+		size[i] = ((i+1)*this->num_unit/this->nprocs - i*this->num_unit/this->nprocs)*U[0].n;
+		offset[i] = i*this->num_unit/this->nprocs*U[0].n;
 	}
 
-	my_size = size[rank] / U[0].n;
-	my_offset = offset[rank] / U[0].n;
-#endif	
+	my_size = size[this->rank]/U[0].n;
+	my_offset = offset[this->rank]/U[0].n;
+#endif
+
+	clMatrix<Real> nx_delta(this->prev_num_map*this->num_unit, delta.n);
+	nx_delta = clMatrix<Real>::hadamard(delta, (*this->prev_func)(U, true));
+	cl_device_manager.set_argument( PRG::MULT_VEC_MAT, 0, &nx_delta.v );
+	cl_device_manager.set_argument( PRG::MULT_VEC_MAT, 1, &mask.v );
+	cl_device_manager.set_argument( PRG::MULT_VEC_MAT, 2, &mask.N );
+	// maybe it needs offset of row for mask, but for now I assume only running single GPU.
+	cl_device_manager.run_kernel( PRG::MULT_VEC_MAT, this->num_unit, nx_delta.n, this->prev_num_map );
+	
+#ifdef USE_MPI
+	for( int i = 0; i < this->prev_num_map; ++i )
+		MPI_Allgatherv(MPI_IN_PLACE, size[rank], MPI_DOUBLE_PRECISION,
+					   &nx_delta(i*this->num_unit,0), &size[0], &offset[0], MPI_DOUBLE_PRECISION, inner_world);
+#endif
 	auto end = std::chrono::system_clock::now();
-	t_apply_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+
+	this->t_delta_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+	this->t_delta += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
+	
+	return nx_delta;
+}
+#endif
+
+template<template<typename> class Mat, typename Real>
+void Dropout<Mat, Real>::update_W ( const std::vector<Mat<Real>>& dW, const std::vector<Mat<Real>>& db )
+{
+	// WIP, do it opencl?
+	Matrix<Real> tmp_mask(this->prev_num_map, this->prev_num_unit);
+	for( int i = 0; i < this->prev_num_map; ++i )
+		for( int j = 0; j < this->prev_num_unit; ++j )
+			tmp_mask(j,i) = d_rand(mt) < dropout_p ? 0 : 1;
+	mask = tmp_mask;
+}
+
+template<template<typename> class Mat, typename Real>
+Matrix<Real> Dropout<Mat, Real>::apply ( const Matrix<Real>& U, bool use_func )
+{
+	auto tot_beg = std::chrono::system_clock::now();
+	auto beg = tot_beg;
+
+	std::vector<Matrix<Real>> ret(this->num_map), tmp_ret(this->num_map);
+	int my_size = this->num_unit, my_offset = 0;
+#ifdef USE_MPI
+	std::vector<int> size(this->nprocs), offset(this->nprocs);
+	for( int i = 0; i < this->nprocs; ++i ){
+		size[i] = ((i+1)*this->num_unit/this->nprocs - i*this->num_unit/this->nprocs)*U.n;
+		offset[i] = i*this->num_unit/this->nprocs*U.n;
+	}
+
+	my_size = size[this->rank] / U.n;
+	my_offset = offset[this->rank] / U.n;
+#endif
+
+	for( int i = 0; i < this->prev_num_map; ++i ){
+		ret[i] = Matrix<Real>(this->num_unit, U.n);
+		tmp_ret[i] = Matrix<Real>(my_size, U.n);
+	}		
+	auto end = std::chrono::system_clock::now();
+	this->t_apply_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
 	beg = std::chrono::system_clock::now();
 #pragma omp parallel
 	{
-		for( int i = 0; i < prev_num_map; ++i ){
-			ret[i] = Mat(num_unit, U[i].n);
-			tmp_ret[i] = Mat(my_size, U[i].n);
-#pragma omp for schedule(auto) nowait
+		for( int i = 0; i < this->prev_num_map; ++i ){
+#pragma omp for nowait
 			for( int j = 0; j < my_size; ++j )
-				for( int k = 0; k < U[i].n; ++k )
-					tmp_ret[i](j,k) = U[i](my_offset+j,k)*(use_func ? 1.0 - dropout_p : mask(my_offset+j,i));
+				for( int k = 0; k < U.n; ++k )
+					tmp_ret[i](j,k) = U(i*this->num_unit + my_offset+j,k)*(use_func ? 1.0 - dropout_p : mask(my_offset+j,i));
 		}
 	}
 	
 	if( use_func )
-		for( int i = 0; i < num_map; ++i )
-			tmp_ret[i] = (*func)(tmp_ret[i], false);
+		for( int i = 0; i < this->num_map; ++i )
+			tmp_ret[i] = (*this->func)(tmp_ret[i], false);
 
 #ifdef USE_MPI
-	for( int i = 0; i < num_map; ++i )
+	for( int i = 0; i < this->num_map; ++i )
 		MPI_Allgatherv(&tmp_ret[i](0,0), size[rank], MPI_DOUBLE_PRECISION,
 					   &ret[i](0,0), &size[0], &offset[0], MPI_DOUBLE_PRECISION, inner_world);
+#else
+	ret = tmp_ret;
 #endif
 	end = std::chrono::system_clock::now();
-	t_apply_gemm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
-	t_apply += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
+	this->t_apply_gemm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+	this->t_apply += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
+	
+	return Matrix<Real>::to_matrix(ret);
+}
+
+#ifdef USE_GPU
+template<template<typename> class Mat, typename Real>
+clMatrix<Real> Dropout<Mat, Real>::apply ( const clMatrix<Real>& U, bool use_func )
+{
+	auto tot_beg = std::chrono::system_clock::now();
+	auto beg = tot_beg;
+
+	clMatrix<Real> ret, tmp_ret;
+	int my_size = this->num_unit, my_offset = 0;
+#ifdef USE_MPI
+	std::vector<int> size(this->nprocs), offset(this->nprocs);
+	for( int i = 0; i < this->nprocs; ++i ){
+		size[i] = ((i+1)*this->num_unit/this->nprocs - i*this->num_unit/this->nprocs)*U.n;
+		offset[i] = i*this->num_unit/this->nprocs*U.n;
+	}
+
+	my_size = size[this->rank] / U.n;
+	my_offset = offset[this->rank] / U.n;
+#endif
+
+	ret = clMatrix<Real>(this->num_map*this->num_unit, U.n);
+	tmp_ret = U;
+	auto end = std::chrono::system_clock::now();
+	this->t_apply_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+
+	beg = std::chrono::system_clock::now();
+	if( use_func ) tmp_ret[i] *= (1.0 - dropout_p);
+	else{
+		cl_device_manager.set_argument( PRG::MULT_VEC_MAT, 0, &tmp_ret.v );
+		cl_device_manager.set_argument( PRG::MULT_VEC_MAT, 1, &mask.v );
+		cl_device_manager.set_argument( PRG::MULT_VEC_MAT, 2, &mask.N );
+		cl_device_manager.run_kernel( PRG::MULT_VEC_MAT, this->num_unit, tmp_ret.n, this->prev_num_map );
+	}
+	
+	if( use_func )
+		tmp_ret = (*this->func)(tmp_ret, false);
+
+#ifdef USE_MPI
+	for( int i = 0; i < this->num_map; ++i )
+		MPI_Allgatherv(&tmp_ret(i*this->num_unit,0), size[rank], MPI_FLOAT,
+					   &ret(i*this->num_unit,0), &size[0], &offset[0], MPI_FLOAT, inner_world);
+#else
+	ret = tmp_ret;
+#endif
+	end = std::chrono::system_clock::now();
+	this->t_apply_gemm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+	this->t_apply += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
 	
 	return ret;
 }
+#endif
 
-std::vector<std::vector<Dropout::Vec>> Dropout::apply ( const std::vector<std::vector<Vec>>& u, bool use_func )
-{
-	std::vector<Mat> tmp(prev_num_map);
-	for( int i = 0; i < prev_num_map; ++i )
-		tmp[i] = Mat(u[i][0].size(), u.size());
-
-#pragma omp parallel
-	{
-		for( int i = 0; i < prev_num_map; ++i )
-#pragma omp for schedule(auto) nowait
-			for( int j = 0; j < u[i][0].size(); ++j )
-				for( int k = 0; k < u.size(); ++k )
-					tmp[i](j,k) = u[k][i][j];
-	}
-	
-	auto U = apply(tmp, use_func);
-	std::vector<std::vector<Vec>> ret(U[0].n);
-	for( int i = 0; i < U[0].n; ++i ){
-		ret[i] = std::vector<Vec>(U.size(), Vec(U[0].m));
-		for( int j = 0; j < U.size(); ++j )
-			for( int k = 0; k < U[0].m; ++k )
-				ret[i][j][k] = U[j](k,i);
-	}
-
-	return ret;
-}
-
-void Dropout::set_W ( const std::string& filename )
+template<template<typename> class Mat, typename Real>
+void Dropout<Mat, Real>::set_W ( const std::string& filename )
 {
 	
 }
 
-void Dropout::output_W ( const std::string& filename )
+template<template<typename> class Mat, typename Real>
+void Dropout<Mat, Real>::output_W ( const std::string& filename )
 {
 	
 }
 
 #ifdef USE_MPI
-void Dropout::param_mix ()
+template<template<typename> class Mat, typename Real>
+void Dropout<Mat, Real>::param_mix ()
 {
 	
 }
