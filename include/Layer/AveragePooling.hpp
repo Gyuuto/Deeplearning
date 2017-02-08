@@ -1,10 +1,10 @@
-#ifndef MAXPOOLING_HPP
-#define MAXPOOLING_HPP
+#ifndef AVERAGEPOOLING_HPP
+#define AVERAGEPOOLING_HPP
 
 #include "Layer.hpp"
 
 template<template<typename> class Mat, typename Real>
-class MaxPooling : public Layer<Mat, Real>
+class AveragePooling : public Layer<Mat, Real>
 {
 private:
 	int prev_ldu, ldu;
@@ -16,13 +16,12 @@ private:
 	cl_mem cl_stride, cl_pad, cl_m, cl_n;
 #endif
 	
-	Mat<Real> S;
 public:
-	MaxPooling( int prev_num_map, int prev_num_unit, int prev_ldu,
-			 int num_map, int num_unit, int ldu,
-			 int m, int n, int stride, 
-			 const std::shared_ptr<Function<Real>>& f );
-	~MaxPooling();
+	AveragePooling( int prev_num_map, int prev_num_unit, int prev_ldu,
+					int num_map, int num_unit, int ldu,
+					int m, int n, int stride, 
+					const std::shared_ptr<Function<Real>>& f );
+	~AveragePooling();
 
 #ifdef USE_MPI
 	void init( std::mt19937& m, MPI_Comm inner_world, MPI_Comm outer_world );
@@ -53,10 +52,10 @@ public:
 };
 
 template<template<typename> class Mat, typename Real>
-MaxPooling<Mat, Real>::MaxPooling( int prev_num_map, int prev_num_unit, int prev_ldu,
-							 int num_map, int num_unit, int ldu,
-							 int m, int n, int stride, 
-							 const std::shared_ptr<Function<Real>>& f )
+AveragePooling<Mat, Real>::AveragePooling( int prev_num_map, int prev_num_unit, int prev_ldu,
+										   int num_map, int num_unit, int ldu,
+										   int m, int n, int stride, 
+										   const std::shared_ptr<Function<Real>>& f )
 {
 	this->prev_num_map = prev_num_map;
 	this->prev_num_unit = prev_num_unit;
@@ -79,23 +78,23 @@ MaxPooling<Mat, Real>::MaxPooling( int prev_num_map, int prev_num_unit, int prev
 #endif
 	if( num_unit%ldu != 0 )
 		if( rank == 0 ){
-			printf("WARNING : Wrong leading dimension of output on MaxPooling layer.\n");
+			printf("WARNING : Wrong leading dimension of output on AveragePooling layer.\n");
 			printf("          Layer details : output size[%d x %d], filter size[%d x %d], stride %d, padding %d, number of map %d.\n", num_unit/ldu, ldu, m, n, stride, pad, num_map);
 		}
 	if( prev_num_unit%prev_ldu != 0 )
 		if( rank == 0 ){
-			printf("WARNING : Wrong leading dimension of input on MaxPooling layer.\n");
+			printf("WARNING : Wrong leading dimension of input on AveragePooling layer.\n");
 			printf("          Layer details : output size[%d x %d], filter size[%d x %d], stride %d, padding %d, number of map %d.\n", num_unit/ldu, ldu, m, n, stride, pad, num_map);
 		}
 	if( ldu != (prev_ldu + 2*pad - n)/stride + 1 )
 		if( rank == 0 ){
-			printf("WARNING : Wrong output image width on MaxPooling layer.\n");
+			printf("WARNING : Wrong output image width on AveragePooling layer.\n");
 			printf("          Estimate width = %d.\n", (prev_ldu + 2*pad - n)/stride + 1);
 			printf("          Layer details : output size[%d x %d], filter size[%d x %d], stride %d, padding %d, number of map %d.\n", num_unit/ldu, ldu, m, n, stride, pad, num_map);
 		}
 	if( num_unit/ldu != (prev_num_unit/prev_ldu + 2*pad - m)/stride + 1 )
 		if( rank == 0 ){
-			printf("WARNING : Wrong output image height on MaxPooling layer.\n");
+			printf("WARNING : Wrong output image height on AveragePooling layer.\n");
 			printf("          Estimate height = %d.\n", (prev_num_unit/prev_ldu + 2*pad - m)/stride + 1);
 			printf("          Layer details : output size[%d x %d], filter size[%d x %d], stride %d, padding %d, number of map %d.\n", num_unit/ldu, ldu, m, n, stride, pad, num_map);
 		}
@@ -133,7 +132,7 @@ MaxPooling<Mat, Real>::MaxPooling( int prev_num_map, int prev_num_unit, int prev
 }
 
 template<template<typename> class Mat, typename Real>
-MaxPooling<Mat, Real>::~MaxPooling ()
+AveragePooling<Mat, Real>::~AveragePooling ()
 {
 #ifdef USE_GPU
 	clReleaseMemObject( cl_num_unit );
@@ -150,9 +149,9 @@ MaxPooling<Mat, Real>::~MaxPooling ()
 
 template<template<typename> class Mat, typename Real>
 #ifdef USE_MPI
-void MaxPooling<Mat, Real>::init ( std::mt19937& m, MPI_Comm inner_world, MPI_Comm outer_world )
+void AveragePooling<Mat, Real>::init ( std::mt19937& m, MPI_Comm inner_world, MPI_Comm outer_world )
 #else
-void MaxPooling<Mat, Real>::init ( std::mt19937& m )
+	void AveragePooling<Mat, Real>::init ( std::mt19937& m )
 #endif
 {
 #ifdef USE_MPI
@@ -168,19 +167,19 @@ void MaxPooling<Mat, Real>::init ( std::mt19937& m )
 }
 
 template<template<typename> class Mat, typename Real>
-void MaxPooling<Mat, Real>::finalize ()
+void AveragePooling<Mat, Real>::finalize ()
 {
 	
 }
 
 template<template<typename> class Mat, typename Real>
-std::pair<std::vector<Mat<Real>>, std::vector<Mat<Real>>> MaxPooling<Mat, Real>::calc_gradient ( const Mat<Real>& U, const Mat<Real>& delta )
+std::pair<std::vector<Mat<Real>>, std::vector<Mat<Real>>> AveragePooling<Mat, Real>::calc_gradient ( const Mat<Real>& U, const Mat<Real>& delta )
 {
 	return std::make_pair(std::vector<Mat<Real>>(), std::vector<Mat<Real>>());
 }
 
 template<template<typename> class Mat, typename Real>
-Matrix<Real> MaxPooling<Mat, Real>::calc_delta ( const Matrix<Real>& U, const Matrix<Real>& delta )
+Matrix<Real> AveragePooling<Mat, Real>::calc_delta ( const Matrix<Real>& U, const Matrix<Real>& delta )
 {
 	auto tot_beg = std::chrono::system_clock::now();
 	auto beg = tot_beg;
@@ -198,7 +197,6 @@ Matrix<Real> MaxPooling<Mat, Real>::calc_delta ( const Matrix<Real>& U, const Ma
 	const int gap = prev_ldu + 2*pad;
 	const int Y = this->prev_num_unit/prev_ldu, X = prev_ldu;
 
-	auto U_apply = (*this->prev_func)(U, false);
 	auto U_diff = (*this->prev_func)(U, true);
 	for( int i = 0; i < this->prev_num_map; ++i ){
 		beg = std::chrono::system_clock::now();
@@ -207,10 +205,7 @@ Matrix<Real> MaxPooling<Mat, Real>::calc_delta ( const Matrix<Real>& U, const Ma
 		for( int j = 0; j < my_size; ++j ){
 			int x = (j + my_offset)%ldu, y = (j + my_offset)/ldu;
 
-			for( int k = 0; k < U_apply.n; ++k ){
-				int s_idx = -1;
-				Real val;
-				
+			for( int k = 0; k < U.n; ++k ){
 				for( int s = 0; s < m; ++s )
 					for( int t = 0; t < n; ++t ){
 						int idx = stride*x + t + s*gap + stride*y*gap;
@@ -218,13 +213,9 @@ Matrix<Real> MaxPooling<Mat, Real>::calc_delta ( const Matrix<Real>& U, const Ma
 
 						if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
 
-						if( s_idx == -1 || val < U_apply(i*this->prev_num_unit + ny*prev_ldu + nx, k) ){
-							val = U_apply(i*this->prev_num_unit + ny*prev_ldu + nx, k);
-							s_idx = ny*prev_ldu + nx;
-						}
+						nx_delta(i*this->prev_num_unit + ny*prev_ldu + nx, k) = delta(i*this->num_unit + j + my_offset, k) * U_diff(i*this->prev_num_unit + ny*prev_ldu + nx, k) / (m*n);
 					}
 				
-				nx_delta(i*this->prev_num_unit + s_idx, k) = delta(i*this->num_unit + j + my_offset, k) * U_diff(i*this->prev_num_unit + s_idx, k);
 			}
 		}
 		end = std::chrono::system_clock::now();
@@ -245,7 +236,7 @@ Matrix<Real> MaxPooling<Mat, Real>::calc_delta ( const Matrix<Real>& U, const Ma
 
 #ifdef USE_GPU
 template<template<typename> class Mat, typename Real>
-clMatrix<Real> MaxPooling<Mat, Real>::calc_delta ( const clMatrix<Real>& U, const clMatrix<Real>& delta )
+clMatrix<Real> AveragePooling<Mat, Real>::calc_delta ( const clMatrix<Real>& U, const clMatrix<Real>& delta )
 {
 	auto tot_beg = std::chrono::system_clock::now();
 	auto beg = tot_beg;
@@ -260,24 +251,22 @@ clMatrix<Real> MaxPooling<Mat, Real>::calc_delta ( const clMatrix<Real>& U, cons
 	auto end = std::chrono::system_clock::now();
 	this->t_delta_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
-	auto U_apply = (*this->prev_func)(U, false);
 	auto U_diff = (*this->prev_func)(U, true);
 
-	cl_device_manager.set_argument( PRG::MAXPOOL_DELTA, 0, &nx_delta.v );
-	cl_device_manager.set_argument( PRG::MAXPOOL_DELTA, 1, &cl_prev_num_unit );
-	cl_device_manager.set_argument( PRG::MAXPOOL_DELTA, 2, &nx_delta.N );
-	cl_device_manager.set_argument( PRG::MAXPOOL_DELTA, 3, &U_apply.v );
-	cl_device_manager.set_argument( PRG::MAXPOOL_DELTA, 4, &U_diff.v );
-	cl_device_manager.set_argument( PRG::MAXPOOL_DELTA, 5, &delta.v );
-	cl_device_manager.set_argument( PRG::MAXPOOL_DELTA, 6, &cl_num_unit );
-	cl_device_manager.set_argument( PRG::MAXPOOL_DELTA, 7, &delta.N );
-	cl_device_manager.set_argument( PRG::MAXPOOL_DELTA, 8, &cl_prev_ldu );
-	cl_device_manager.set_argument( PRG::MAXPOOL_DELTA, 9, &cl_ldu );
-	cl_device_manager.set_argument( PRG::MAXPOOL_DELTA, 10, &cl_stride );
-	cl_device_manager.set_argument( PRG::MAXPOOL_DELTA, 11, &cl_pad );
-	cl_device_manager.set_argument( PRG::MAXPOOL_DELTA, 12, &cl_m );
-	cl_device_manager.set_argument( PRG::MAXPOOL_DELTA, 13, &cl_n );
-	cl_device_manager.run_kernel( PRG::MAXPOOL_DELTA, my_size, U.n, this->prev_num_map );
+	cl_device_manager.set_argument( PRG::AVEPOOL_DELTA, 0, &nx_delta.v );
+	cl_device_manager.set_argument( PRG::AVEPOOL_DELTA, 1, &cl_prev_num_unit );
+	cl_device_manager.set_argument( PRG::AVEPOOL_DELTA, 2, &nx_delta.N );
+	cl_device_manager.set_argument( PRG::AVEPOOL_DELTA, 3, &U_diff.v );
+	cl_device_manager.set_argument( PRG::AVEPOOL_DELTA, 4, &delta.v );
+	cl_device_manager.set_argument( PRG::AVEPOOL_DELTA, 5, &cl_num_unit );
+	cl_device_manager.set_argument( PRG::AVEPOOL_DELTA, 6, &delta.N );
+	cl_device_manager.set_argument( PRG::AVEPOOL_DELTA, 7, &cl_prev_ldu );
+	cl_device_manager.set_argument( PRG::AVEPOOL_DELTA, 8, &cl_ldu );
+	cl_device_manager.set_argument( PRG::AVEPOOL_DELTA, 9, &cl_stride );
+	cl_device_manager.set_argument( PRG::AVEPOOL_DELTA, 10, &cl_pad );
+	cl_device_manager.set_argument( PRG::AVEPOOL_DELTA, 11, &cl_m );
+	cl_device_manager.set_argument( PRG::AVEPOOL_DELTA, 12, &cl_n );
+	cl_device_manager.run_kernel( PRG::AVEPOOL_DELTA, my_size, U.n, this->prev_num_map );
 
 	beg = std::chrono::system_clock::now();
 #ifdef USE_MPI
@@ -294,13 +283,13 @@ clMatrix<Real> MaxPooling<Mat, Real>::calc_delta ( const clMatrix<Real>& U, cons
 #endif
 
 template<template<typename> class Mat, typename Real>
-void MaxPooling<Mat, Real>::update_W ( const std::vector<Mat<Real>>& dW, const std::vector<Mat<Real>>& db )
+void AveragePooling<Mat, Real>::update_W ( const std::vector<Mat<Real>>& dW, const std::vector<Mat<Real>>& db )
 {
 	
 }
 
 template<template<typename> class Mat, typename Real>
-Matrix<Real> MaxPooling<Mat, Real>::apply ( const Matrix<Real>& U, bool use_func )
+Matrix<Real> AveragePooling<Mat, Real>::apply ( const Matrix<Real>& U, bool use_func )
 {
 	auto tot_beg = std::chrono::system_clock::now();
 	auto beg = tot_beg;
@@ -318,7 +307,6 @@ Matrix<Real> MaxPooling<Mat, Real>::apply ( const Matrix<Real>& U, bool use_func
 #endif
 	
 	Matrix<Real> U_ = (*this->prev_func)(U, false);
-	S = Matrix<Real>(this->num_map*this->num_unit, U.n);
 	
 	const int gap = prev_ldu + 2*pad;
 	const int Y = this->prev_num_unit/prev_ldu, X = prev_ldu;
@@ -336,24 +324,19 @@ Matrix<Real> MaxPooling<Mat, Real>::apply ( const Matrix<Real>& U, bool use_func
 			int x = (j + my_offset)%ldu, y = (j + my_offset)/ldu;
 
 			for( int k = 0; k < U_.n; ++k ){
-				int s_idx = -1;
-				Real val;
+				Real val = 0.0;
 
 				for( int s = 0; s < m; ++s )
 					for( int t = 0; t < n; ++t ){
 						int idx = stride*x + t + s*gap + stride*y*gap;
 						int nx = idx%gap - pad, ny = idx/gap - pad;
-						
+
 						if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
 
-						if( s_idx == -1 || val < U_(i*this->prev_num_unit + ny*prev_ldu + nx, k) ){
-							val = U_(i*this->prev_num_unit + ny*prev_ldu + nx, k);
-							s_idx = ny*prev_ldu + nx;
-						}
+						val += U_(i*this->prev_num_unit + ny*prev_ldu + nx, k);
 					}
 
-				tmp(j, k) = val;
-				S(i*this->num_unit + j + my_offset, k) = s_idx;
+				tmp(j, k) = val / (m*m);
 			}
 		}
 
@@ -365,8 +348,6 @@ Matrix<Real> MaxPooling<Mat, Real>::apply ( const Matrix<Real>& U, bool use_func
 #ifdef USE_MPI
 		MPI_Allgatherv(&tmp(0,0), size[this->rank], get_typecount(tmp(0,0)).mpi_type,
 					   &ret(i*this->num_unit,0), &size[0], &offset[0], get_typecount(ret(i*this->num_unit,0)).mpi_type, this->inner_world);
-		MPI_Allgatherv(MPI_IN_PLACE, size[this->rank], get_typecount(S(0,0)).mpi_type,
-					   &S(i*this->num_unit,0), &size[0], &offset[0], get_typecount(S(0,0)).mpi_type, this->inner_world);
 #else
 		ret.sub(i*this->num_unit, 0, tmp.m, tmp.n, tmp);
 #endif
@@ -382,7 +363,7 @@ Matrix<Real> MaxPooling<Mat, Real>::apply ( const Matrix<Real>& U, bool use_func
 
 #ifdef USE_GPU
 template<template<typename> class Mat, typename Real>
-clMatrix<Real> MaxPooling<Mat, Real>::apply ( const clMatrix<Real>& U, bool use_func )
+clMatrix<Real> AveragePooling<Mat, Real>::apply ( const clMatrix<Real>& U, bool use_func )
 {
 	auto tot_beg = std::chrono::system_clock::now();
 	auto beg = tot_beg;
@@ -400,27 +381,24 @@ clMatrix<Real> MaxPooling<Mat, Real>::apply ( const clMatrix<Real>& U, bool use_
 #endif
 	
 	clMatrix<Real> U_ = (*this->prev_func)(U, false);
-	S = clMatrix<Real>(this->num_map*this->num_unit, U.n);
-	
 	clMatrix<Real> ret(this->num_map*this->num_unit, U.n);
 
 	auto end = std::chrono::system_clock::now();
 	this->t_apply_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 	
-	cl_device_manager.set_argument( PRG::MAXPOOL_APPLY, 0, &ret.v );
-	cl_device_manager.set_argument( PRG::MAXPOOL_APPLY, 1, &cl_num_unit );
-	cl_device_manager.set_argument( PRG::MAXPOOL_APPLY, 2, &ret.N );
-	cl_device_manager.set_argument( PRG::MAXPOOL_APPLY, 3, &U.v );
-	cl_device_manager.set_argument( PRG::MAXPOOL_APPLY, 4, &S.v );
-	cl_device_manager.set_argument( PRG::MAXPOOL_APPLY, 5, &cl_prev_num_unit );
-	cl_device_manager.set_argument( PRG::MAXPOOL_APPLY, 6, &U.N );
-	cl_device_manager.set_argument( PRG::MAXPOOL_APPLY, 7, &cl_prev_ldu );
-	cl_device_manager.set_argument( PRG::MAXPOOL_APPLY, 8, &cl_ldu );
-	cl_device_manager.set_argument( PRG::MAXPOOL_APPLY, 9, &cl_stride );
-	cl_device_manager.set_argument( PRG::MAXPOOL_APPLY, 10, &cl_pad );
-	cl_device_manager.set_argument( PRG::MAXPOOL_APPLY, 11, &cl_m );
-	cl_device_manager.set_argument( PRG::MAXPOOL_APPLY, 12, &cl_n );
-	cl_device_manager.run_kernel( PRG::MAXPOOL_APPLY, my_size, U.n, this->prev_num_map );
+	cl_device_manager.set_argument( PRG::AVEPOOL_APPLY, 0, &ret.v );
+	cl_device_manager.set_argument( PRG::AVEPOOL_APPLY, 1, &cl_num_unit );
+	cl_device_manager.set_argument( PRG::AVEPOOL_APPLY, 2, &ret.N );
+	cl_device_manager.set_argument( PRG::AVEPOOL_APPLY, 3, &U.v );
+	cl_device_manager.set_argument( PRG::AVEPOOL_APPLY, 4, &cl_prev_num_unit );
+	cl_device_manager.set_argument( PRG::AVEPOOL_APPLY, 5, &U.N );
+	cl_device_manager.set_argument( PRG::AVEPOOL_APPLY, 6, &cl_prev_ldu );
+	cl_device_manager.set_argument( PRG::AVEPOOL_APPLY, 7, &cl_ldu );
+	cl_device_manager.set_argument( PRG::AVEPOOL_APPLY, 8, &cl_stride );
+	cl_device_manager.set_argument( PRG::AVEPOOL_APPLY, 9, &cl_pad );
+	cl_device_manager.set_argument( PRG::AVEPOOL_APPLY, 10, &cl_m );
+	cl_device_manager.set_argument( PRG::AVEPOOL_APPLY, 11, &cl_n );
+	cl_device_manager.run_kernel( PRG::AVEPOOL_APPLY, my_size, U.n, this->prev_num_map );
 
 	end = std::chrono::system_clock::now();
 	this->t_apply += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
@@ -429,7 +407,7 @@ clMatrix<Real> MaxPooling<Mat, Real>::apply ( const clMatrix<Real>& U, bool use_
 }
 #endif
 
-// std::vector<MaxPooling::Mat> MaxPooling::unpooling ( const std::vector<Mat>& U )
+// std::vector<AveragePooling::Mat> AveragePooling::unpooling ( const std::vector<Mat>& U )
 // {
 // 	const int Y = prev_num_unit/prev_ldu, X = prev_ldu;
 // 	std::vector<Mat> ret(num_map);
@@ -454,20 +432,20 @@ clMatrix<Real> MaxPooling<Mat, Real>::apply ( const clMatrix<Real>& U, bool use_
 // }
 
 template<template<typename> class Mat, typename Real>
-void MaxPooling<Mat, Real>::set_W ( const std::string& filename )
+void AveragePooling<Mat, Real>::set_W ( const std::string& filename )
 {
 	
 }
 
 template<template<typename> class Mat, typename Real>
-void MaxPooling<Mat, Real>::output_W ( const std::string& filename )
+void AveragePooling<Mat, Real>::output_W ( const std::string& filename )
 {
 
 }
 
 #ifdef USE_MPI
 template<template<typename> class Mat, typename Real>
-void MaxPooling<Mat, Real>::param_mix ()
+void AveragePooling<Mat, Real>::param_mix ()
 {
 
 }

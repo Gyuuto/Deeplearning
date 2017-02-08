@@ -15,6 +15,8 @@ private:
 	std::vector<int> feed_idx;
 #ifdef USE_GPU
 	cl_mem cl_feed_idx;
+	cl_mem cl_num_unit, cl_prev_num_unit, cl_filter_size;
+	cl_mem cl_my_size, cl_l_idx; // for future
 #endif
 public:
 	Convolutional( int prev_num_map, int prev_num_unit, int prev_ldu,
@@ -125,6 +127,12 @@ Convolutional<Mat, Real>::~Convolutional()
 {
 #ifdef USE_GPU
 	clReleaseMemObject( cl_feed_idx );
+
+	clReleaseMemObject( cl_num_unit );
+	clReleaseMemObject( cl_prev_num_unit );
+	clReleaseMemObject( cl_filter_size );
+
+	clReleaseMemObject( cl_l_idx );
 #endif
 }
 
@@ -169,6 +177,22 @@ void Convolutional<Mat, Real>::init ( std::mt19937& mt )
 	cl_feed_idx = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, this->num_unit*m*n*sizeof(int), NULL, &err);
 	err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_feed_idx, CL_TRUE, 0,
 								this->num_unit*m*n*sizeof(int), &feed_idx[0], 0, NULL, NULL );
+
+	cl_num_unit = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
+	err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_num_unit, CL_TRUE, 0,
+								sizeof(int), &this->num_unit, 0, NULL, NULL );
+	cl_prev_num_unit = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
+	err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_prev_num_unit, CL_TRUE, 0,
+								sizeof(int), &this->prev_num_unit, 0, NULL, NULL );
+	cl_filter_size = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
+	int mn = m*n;
+	err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_filter_size, CL_TRUE, 0,
+								sizeof(int), &mn, 0, NULL, NULL );
+
+	cl_l_idx = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
+	mn = 0;
+	err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_l_idx, CL_TRUE, 0,
+								sizeof(int), &mn, 0, NULL, NULL );
 #endif
 
 	std::normal_distribution<Real> d_rand(0.0, 1.0E-1);
@@ -297,41 +321,24 @@ std::pair<std::vector<clMatrix<Real>>, std::vector<clMatrix<Real>>> Convolutiona
 	int r_idx = std::min(this->num_unit, tmp_offset + tmp_size + m*prev_ldu/2);
 
 	cl_int err;
-	cl_mem cl_i, cl_j, cl_k, cl_l, cl_r;
+	cl_mem cl_i;
 	cl_i = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
-	cl_j = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
-	cl_k = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
-	cl_l = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
-	cl_r = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
-
-	int mn = m*n;
-	err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_j, CL_TRUE, 0,
-								sizeof(int), &mn, 0, NULL, NULL );
-	err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_k, CL_TRUE, 0,
-								sizeof(int), &this->prev_num_unit, 0, NULL, NULL );
-	err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_l, CL_TRUE, 0,
-								sizeof(int), &l_idx, 0, NULL, NULL );
-	err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_r, CL_TRUE, 0,
-								sizeof(int), &this->num_unit, 0, NULL, NULL );
 
 	clMatrix<Real> U_mat(m*n*this->prev_num_map, once_num*my_size), delta_mat(once_num*my_size, this->num_map);
 	for( int i = 0; i < delta.n; i += once_num ){
 		int size = std::min(once_num, delta.n - i);
 		auto beg = std::chrono::system_clock::now();
 
-		cl_device_manager.set_argument( PRG::CLMAT_ZEROS, 0, &U_mat.v );
-		cl_device_manager.run_kernel( PRG::CLMAT_ZEROS, U_mat.m*U_mat.n );
-
 		err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_i, CL_TRUE, 0,
 									sizeof(int), &i, 0, NULL, NULL );
 		cl_device_manager.set_argument( PRG::CONV_GRAD_IMG_SET, 0, &U_mat.v );
 		cl_device_manager.set_argument( PRG::CONV_GRAD_IMG_SET, 1, &U_mat.N );
 		cl_device_manager.set_argument( PRG::CONV_GRAD_IMG_SET, 2, &U_.v );
-		cl_device_manager.set_argument( PRG::CONV_GRAD_IMG_SET, 3, &cl_k );
+		cl_device_manager.set_argument( PRG::CONV_GRAD_IMG_SET, 3, &cl_prev_num_unit );
 		cl_device_manager.set_argument( PRG::CONV_GRAD_IMG_SET, 4, &U_.N );
 		cl_device_manager.set_argument( PRG::CONV_GRAD_IMG_SET, 5, &cl_i );
-		cl_device_manager.set_argument( PRG::CONV_GRAD_IMG_SET, 6, &cl_j );
-		cl_device_manager.set_argument( PRG::CONV_GRAD_IMG_SET, 7, &cl_l );
+		cl_device_manager.set_argument( PRG::CONV_GRAD_IMG_SET, 6, &cl_filter_size );
+		cl_device_manager.set_argument( PRG::CONV_GRAD_IMG_SET, 7, &cl_l_idx );
 		cl_device_manager.set_argument( PRG::CONV_GRAD_IMG_SET, 8, &cl_feed_idx );
 		cl_device_manager.run_kernel( PRG::CONV_GRAD_IMG_SET, size, my_size, this->prev_num_map*m*n );
 // 		for( int l = 0; l < size; ++l )
@@ -343,11 +350,10 @@ std::pair<std::vector<clMatrix<Real>>, std::vector<clMatrix<Real>>> Convolutiona
 // 							U_mat(k*m*n + s, (j-l_idx) + l*my_size) = U_(k*this->prev_num_unit + feed_idx[j*m*n + s], l+i);
 // 						}
 
-
 		cl_device_manager.set_argument( PRG::CONV_GRAD_DELTA_SET, 0, &delta_mat.v );
 		cl_device_manager.set_argument( PRG::CONV_GRAD_DELTA_SET, 1, &delta_mat.N );
 		cl_device_manager.set_argument( PRG::CONV_GRAD_DELTA_SET, 2, &delta.v );
-		cl_device_manager.set_argument( PRG::CONV_GRAD_DELTA_SET, 3, &cl_r );
+		cl_device_manager.set_argument( PRG::CONV_GRAD_DELTA_SET, 3, &cl_num_unit );
 		cl_device_manager.set_argument( PRG::CONV_GRAD_DELTA_SET, 4, &delta.N );
 		cl_device_manager.set_argument( PRG::CONV_GRAD_DELTA_SET, 5, &cl_i );
 		cl_device_manager.run_kernel( PRG::CONV_GRAD_DELTA_SET, this->num_map, my_size, size );
@@ -392,10 +398,6 @@ std::pair<std::vector<clMatrix<Real>>, std::vector<clMatrix<Real>>> Convolutiona
 	this->t_grad += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
 
 	clReleaseMemObject( cl_i );
-	clReleaseMemObject( cl_j );
-	clReleaseMemObject( cl_k );
-	clReleaseMemObject( cl_l );
-	clReleaseMemObject( cl_r );
 
 	return std::make_pair(nabla_W, nabla_b);
 }
@@ -588,24 +590,14 @@ clMatrix<Real> Convolutional<Mat, Real>::calc_delta ( const clMatrix<Real>& U, c
 	int r_idx = std::min(this->num_unit, tmp_offset + tmp_size + m*prev_ldu/2);
 
 	cl_int err;
-	cl_mem cl_i, cl_j, cl_k, cl_l;
+	cl_mem cl_i, cl_k;
 	cl_i = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
-	cl_j = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
 	cl_k = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
-	cl_l = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
-
-	int mn = m*n;
-	err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_j, CL_TRUE, 0,
-								sizeof(int), &mn, 0, NULL, NULL );
-	err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_k, CL_TRUE, 0,
-								sizeof(int), &this->num_unit, 0, NULL, NULL );
-	err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_l, CL_TRUE, 0,
-								sizeof(int), &l_idx, 0, NULL, NULL );
 
 	clMatrix<Real> kernel(m*n*this->num_map, this->prev_num_map);	
 	cl_device_manager.set_argument( PRG::CONV_DELTA_KERNEL_SET, 0, &kernel.v );
 	cl_device_manager.set_argument( PRG::CONV_DELTA_KERNEL_SET, 1, &this->W[0].v );
-	cl_device_manager.run_kernel( PRG::CONV_DELTA_KERNEL_SET, this->prev_num_map, mn, this->num_map );
+	cl_device_manager.run_kernel( PRG::CONV_DELTA_KERNEL_SET, this->prev_num_map, m*n, this->num_map );
 	
 	clMatrix<Real> input_image(my_size*once_num, m*n*this->num_map);
 	std::vector<clMatrix<Real>> tmp_img(delta.n/once_num + 1);
@@ -621,11 +613,11 @@ clMatrix<Real> Convolutional<Mat, Real>::calc_delta ( const clMatrix<Real>& U, c
 		cl_device_manager.set_argument( PRG::CONV_DELTA_IMG_SET, 0, &input_image.v );
 		cl_device_manager.set_argument( PRG::CONV_DELTA_IMG_SET, 1, &input_image.N );
 		cl_device_manager.set_argument( PRG::CONV_DELTA_IMG_SET, 2, &delta.v );
-		cl_device_manager.set_argument( PRG::CONV_DELTA_IMG_SET, 3, &cl_k );
+		cl_device_manager.set_argument( PRG::CONV_DELTA_IMG_SET, 3, &cl_num_unit );
 		cl_device_manager.set_argument( PRG::CONV_DELTA_IMG_SET, 4, &delta.N );
 		cl_device_manager.set_argument( PRG::CONV_DELTA_IMG_SET, 5, &cl_i );
-		cl_device_manager.set_argument( PRG::CONV_DELTA_IMG_SET, 6, &cl_j );
-		cl_device_manager.set_argument( PRG::CONV_DELTA_IMG_SET, 7, &cl_k );
+		cl_device_manager.set_argument( PRG::CONV_DELTA_IMG_SET, 6, &cl_filter_size );
+		cl_device_manager.set_argument( PRG::CONV_DELTA_IMG_SET, 7, &cl_num_unit );
 		cl_device_manager.set_argument( PRG::CONV_DELTA_IMG_SET, 8, &cl_feed_idx );
 		cl_device_manager.run_kernel( PRG::CONV_DELTA_IMG_SET, this->num_map*m*n, size, my_size );
 		auto end = std::chrono::system_clock::now();
@@ -720,9 +712,7 @@ clMatrix<Real> Convolutional<Mat, Real>::calc_delta ( const clMatrix<Real>& U, c
 	this->t_delta += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
 
 	clReleaseMemObject( cl_i );
-	clReleaseMemObject( cl_j );
 	clReleaseMemObject( cl_k );
-	clReleaseMemObject( cl_l );
 	
 	return nx_delta;
 }
@@ -893,14 +883,7 @@ clMatrix<Real> Convolutional<Mat, Real>::apply ( const clMatrix<Real>& U, bool u
 	cl_int err;
 	cl_mem cl_i, cl_j, cl_k;
 	cl_i = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
-	cl_j = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
 	cl_k = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
-
-	int mn = m*n;
-	err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_j, CL_TRUE, 0,
-								sizeof(int), &mn, 0, NULL, NULL );
-	err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_k, CL_TRUE, 0,
-								sizeof(int), &this->prev_num_unit, 0, NULL, NULL );
 
 	auto end = std::chrono::system_clock::now();
 	this->t_apply_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
@@ -916,10 +899,10 @@ clMatrix<Real> Convolutional<Mat, Real>::apply ( const clMatrix<Real>& U, bool u
 		cl_device_manager.set_argument( PRG::CONV_APPLY_IMG_SET, 0, &input_image.v );
 		cl_device_manager.set_argument( PRG::CONV_APPLY_IMG_SET, 1, &input_image.N );
 		cl_device_manager.set_argument( PRG::CONV_APPLY_IMG_SET, 2, &U.v );
-		cl_device_manager.set_argument( PRG::CONV_APPLY_IMG_SET, 3, &cl_k );
+		cl_device_manager.set_argument( PRG::CONV_APPLY_IMG_SET, 3, &cl_prev_num_unit );
 		cl_device_manager.set_argument( PRG::CONV_APPLY_IMG_SET, 4, &U.N );
 		cl_device_manager.set_argument( PRG::CONV_APPLY_IMG_SET, 5, &cl_i );
-		cl_device_manager.set_argument( PRG::CONV_APPLY_IMG_SET, 6, &cl_j );
+		cl_device_manager.set_argument( PRG::CONV_APPLY_IMG_SET, 6, &cl_filter_size );
 		cl_device_manager.set_argument( PRG::CONV_APPLY_IMG_SET, 7, &cl_feed_idx );
 		cl_device_manager.run_kernel( PRG::CONV_APPLY_IMG_SET, this->prev_num_map*m*n, my_size, size );
 		auto end = std::chrono::system_clock::now();
@@ -1020,7 +1003,6 @@ clMatrix<Real> Convolutional<Mat, Real>::apply ( const clMatrix<Real>& U, bool u
 	this->t_apply += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
 	
 	clReleaseMemObject( cl_i );
-	clReleaseMemObject( cl_j );
 	clReleaseMemObject( cl_k );
 	
 	return ret;
