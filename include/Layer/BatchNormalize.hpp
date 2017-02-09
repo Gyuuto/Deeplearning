@@ -302,7 +302,7 @@ Matrix<Real> BatchNormalize<Mat, Real>::calc_delta ( const Matrix<Real>& U, cons
 	int my_offset, my_size;
 #ifdef USE_MPI
 	std::vector<int> size(this->nprocs), offset(this->nprocs);
-	for( int i = 0; i < nprocs; ++i ){
+	for( int i = 0; i < this->nprocs; ++i ){
 		size[i] = ((i+1)*this->prev_num_unit/this->nprocs - i*this->prev_num_unit/this->nprocs)*U.n;
 		offset[i] = i*this->prev_num_unit/this->nprocs*U.n;
 	}
@@ -459,7 +459,7 @@ Matrix<Real> BatchNormalize<Mat, Real>::apply ( const Matrix<Real>& U, bool use_
 
 	Matrix<Real> ret(this->num_map*this->num_unit, U.n);
 #ifdef USE_MPI
-p	Matrix<Real> tmp_ret(this->num_map*my_size, U.n);
+	Matrix<Real> tmp_ret(this->num_map*my_size, U.n);
 #endif
 	auto end = std::chrono::system_clock::now();
 	this->t_apply_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
@@ -511,7 +511,7 @@ p	Matrix<Real> tmp_ret(this->num_map*my_size, U.n);
 	beg = std::chrono::system_clock::now();
 #ifdef USE_MPI
 	for( int i = 0; i < this->num_map; ++i ){
-		MPI_Allgatherv(&tmp_ret(i*my_size,0), size[rank], get_typecount(tmp_ret(i*my_size,0)).mpi_type,
+		MPI_Allgatherv(&tmp_ret(i*my_size,0), size[this->rank], get_typecount(tmp_ret(i*my_size,0)).mpi_type,
 					   &ret(i*this->num_unit,0), &size[0], &offset[0], get_typecount(ret(i*this->num_unit,0)).mpi_type, this->inner_world);
 	}
 #endif
@@ -625,7 +625,7 @@ template<template<typename> class Mat, typename Real>
 void BatchNormalize<Mat, Real>::output_W ( const std::string& filename )
 {
 #ifdef USE_MPI
-	if( rank == 0 ){
+	if( this->rank == 0 ){
 #endif
 		std::ofstream ofs(filename, std::ios::binary);
 
@@ -642,7 +642,7 @@ template<template<typename> class Mat, typename Real>
 void BatchNormalize<Mat, Real>::param_mix ()
 {
 	int nprocs;
-	MPI_Comm_size(outer_world, &nprocs);
+	MPI_Comm_size(this->outer_world, &nprocs);
 	if( this->W.size() == 0 ) return;
 
 	int cnt = this->W[0].n + this->b[0].n;
