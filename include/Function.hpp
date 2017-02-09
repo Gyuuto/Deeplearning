@@ -38,14 +38,16 @@ public:
 		Matrix<double> y(x.m, x.n);
 
 		if( isdiff ){
-#pragma omp parallel for schedule(auto)
+#pragma omp parallel for
 			for( int i = 0; i < y.m*y.n; ++i ) y.v[i] = x.v[i] <= 0.0 ? 0.0 : 1.0;
 		}
 		else{
-#pragma omp parallel for schedule(auto)
+#pragma omp parallel for
 			for( int i = 0; i < y.m*y.n; ++i ) y.v[i] = std::max(0.0, x.v[i]);
 		}
 
+		cnt_flop += y.m*y.n;
+		
 		return y;
 	}
 };
@@ -60,15 +62,17 @@ public:
 		Matrix<double> y(x.m, x.n);
 
 		if( isdiff ){
-#pragma omp parallel for schedule(auto)
+#pragma omp parallel for
 			for( int i = 0; i < y.m*y.n; ++i ){
 				double tmp = 1.0 + std::exp(-alpha*x.v[i]);
 				y.v[i] = alpha*std::exp(-alpha*x.v[i]) / (tmp*tmp);
 			}
+			cnt_flop += y.m*y.n*8;
 		}
 		else{
-#pragma omp parallel for schedule(auto)
+#pragma omp parallel for
 			for( int i = 0; i < y.m*y.n; ++i ) y.v[i] = 1.0 / (1.0 + std::exp(-alpha*x.v[i]));
+			cnt_flop += y.m*y.n*4;
 		}
 		
 		return y;
@@ -82,15 +86,17 @@ public:
 		Matrix<double> y(x.m, x.n);
 
 		if( isdiff ){
-#pragma omp parallel for schedule(auto)
+#pragma omp parallel for
 			for( int i = 0; i < y.m*y.n; ++i ){
 				double tmp = std::tanh(x.v[i]);
 				y.v[i] = 1.0 - tmp*tmp;
 			}
+			cnt_flop += y.m*y.n*3;
 		}
 		else{
-#pragma omp parallel for schedule(auto)
+#pragma omp parallel for
 			for( int i = 0; i < y.m*y.n; ++i ) y.v[i] = std::tanh(x.v[i]);
+			cnt_flop += y.m*y.n*1;
 		}
 			
 		return y;
@@ -103,7 +109,7 @@ class Softsign : public Function
 		Matrix<double> y(x.m, x.n);
 
 		if( isdiff ){
-#pragma omp parallel for schedule(auto)
+#pragma omp parallel for
 			for( int i = 0; i < y.m*y.n; ++i ){
 					double tmp = 1.0 + std::abs(x.v[i]);
 					double y_diff = 0.0;
@@ -111,10 +117,12 @@ class Softsign : public Function
 					else if( x.v[i] < -1.0E-10 ) y_diff = -1.0;
 					y.v[i] = (tmp - x.v[i]*y_diff)/(tmp*tmp);
 				}
+			cnt_flop += y.m*y.n*6;
 		}
 		else{
-#pragma omp parallel for schedule(auto)
+#pragma omp parallel for
 			for( int i = 0; i < y.m*y.n; ++i ) y.v[i] = x.v[i] / (1.0 + std::abs(x.v[i]));
+			cnt_flop += y.m*y.n*3;
 		}
 			
 		return y;
@@ -127,15 +135,17 @@ class Softplus : public Function
 		Matrix<double> y(x.m, x.n);
 
 		if( isdiff ){
-#pragma omp parallel for schedule(auto)
+#pragma omp parallel for
 			for( int i = 0; i < y.m*y.n; ++i ){
 					double tmp = std::exp(x.v[i]);
 					y.v[i] = tmp / (1.0 + tmp);
 				}
+			cnt_flop += y.m*y.n*3;
 		}
 		else{
-#pragma omp parallel for schedule(auto)
+#pragma omp parallel for
 			for( int i = 0; i < y.m*y.n; ++i ) y.v[i] = std::log(1.0 + std::exp(x.v[i]));
+			cnt_flop += y.m*y.n*3;
 		}
 			
 		return y;
@@ -149,12 +159,14 @@ class Polynomial : public Function
 		Matrix<double> y(x.m, x.n);
 
 		if( isdiff ){
-#pragma omp parallel for schedule(auto)
+#pragma omp parallel for
 			for( int i = 0; i < y.m*y.n; ++i ) y.v[i] = n*std::pow(x.v[i], n-1);
+			cnt_flop += y.m*y.n*2;
 		}
 		else{
-#pragma omp parallel for schedule(auto)
+#pragma omp parallel for
 			for( int i = 0; i < y.m*y.n; ++i ) y.v[i] = std::pow(x.v[i], n);
+			cnt_flop += y.m*y.n*1;
 		}
 			
 		return y;
@@ -168,12 +180,14 @@ class TruncatedPower : public Function
 		Matrix<double> y(x.m, x.n);
 
 		if( isdiff ){
-#pragma omp parallel for schedule(auto)
+#pragma omp parallel for
 			for( int i = 0; i < y.m*y.n; ++i ) y.v[i] = (x.v[i] < 0.0 ? 0.0 : n*std::pow(x.v[i], n-1));
+			cnt_flop += y.m*y.n*2;
 		}
 		else{
-#pragma omp parallel for schedule(auto)
+#pragma omp parallel for
 			for( int i = 0; i < y.m*y.n; ++i ) y.v[i] = (x.v[i] < 0.0 ? 0.0 : std::pow(x.v[i], n));
+			cnt_flop += y.m*y.n*1;
 		}
 			
 		return y;
@@ -186,7 +200,7 @@ class Abs : public Function
 		Matrix<double> y(x.m, x.n);
 
 		if( isdiff ){
-#pragma omp parallel for schedule(auto)
+#pragma omp parallel for
 			for( int i = 0; i < y.m*y.n; ++i ){
 					double y_diff = 0.0;
 					if( x.v[i] > 1.0E-10 ) y_diff = 1.0;
@@ -195,8 +209,9 @@ class Abs : public Function
 			}
 		}
 		else{
-#pragma omp parallel for schedule(auto)
+#pragma omp parallel for
 			for( int i = 0; i < y.m*y.n; ++i ) y.v[i] = std::abs(x.v[i]);
+			cnt_flop += y.m*y.n*1;
 		}
 			
 		return y;
@@ -213,7 +228,7 @@ public:
 		else{
 			Matrix<double> sum(1, x.n), max_val(1, x.n);
 
-#pragma omp parallel for schedule(auto)
+#pragma omp parallel for
 			for( int i = 0; i < x.n; ++i ){
 				sum(0,i) = 0.0;
 				max_val(0,i) = x(0,i);
@@ -224,9 +239,11 @@ public:
 			}
 			
 			Matrix<double> y(x.m, x.n);
-#pragma omp parallel for schedule(auto)
+#pragma omp parallel for
 			for( int i = 0; i < y.m*y.n; ++i ) y.v[i] = std::exp(x.v[i] - max_val(0,i%y.n)) / sum(0,i%y.n);
 			
+			cnt_flop += y.m*y.n*7;
+
 			return y;
 		}
 	}
@@ -241,8 +258,10 @@ public:
 	inline Matrix<double> operator() ( const Matrix<double>& x, const Matrix<double>& d, const bool& isdiff ){
 		if( isdiff ){
 			Matrix<double> y(x.m, x.n);
-#pragma omp parallel for schedule(auto)
-			for( int i = 0; i < y.m*y.n; ++i ) y.v[i] = x.v[i] - d.v[i];
+#pragma omp parallel for
+			for( int i = 0; i < y.m*y.n; ++i ) y.v[i] = 2.0*(x.v[i] - d.v[i]);
+
+			cnt_flop += y.m*y.n*1;
 
 			return y;
 		}
@@ -250,12 +269,14 @@ public:
 			Matrix<double> y(1, 1);
 			double y_ = 0.0;
 
-#pragma omp parallel for schedule(auto) reduction(+:y_)
+#pragma omp parallel for reduction(+:y_)
 			for( int i = 0; i < x.m*x.n; ++i ){
 				double tmp = x.v[i] - d.v[i];
 				y_ += tmp*tmp;
 			}
 			y(0,0) = y_;
+
+			cnt_flop += y.m*y.n*3;
 			return y;
 		}
 	}
@@ -268,8 +289,9 @@ public:
 		if( isdiff ){
 			Matrix<double> y(x.m, x.n);
 
-#pragma omp parallel for schedule(auto)
-			for( int i = 0; i < x.m*x.n; ++i ) y.v[i] = x.v[i] - d.v[i];
+#pragma omp parallel for
+			for( int i = 0; i < x.m*x.n; ++i ) y.v[i] = 2.0*(x.v[i] - d.v[i]);
+			cnt_flop += y.m*y.n*1;
 
 			return y;
 		}
@@ -277,8 +299,9 @@ public:
 			double y_ = 0.0;
 			Matrix<double> y(1,1);
 
-#pragma omp parallel for schedule(auto) reduction(-:y_)
+#pragma omp parallel for reduction(-:y_)
 			for( int i = 0; i < x.m*x.n; ++i ) y_ -= d.v[i]*std::log(x.v[i]);
+			cnt_flop += y.m*y.n*3;
 
 			y(0,0) = y_;
 			return 2.0*y;

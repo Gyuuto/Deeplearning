@@ -80,8 +80,9 @@ void BatchNormalize::init( std::mt19937& m )
 	var = Mat(num_map, my_size);
 
 	std::uniform_real_distribution<double> d_rand(-1.0, 1.0);
-	for( int i = 0; i < num_map; ++i )
-		for( int j = 0; j < 2; ++j ) W[0][i](0,j) = d_rand(m);
+	for( int i = 0; i < num_map; ++i ){
+		W[0][i](0,0) = d_rand(m); W[0][i](0,1) = d_rand(m);
+	}
 }
 
 void BatchNormalize::finalize ()
@@ -111,14 +112,14 @@ std::vector<std::vector<BatchNormalize::Mat>> BatchNormalize::calc_gradient ( co
 		auto beg = std::chrono::system_clock::now();
 #pragma omp parallel
 		{
-#pragma omp for schedule(auto) nowait reduction(+:tmp_nabla1)
+#pragma omp for nowait reduction(+:tmp_nabla1)
 			for( int j = 0; j < my_size; ++j ){
 				for( int k = 0; k < U[i].n; ++k ){
 					tmp_nabla1 += delta[i](my_offset+j,k)*(U_appl(my_offset+j,k) - mean(i,j))/std::sqrt(var(i,j) + EPS);
 				}
 			}
 
-#pragma omp for schedule(auto) nowait reduction(+:tmp_nabla2)
+#pragma omp for nowait reduction(+:tmp_nabla2)
 			for( int j = 0; j < my_size; ++j ){
 				for( int k = 0; k < U[i].n; ++k ){
 					tmp_nabla2 += delta[i](my_offset+j,k);
@@ -177,7 +178,7 @@ std::vector<BatchNormalize::Mat> BatchNormalize::calc_delta ( const std::vector<
 		auto U_appl = (*prev_func)(U[i], false);
 		auto U_diff = (*prev_func)(U[i], true);
 		
-#pragma omp parallel for schedule(auto)
+#pragma omp parallel for
 		for( int j = 0; j < my_size; ++j )
 			for( int k = 0; k < U[i].n; ++k ){
 				double tmp1 = 0.0, tmp2 = 0.0;
@@ -192,9 +193,9 @@ std::vector<BatchNormalize::Mat> BatchNormalize::calc_delta ( const std::vector<
 					- W[0][i](0,0)/sqrt(var(i,j) + EPS)*U_diff(my_offset+j,k)*tmp1
 					- W[0][i](0,0)/pow(var(i,j) + EPS, 1.5)*U_diff(my_offset+j,k)*(U_appl(my_offset+j,k) - mean(i,j))*tmp2;
 #else
-				nx_delta[i](j,k) = W[0][i](0,0)/sqrt(var(i,j) + EPS)*delta[i](my_offset+j,k)*U_diff(my_offset+j,k)
-					- W[0][i](0,0)/sqrt(var(i,j) + EPS)*U_diff(my_offset+j,k)*tmp1
-					- W[0][i](0,0)/pow(var(i,j) + EPS, 1.5)*U_diff(my_offset+j,k)*(U_appl(my_offset+j,k) - mean(i,j))*tmp2;
+				nx_delta[i](j,k) = W[0][i](0,0)/sqrt(var(i,j) + EPS)*delta[i](j,k)*U_diff(j,k)
+					- W[0][i](0,0)/sqrt(var(i,j) + EPS)*U_diff(j,k)*tmp1
+					- W[0][i](0,0)/pow(var(i,j) + EPS, 1.5)*U_diff(j,k)*(U_appl(j,k) - mean(i,j))*tmp2;
 #endif
 			}
 		auto end = std::chrono::system_clock::now();
@@ -254,7 +255,7 @@ std::vector<BatchNormalize::Mat> BatchNormalize::apply ( const std::vector<Mat>&
 #pragma omp parallel
 	{
 		for( int i = 0; i < num_map; ++i ){
-#pragma omp for schedule(auto) nowait
+#pragma omp for nowait
 			for( int j = 0; j < my_size; ++j ){
 				for( int k = 0; k < U[i].n; ++k ) mean(i,j) += U[i](my_offset+j, k);
 			}
@@ -265,7 +266,7 @@ std::vector<BatchNormalize::Mat> BatchNormalize::apply ( const std::vector<Mat>&
 #pragma omp parallel
 	{
 		for( int i = 0; i < num_map; ++i ){
-#pragma omp for schedule(auto) nowait
+#pragma omp for nowait
 			for( int j = 0; j < my_size; ++j ){
 				for( int k = 0; k < U[i].n; ++k ){
 					double v = (U[i](my_offset+j, k) - mean(i, j));
@@ -279,7 +280,7 @@ std::vector<BatchNormalize::Mat> BatchNormalize::apply ( const std::vector<Mat>&
 #pragma omp parallel
 	{
 		for( int i = 0; i < num_map; ++i ){
-#pragma omp for schedule(auto) nowait
+#pragma omp for nowait
 			for( int j = 0; j < my_size; ++j ){
 				for( int k = 0; k < U[0].n; ++k ){
 #ifdef USE_MPI
@@ -355,7 +356,7 @@ std::vector<std::vector<BatchNormalize::Vec>> BatchNormalize::apply ( const std:
 #pragma omp parallel
 	{
 		for( int i = 0; i < prev_num_map; ++i )
-#pragma omp for schedule(auto) nowait
+#pragma omp for nowait
 			for( int j = 0; j < u[i][0].size(); ++j )
 				for( int k = 0; k < u.size(); ++k )
 					tmp[i](j,k) = u[k][i][j];
@@ -363,7 +364,7 @@ std::vector<std::vector<BatchNormalize::Vec>> BatchNormalize::apply ( const std:
 	
 	auto U = apply(tmp, use_func);
 	std::vector<std::vector<Vec>> ret(U[0].n, std::vector<Vec>(U.size(), Vec(U[0].m)));
-#pragma omp parallel for schedule(auto)
+#pragma omp parallel for
 	for( int i = 0; i < U[0].n; ++i ){
 		for( int j = 0; j < U.size(); ++j )
 			for( int k = 0; k < U[0].m; ++k )
@@ -411,7 +412,7 @@ void BatchNormalize::param_mix ()
 	{
 		for( int i = 0; i < W.size(); ++i )
 			for( int j = 0; j < W[i].size(); ++j )
-#pragma omp for schedule(auto) nowait
+#pragma omp for nowait
 				for( int k = 0; k < W[i][j].m; ++k )
 					for( int l = 0; l < W[i][j].n; ++l ){
 						int idx = i*(W[i].size()*W[i][j].m*W[i][j].n) +
@@ -426,7 +427,7 @@ void BatchNormalize::param_mix ()
 	{
 		for( int i = 0; i < W.size(); ++i )
 			for( int j = 0; j < W[i].size(); ++j )
-#pragma omp for schedule(auto) nowait
+#pragma omp for nowait
 				for( int k = 0; k < W[i][j].m; ++k )
 					for( int l = 0; l < W[i][j].n; ++l ){
 						int idx = i*(W[i].size()*W[i][j].m*W[i][j].n) +

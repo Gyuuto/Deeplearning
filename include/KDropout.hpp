@@ -116,7 +116,7 @@ std::vector<KDropout::Mat> KDropout::calc_delta ( const std::vector<Mat>& U, con
 			auto U_diff = (*prev_func)(U[i], true);
 			nx_delta[i] = Mat(num_unit, delta[i].n);
 
-#pragma omp for schedule(auto) nowait
+#pragma omp for nowait
 			for( int j = 0; j < my_size; ++j ){
 				for( int k = 0; k < delta[i].n; ++k )
 					nx_delta[i](my_offset+j, k) = delta[i](my_offset + j, k) * U_diff(my_offset + j, k) * mask(j,i);
@@ -187,7 +187,7 @@ std::vector<KDropout::Mat> KDropout::apply ( const std::vector<Mat>& U, bool use
 		for( int i = 0; i < prev_num_map; ++i ){
 			ret[i] = Mat(num_unit, U[i].n);
 			tmp_ret[i] = Mat(my_size, U[i].n);
-#pragma omp for schedule(auto) nowait
+#pragma omp for nowait
 			for( int j = 0; j < my_size; ++j ){
 				for( int k = 0; k < U[i].n; ++k ){
 					tmp_ret[i](j,k) = U[i](my_offset+j,k)*mask(my_offset+j,i);

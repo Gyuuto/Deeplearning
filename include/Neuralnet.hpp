@@ -166,8 +166,8 @@ void Neuralnet::check_gradient ( int cnt, const std::vector<int>& idx, const std
 #endif
 		for( int j = 0; j < std::min(2, J); ++j ){ // num_map
 			for( int k = 0; k < std::min(2, K); ++k ){ // prev_num_map
-				for( int l = 0; l < std::min(2, L); ++l ){
-					for( int m = 0; m < std::min(2, M); ++m ){
+				for( int l = 0; l < std::min(4, L); ++l ){
+					for( int m = 0; m < std::min(4, M); ++m ){
 						double tmp;
 						if( layer[i]->get_num_map() != 1 || rank == target_rank ) tmp = 1.0E-6*(std::abs(W[j][k](l,m)) < 1.0E-3 ? 1.0 : std::abs(W[j][k](l,m)));
 
@@ -180,7 +180,7 @@ void Neuralnet::check_gradient ( int cnt, const std::vector<int>& idx, const std
 						for( int n = 0; n < Y.size(); ++n ) E1 += (*loss)(tmp1[n], tmp_Y[n], false)(0, 0);
 
 						if( layer[i]->get_num_map() != 1 || rank == target_rank ){
-							W[j][k](l,m) -= tmp;
+							W[j][k](l,m) -= 2*tmp;
 							layer[i]->set_W(W);
 						}
 						double E2 = 0.0;
@@ -374,13 +374,13 @@ void Neuralnet::learning ( const std::vector<Mat>& X, const std::vector<Mat>& Y,
 #pragma omp parallel
 		{
 			for( int i = 0; i < X.size(); ++i )
-#pragma omp for schedule(auto) nowait
+#pragma omp for nowait
 				for( int j = 0; j < U[0][i].m; ++j )
 					for( int k = 0; k < BATCH_SIZE; ++k )
 						U[0][i](j,k) = X[i](j, idx[(cnt+k)%num_data]);
 		
 			for( int i = 0; i < Y.size(); ++i )
-#pragma omp for schedule(auto) nowait
+#pragma omp for nowait
 				for( int j = 0; j < D[i].m; ++j )
 					for( int k = 0; k < BATCH_SIZE; ++k )
 						D[i](j,k) = Y[i](j, idx[(cnt+k)%num_data]);
@@ -462,16 +462,17 @@ void Neuralnet::learning ( const std::vector<Mat>& X, const std::vector<Mat>& Y,
 					// L2 norm regularization
 					for( int j = 0; j < W.size(); ++j )
 						for( int k = 0; k < W[j].size(); ++k )
-#pragma omp for schedule(auto) nowait
+#pragma omp for nowait
 							for( int l = 0; l < W[j][k].m; ++l )
 								for( int m = 1; m < W[j][k].n; ++m )
 									nabla_w[i][j][k](l,m) += LAMBDA*W[j][k](l,m);
 				}
 
+#pragma omp barrier
 				// ADAM
 				for( int j = 0; j < nabla_w[i].size(); ++j )
 					for( int k = 0; k < nabla_w[i][j].size(); ++k )
-#pragma omp for schedule(auto) nowait
+#pragma omp for nowait
 						for( int l = 0; l < nabla_w[i][j][k].m; ++l )
 							for( int m = 0; m < nabla_w[i][j][k].n; ++m ){
 								adam_v[i][j][k](l,m) = adam_beta*adam_v[i][j][k](l,m) + (1.0 - adam_beta)*nabla_w[i][j][k](l,m);
@@ -479,10 +480,9 @@ void Neuralnet::learning ( const std::vector<Mat>& X, const std::vector<Mat>& Y,
 							}
 
 #pragma omp barrier
-				
 				for( int j = 0; j < W.size(); ++j )
 					for( int k = 0; k < W[j].size(); ++k ){
-#pragma omp for schedule(auto) nowait
+#pragma omp for nowait
 						for( int l = 0; l < update_W[j][k].m; ++l )
 							for( int m = 0; m < update_W[j][k].n; ++m ){
 								auto v_hat = adam_v[i][j][k](l,m) / (1.0 - adam_beta_);
@@ -491,6 +491,7 @@ void Neuralnet::learning ( const std::vector<Mat>& X, const std::vector<Mat>& Y,
 							}
 					}
 			}
+
 			layer[i]->update_W(update_W);
 		}
 #ifdef DEBUG
@@ -511,6 +512,7 @@ void Neuralnet::learning ( const std::vector<Mat>& X, const std::vector<Mat>& Y,
 		end = std::chrono::system_clock::now();
 		if( myrank == 0 ) printf("Averaging : %3lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
 #endif
+
 		each_func(*this, n+1, U[0], D);
 	}
 
@@ -527,15 +529,7 @@ std::vector<Neuralnet::Mat> Neuralnet::apply ( const std::vector<Mat>& X ) const
 		U = layer[i]->apply(U);
 	}
 
-	std::vector<Mat> ret(U.size());
-	for( int i = 0; i < U.size(); ++i ){
-		ret[i] = Mat(U[i].m, U[i].n);
-		for( int j = 0; j < U[i].m; ++j )
-			for( int k = 0; k < U[i].n; ++k )
-				ret[i](j,k) = U[i](j,k);
-	}
-	
-	return ret;
+	return U;
 }
 
 std::vector<std::vector<Neuralnet::Vec>> Neuralnet::apply ( const std::vector<std::vector<Vec>>& x ) const
@@ -563,14 +557,14 @@ std::vector<std::vector<Neuralnet::Vec>> Neuralnet::apply ( const std::vector<st
 void Neuralnet::set_W ( const std::string& filename )
 {
 	for( int i = 0; i < layer.size(); ++i ){
-		layer[i]->set_W("layer_" + std::to_string(i) + "_" + filename);
+		layer[i]->set_W(filename + "_layer_" + std::to_string(i));
 	}
 }
 
 void Neuralnet::output_W ( const std::string& filename ) const
 {
 	for( int i = 0; i < layer.size(); ++i ){
-		layer[i]->output_W("layer_" + std::to_string(i) + "_" + filename);
+		layer[i]->output_W(filename + "_layer_" + std::to_string(i));
 	}
 }
 

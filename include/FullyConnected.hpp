@@ -131,14 +131,14 @@ std::vector<std::vector<FullyConnected::Mat>> FullyConnected::calc_gradient ( co
 			beg = std::chrono::system_clock::now();
 #pragma omp parallel
 			{
-#pragma omp for schedule(auto) nowait
+#pragma omp for nowait
 				for( int l = 0; l < U_.n; ++l ) V(0,l) = (is_use_bias ? 1.0 : 0.0);
-#pragma omp for schedule(auto) nowait
+#pragma omp for nowait
 				for( int k = 0; k < U_.m; ++k ){
 					for( int l = 0; l < U_.n; ++l ) V(k+1,l) = U_(k, l);
 				}
 			
-#pragma omp for schedule(auto) nowait
+#pragma omp for nowait
 				for( int k = 0; k < tmp_delta.m; ++k )
 					for( int l = 0; l < delta[i].n; ++l )
 						tmp_delta(k,l) = delta[i](k + offset,l);
@@ -174,7 +174,7 @@ std::vector<FullyConnected::Mat> FullyConnected::calc_delta ( const std::vector<
 #pragma omp parallel
 	{
 		for( int i = 0; i < num_map; ++i ){
-#pragma omp for schedule(auto) nowait
+#pragma omp for nowait
 			for( int j = 0; j < W[0][0].m; ++j ){
 				for( int k = 0; k < delta[i].n; ++k )
 					tmp_delta[i](j, k) = delta[i](offset + j, k);
@@ -217,7 +217,7 @@ std::vector<FullyConnected::Mat> FullyConnected::calc_delta ( const std::vector<
 		t_delta_comm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 #endif
 
-#pragma omp parallel for schedule(auto)
+#pragma omp parallel for
 		for( int j = 0; j < tmp[i].m-1; ++j )
 			for( int k = 0; k < tmp[i].n; ++k )
 				V(j,k) = tmp[i](j+1,k);
@@ -253,9 +253,9 @@ std::vector<FullyConnected::Mat> FullyConnected::apply ( const std::vector<Mat>&
 #pragma omp parallel
 	{
 		for( int i = 0; i < prev_num_map; ++i ){
-#pragma omp for schedule(auto) nowait
+#pragma omp for nowait
 			for( int j = 0; j < U[i].n; ++j ) V[i](0,j) = (is_use_bias ? 1.0 : 0.0); // for bias
-#pragma omp for schedule(auto) nowait
+#pragma omp for nowait
 			for( int j = 0; j < U[i].m; ++j ){
 				for( int k = 0; k < U[i].n; ++k )
 					V[i](j+1,k) = U[i](j,k);
@@ -333,7 +333,7 @@ std::vector<std::vector<FullyConnected::Vec>> FullyConnected::apply ( const std:
 #pragma omp parallel
 	{
 		for( int i = 0; i < prev_num_map; ++i )
-#pragma omp for schedule(auto) nowait
+#pragma omp for nowait
 			for( int j = 0; j < u[i][0].size(); ++j )
 				for( int k = 0; k < u.size(); ++k )
 					tmp[i](j,k) = u[k][i][j];
@@ -341,7 +341,7 @@ std::vector<std::vector<FullyConnected::Vec>> FullyConnected::apply ( const std:
 	
 	auto U = apply(tmp, use_func);
 	std::vector<std::vector<Vec>> ret(U[0].n, std::vector<Vec>(U.size(), Vec(U[0].m)));
-#pragma omp parallel for schedule(auto)
+#pragma omp parallel for
 	for( int i = 0; i < U[0].n; ++i ){
 		for( int j = 0; j < U.size(); ++j )
 			for( int k = 0; k < U[0].m; ++k )
@@ -456,7 +456,7 @@ void FullyConnected::param_mix ()
 	{
 		for( int i = 0; i < W.size(); ++i )
 			for( int j = 0; j < W[i].size(); ++j )
-#pragma omp for schedule(auto) nowait
+#pragma omp for nowait
 				for( int k = 0; k < W[i][j].m; ++k )
 					for( int l = 0; l < W[i][j].n; ++l ){
 						int idx = i*(W[i].size()*W[i][j].m*W[i][j].n) + j*(W[i][j].m*W[i][j].n) + k*W[i][j].n + l;
@@ -470,7 +470,7 @@ void FullyConnected::param_mix ()
 	{
 		for( int i = 0; i < W.size(); ++i )
 			for( int j = 0; j < W[i].size(); ++j )
-#pragma omp for schedule(auto) nowait
+#pragma omp for nowait
 				for( int k = 0; k < W[i][j].m; ++k )
 					for( int l = 0; l < W[i][j].n; ++l ){
 						int idx = i*(W[i].size()*W[i][j].m*W[i][j].n) + j*(W[i][j].m*W[i][j].n) + k*W[i][j].n + l;

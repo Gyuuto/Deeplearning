@@ -27,7 +27,7 @@ struct tMatrix
 	{
 		Matrix<T> ret(mat->n, mat->m);
 
-#pragma omp parallel for schedule(auto)
+#pragma omp parallel for
 		for( int i = 0; i < mat->m; ++i )
 			for( int j = 0; j < mat->n; ++j )
 				ret(i, j) = (*mat)(j, i);
