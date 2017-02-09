@@ -21,7 +21,7 @@ private:
 public:
 	Convolutional( int prev_num_map, int prev_num_unit, int prev_ldu,
 				   int num_map, int num_unit, int ldu,
-				   int m, int n, int stride, 
+				   int m, int n, int stride, int pad,
 				   const std::shared_ptr<Function<Real>>& f, bool use_bias = true );
 	~Convolutional ();
 
@@ -64,7 +64,7 @@ public:
 template<template<typename> class Mat, typename Real>
 Convolutional<Mat, Real>::Convolutional( int prev_num_map, int prev_num_unit, int prev_ldu,
 										 int num_map, int num_unit, int ldu,
-										 int m, int n, int stride, 
+										 int m, int n, int stride, int pad,
 										 const std::shared_ptr<Function<Real>>& f, bool use_bias )
 {
 	this->once_num = 1;
@@ -84,7 +84,7 @@ Convolutional<Mat, Real>::Convolutional( int prev_num_map, int prev_num_unit, in
 	this->t_delta_init = this->t_delta_gemm = this->t_delta_repl = this->t_delta_comm = 0.0;
 	this->t_grad_init = this->t_grad_gemm = this->t_grad_repl = this->t_grad_comm = 0.0;
 
-	this->m = m; this->n = n; this->stride = stride; this->pad = m/2;
+	this->m = m; this->n = n; this->stride = stride; this->pad = pad;
 
 	int rank = 0;
 #ifdef USE_MPI
@@ -873,7 +873,7 @@ clMatrix<Real> Convolutional<Mat, Real>::apply ( const clMatrix<Real>& U, bool u
 	my_size = size[rank] / this->num_map;
 #endif
 	cl_int err;
-	cl_mem cl_i, cl_j, cl_k;
+	cl_mem cl_i, cl_k;
 	cl_i = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
 	cl_k = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
 
@@ -896,7 +896,7 @@ clMatrix<Real> Convolutional<Mat, Real>::apply ( const clMatrix<Real>& U, bool u
 		cl_device_manager.set_argument( PRG::CONV_APPLY_IMG_SET, 5, &cl_i );
 		cl_device_manager.set_argument( PRG::CONV_APPLY_IMG_SET, 6, &cl_filter_size );
 		cl_device_manager.set_argument( PRG::CONV_APPLY_IMG_SET, 7, &cl_feed_idx );
-		cl_device_manager.run_kernel( PRG::CONV_APPLY_IMG_SET, this->prev_num_map*m*n, my_size, size );
+		cl_device_manager.run_kernel( PRG::CONV_APPLY_IMG_SET, this->prev_num_map*m*n, size, my_size );
 		auto end = std::chrono::system_clock::now();
 		this->t_apply_repl += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
@@ -973,7 +973,7 @@ clMatrix<Real> Convolutional<Mat, Real>::apply ( const clMatrix<Real>& U, bool u
 		cl_device_manager.set_argument( PRG::CONV_APPLY_RET_SET, 3, &tmp_img[k].N );
 		cl_device_manager.set_argument( PRG::CONV_APPLY_RET_SET, 4, &cl_k );
 		cl_device_manager.set_argument( PRG::CONV_APPLY_RET_SET, 5, &cl_i );
-		cl_device_manager.run_kernel( PRG::CONV_APPLY_RET_SET, once_num, this->num_unit, this->num_map );
+		cl_device_manager.run_kernel( PRG::CONV_APPLY_RET_SET, once_num, this->num_map, this->num_unit );
 	}
 	end = std::chrono::system_clock::now();
 	this->t_apply_repl += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
