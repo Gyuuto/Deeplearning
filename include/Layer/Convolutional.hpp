@@ -341,14 +341,6 @@ std::pair<std::vector<clMatrix<Real>>, std::vector<clMatrix<Real>>> Convolutiona
 		cl_device_manager.set_argument( PRG::CONV_GRAD_IMG_SET, 7, &cl_l_idx );
 		cl_device_manager.set_argument( PRG::CONV_GRAD_IMG_SET, 8, &cl_feed_idx );
 		cl_device_manager.run_kernel( PRG::CONV_GRAD_IMG_SET, size, my_size, this->prev_num_map*m*n );
-// 		for( int l = 0; l < size; ++l )
-// #pragma omp for nowait
-// 			for( int k = 0; k < this->prev_num_map; ++k )
-// 				for( int j = l_idx; j < r_idx; ++j )
-// 					for( int s = 0; s < m*n; ++s )
-// 						if( feed_idx[j*m*n + s] != -1 ){
-// 							U_mat(k*m*n + s, (j-l_idx) + l*my_size) = U_(k*this->prev_num_unit + feed_idx[j*m*n + s], l+i);
-// 						}
 
 		cl_device_manager.set_argument( PRG::CONV_GRAD_DELTA_SET, 0, &delta_mat.v );
 		cl_device_manager.set_argument( PRG::CONV_GRAD_DELTA_SET, 1, &delta_mat.N );

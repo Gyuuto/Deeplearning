@@ -1,21 +1,15 @@
-__kernel void bn_grad_helper ( __global float* y, __global int* ld_y,
-							   __global float* x, __global int* ld_x,
-							   __local float* partial_sum )
+__kernel void bn_grad_helper ( __global float* tmp_nabla1, __global int* ld_na1,
+							   __global float* tmp_nabla2, __global int* ld_na2,
+							   __global float* delta, __global float* U_apply,
+							   __global int* num_unit, __global int* ld_U,
+							   __global float* mean, __global int* ld_mean,
+							   __global float* var, __global int* ld_var,
+							   __global float* EPS )
 {
-	int gid1 = get_global_id(0), gid2 = get_global_id(1);
-	int lid = get_local_id(0), lid_size = get_local_size(0);
+	int j = get_global_id(0) / *ld_U, i = get_global_id(1), k = get_global_id(0) % *ld_U;
 
-	partial_sum[lid] = x[gid2* *ld_y + gid1];
-	barrier(CLK_LOCAL_MEM_FENCE);
+	tmp_nabla1[(k* *num_unit + j)* *ld_na1 + i] =
+		delta[(i* *num_unit + j)* *ld_U + k]*(U_apply[(i* *num_unit + j)* *ld_U + k] - mean[i* *ld_mean + j])/sqrt(var[i* *ld_var + j] + *EPS);
 
-	int offset1 = 1, offset2 = 2;
-	for( int i = lid_size; i > 0; i >>= 1 ){
-		if( lid%offset2 == 0 && lid+offset1 < lid_size ){
-			partial_sum[lid] += partial_sum[lid+offset1];
-		}
-		barrier(CLK_LOCAL_MEM_FENCE);
-		offset1 <<= 1; offset2 <<= 1;
-	}
-
-	if( lid == 0 ) y[gid2* *ld_y + get_group_id(0)] = partial_sum[0];
+	tmp_nabla2[(k* *num_unit + j)* *ld_na1 + i] = delta[(i* *num_unit + j)* *ld_U + k];
 }

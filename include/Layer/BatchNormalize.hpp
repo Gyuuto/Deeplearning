@@ -214,42 +214,39 @@ std::pair<std::vector<clMatrix<Real>>, std::vector<clMatrix<Real>>> BatchNormali
 #endif
 	std::vector<clMatrix<Real>> nabla_W(1, clMatrix<Real>(1, this->num_map));
 	std::vector<clMatrix<Real>> nabla_b(1, clMatrix<Real>(1, this->num_map));
-	clMatrix<Real> tmp_nabla1 = clMatrix<Real>::zeros(this->num_map, cl_device_manager.get_max_work_group());
-	clMatrix<Real> tmp_nabla2 = clMatrix<Real>::zeros(this->num_map, cl_device_manager.get_max_work_group());
+	clMatrix<Real> tmp_nabla1 = clMatrix<Real>::zeros(U.n*my_size, this->num_map);
+	clMatrix<Real> tmp_nabla2 = clMatrix<Real>::zeros(U.n*my_size, this->num_map);
 	auto end = std::chrono::system_clock::now();
 	this->t_grad_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
 	auto U_apply = (*this->prev_func)(U, false);
-	
-	cl_device_manager.set_argument( PRG::BN_GRAD, 0, &tmp_nabla1.v );
-	cl_device_manager.set_argument( PRG::BN_GRAD, 1, &tmp_nabla1.N );
-	cl_device_manager.set_argument( PRG::BN_GRAD, 2, &tmp_nabla2.v );
-	cl_device_manager.set_argument( PRG::BN_GRAD, 3, &tmp_nabla2.N );
-	cl_device_manager.set_argument( PRG::BN_GRAD, 4, &delta.v );
-	cl_device_manager.set_argument( PRG::BN_GRAD, 5, &U_apply.v );
-	cl_device_manager.set_argument( PRG::BN_GRAD, 6, &cl_num_unit );
-	cl_device_manager.set_argument( PRG::BN_GRAD, 7, &U.N );
-	cl_device_manager.set_argument( PRG::BN_GRAD, 8, &mean.v );
-	cl_device_manager.set_argument( PRG::BN_GRAD, 9, &mean.N );
-	cl_device_manager.set_argument( PRG::BN_GRAD, 10, &var.v );
-	cl_device_manager.set_argument( PRG::BN_GRAD, 11, &var.N );
-	cl_device_manager.set_argument( PRG::BN_GRAD, 12, &cl_EPS );
-	cl_device_manager.set_argument( PRG::BN_GRAD, 13, cl_device_manager.get_max_work_item(0)*sizeof(Real) );
-	cl_device_manager.run_kernel( PRG::BN_GRAD, my_size*U.n, this->num_map );
 
-	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 0, &nabla_W[0].v );
-	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 1, &nabla_W[0].N );
-	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 2, &tmp_nabla1.v );
-	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 3, &tmp_nabla1.N );
-	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 4, cl_device_manager.get_max_work_item(0)*sizeof(Real) );
-	cl_device_manager.run_kernel( PRG::BN_GRAD_HELPER, my_size, this->num_map );
-
-	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 0, &nabla_b[0].v );
-	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 1, &nabla_b[0].N );
+	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 0, &tmp_nabla1.v );
+	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 1, &tmp_nabla1.N );
 	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 2, &tmp_nabla2.v );
 	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 3, &tmp_nabla2.N );
-	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 4, cl_device_manager.get_max_work_item(0)*sizeof(Real) );
-	cl_device_manager.run_kernel( PRG::BN_GRAD_HELPER, my_size, this->num_map );
+	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 4, &delta.v );
+	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 5, &U_apply.v );
+	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 6, &cl_num_unit );
+	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 7, &U.N );
+	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 8, &mean.v );
+	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 9, &mean.N );
+	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 10, &var.v );
+	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 11, &var.N );
+	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 12, &cl_EPS );
+	cl_device_manager.run_kernel( PRG::BN_GRAD_HELPER, my_size*U.n, this->num_map );
+
+	for( int i = my_size*U.n; i > 0; i /= cl_device_manager.get_max_work_item(0) ){
+		cl_device_manager.set_argument( PRG::BN_GRAD, 0, &tmp_nabla1.v );
+		cl_device_manager.set_argument( PRG::BN_GRAD, 1, &tmp_nabla1.N );
+		cl_device_manager.set_argument( PRG::BN_GRAD, 2, &tmp_nabla2.v );
+		cl_device_manager.set_argument( PRG::BN_GRAD, 3, &tmp_nabla2.N );
+		cl_device_manager.set_argument( PRG::BN_GRAD, 4, cl_device_manager.get_max_work_item(0)*sizeof(Real) );
+		cl_device_manager.run_kernel( PRG::BN_GRAD, i, this->num_map );
+	}
+
+	nabla_W[0].sub(0, 0, 1, this->num_map, tmp_nabla1);
+	nabla_b[0].sub(0, 0, 1, this->num_map, tmp_nabla2);
 	
 #ifdef USE_MPI
 	MPI_Allreduce(MPI_IN_PLACE, &nabla_W[0](0,0), this->num_map, get_typecount(nabla_W[0](0,0)).mpi_type, MPI_SUM, this->inner_world);
@@ -415,33 +412,6 @@ clMatrix<Real> BatchNormalize<Mat, Real>::calc_delta ( const clMatrix<Real>& U, 
 	cl_device_manager.set_argument( PRG::BN_DELTA, 11, &this->W[0].v );
 	cl_device_manager.set_argument( PRG::BN_DELTA, 12, &cl_EPS );
 	cl_device_manager.run_kernel( PRG::BN_DELTA, U.n, my_size, this->num_map );
-// do it opencl
-// 	for( int i = 0; i < this->num_map; ++i ){
-// 		auto beg = std::chrono::system_clock::now();
-		
-// #pragma omp parallel for 
-// 		for( int j = 0; j < my_size; ++j )
-// 			for( int k = 0; k < U.n; ++k ){
-// 				Real tmp1 = 0.0, tmp2 = 0.0;
-// 				for( int l = 0; l < U.n; ++l ){
-// 					tmp1 += delta(i*this->num_unit + my_offset+j,l);
-// 					tmp2 += delta(i*this->num_unit + my_offset+j,l)*(U_appl(i*this->prev_num_unit + my_offset+j,l) - mean(i,j));
-// 				}
-// 				tmp1 /= U.n; tmp2 /= U.n;
-
-// #ifdef USE_MPI
-// 				tmp_nx_delta(i*my_size + j,k) = W[0](0,i)/sqrt(var(i,j) + EPS)*delta(i*this->num_unit + my_offset+j,k)*U_diff(i*this->prev_num_unit + my_offset+j,k)
-// 					- W[0](0,i)/sqrt(var(i,j) + EPS)*U_diff(i*this->prev_num_unit + my_offset+j,k)*tmp1
-// 					- W[0](0,i)/pow(var(i,j) + EPS, 1.5)*U_diff(i*this->prev_num_unit + my_offset+j,k)*(U_appl(i*this->prev_num_unit + my_offset+j,k) - mean(i,j))*tmp2;
-// #else
-// 				nx_delta(i*this->prev_num_unit + j,k) = W[0](0,i)/sqrt(var(i,j) + EPS)*delta(i*this->num_unit + my_offset+j,k)*U_diff(i*this->prev_num_unit + j,k)
-// 					- W[0](0,i)/sqrt(var(i,j) + EPS)*U_diff(i*this->prev_num_unit + j,k)*tmp1
-// 					- W[0](0,i)/pow(var(i,j) + EPS, 1.5)*U_diff(i*this->prev_num_unit + j,k)*(U_appl(i*this->prev_num_unit + j,k) - mean(i,j))*tmp2;
-// #endif
-// 			}
-// 		auto end = std::chrono::system_clock::now();
-// 		t_delta_gemm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
-// 	}
 
 	beg = std::chrono::system_clock::now();
 #ifdef USE_MPI

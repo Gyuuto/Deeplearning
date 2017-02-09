@@ -282,7 +282,7 @@ void Neuralnet<Mat, Real>::check_gradient ( int cnt, const std::vector<int>& idx
 	cl_device_manager.set_argument( PRG::ASSIGN_DATA, 4, &cl_N );
 	cl_device_manager.run_kernel( PRG::ASSIGN_DATA, tmp_Y.m, tmp_Y.n );
 
-	const double delta_x = 1.0E-3;
+	const double delta_x = 1.0E-4;
 	
 	// Calculate gradient numerically for confirmation of computing
 	for( int i = 0; i < num_layer; ++i ){

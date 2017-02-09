@@ -546,22 +546,17 @@ public:
 			return y;
 		}
 		else{
-			clMatrix<T> y(1,1);
-			clMatrix<T> y_ = clMatrix<float>::zeros(cl_device_manager.get_max_work_group(),1);
+			clMatrix<T> y = x - d;
 
-			cl_device_manager.set_argument( PRG::FUNC_SQUARE, 0, &y_.v );
-			cl_device_manager.set_argument( PRG::FUNC_SQUARE, 1, &x.v );
-			cl_device_manager.set_argument( PRG::FUNC_SQUARE, 2, &d.v );
-			cl_device_manager.set_argument( PRG::FUNC_SQUARE, 3, cl_device_manager.get_max_work_item(0)*sizeof(T) );
-			cl_device_manager.run_kernel( PRG::FUNC_SQUARE, x.m*x.n, 1 );
+			y = clMatrix<T>::hadamard(y, y);
+			
+			for( int i = x.m*x.n; i > 0; i /= cl_device_manager.get_max_work_item(0) ){
+				cl_device_manager.set_argument( PRG::FUNC_SQUARE, 0, &y.v );
+				cl_device_manager.set_argument( PRG::FUNC_SQUARE, 1, cl_device_manager.get_max_work_item(0)*sizeof(T) );
+				cl_device_manager.run_kernel( PRG::FUNC_SQUARE, i, 1 );
+			}
 
-			auto y_mat = y_.get_matrix();
-			T sum = 0.0;
-#pragma omp parallel for schedule(auto) reduction(+:sum)
-			for( int i = 0; i < y_mat.m; ++i ) sum += y_mat(i,0);
-			y.set_element(0,0, sum);
-
-			return y;
+			return y.sub(0, 0, 1, 1);
 		}
 	}
 #endif
@@ -605,22 +600,22 @@ public:
 			return y;
 		}
 		else{
-			clMatrix<T> y(1,1);
-			clMatrix<T> y_ = clMatrix<T>::zeros(cl_device_manager.get_max_work_group(),1);
+			clMatrix<T> y(x.m, x.n);
 
-			cl_device_manager.set_argument( PRG::FUNC_CROSSENTROPY, 0, &y_.v );
+			cl_device_manager.set_argument( PRG::FUNC_CROSSENTROPY, 0, &y.v );
 			cl_device_manager.set_argument( PRG::FUNC_CROSSENTROPY, 1, &x.v );
 			cl_device_manager.set_argument( PRG::FUNC_CROSSENTROPY, 2, &d.v );
-			cl_device_manager.set_argument( PRG::FUNC_CROSSENTROPY, 3, cl_device_manager.get_max_work_item(0)*sizeof(T) );
 			cl_device_manager.run_kernel( PRG::FUNC_CROSSENTROPY, x.m*x.n, 1 );
-			
-			auto y_mat = y_.get_matrix();
-			T sum = 0.0;
-#pragma omp parallel for schedule(auto) reduction(+:sum)
-			for( int i = 0; i < y_mat.m; ++i ) sum += y_mat(i,0);
-			y.set_element(0,0,-2.0*sum);
 
-			return y;
+			for( int i = x.m*x.n; i > 0; i /= cl_device_manager.get_max_work_item(0) ){
+				cl_device_manager.set_argument( PRG::FUNC_SQUARE, 0, &y.v );
+				cl_device_manager.set_argument( PRG::FUNC_SQUARE, 1, cl_device_manager.get_max_work_item(0)*sizeof(T) );
+				cl_device_manager.run_kernel( PRG::FUNC_SQUARE, i, 1 );
+			}
+			
+			clMatrix<T> ret = -2.0*y.sub(0, 0, 1, 1);
+
+			return ret;
 		}
 	}
 #endif
