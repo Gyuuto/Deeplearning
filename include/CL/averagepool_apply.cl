@@ -1,3 +1,8 @@
+#ifndef OCL_EXTERNAL_INCLUDE
+#define OCL_EXTERNAL_INCLUDE(...) __VA_ARGS__
+#endif
+
+OCL_EXTERNAL_INCLUDE(
 __kernel void averagepool_apply ( __global float* ret, __global int* num_unit, __global int* ld_d,
 								  __global float* U, __global int* prev_num_unit, __global int* ld_u,
 								  __global int* prev_ldu, __global int* ldu,
@@ -26,3 +31,4 @@ __kernel void averagepool_apply ( __global float* ret, __global int* num_unit, _
 	
 	ret[(i* *num_unit + j)* *ld_d + k] = val / (*m * *n);
 }
+)

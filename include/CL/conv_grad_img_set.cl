@@ -1,3 +1,8 @@
+#ifndef OCL_EXTERNAL_INCLUDE
+#define OCL_EXTERNAL_INCLUDE(...) __VA_ARGS__
+#endif
+
+OCL_EXTERNAL_INCLUDE(
 __kernel void conv_grad_img_set ( __global float* U_mat, __global int* ld_Umat,
 								   __global float* U_, __global int* nrows, __global int* ldu,
 								   __global int* i, __global int* mn, __global int* l_idx,
@@ -16,3 +21,4 @@ __kernel void conv_grad_img_set ( __global float* U_mat, __global int* ld_Umat,
 		U_mat[kst* *ld_Umat + (j - *l_idx) + l*my_size] = 0.0;
 	}
 }
+)

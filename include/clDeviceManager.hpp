@@ -105,6 +105,122 @@ const static std::string PRG_NAME[] = {
 	"mult_vector_matrix"
 };
 
+#define OCL_EXTERNAL_INCLUDE(...) #__VA_ARGS__
+
+const static std::string PRG_SOURCE[] = {
+#include "CL/clMatrix_eye.cl"
+	,
+#include "CL/clMatrix_ones.cl"
+	,
+#include "CL/clMatrix_zeros.cl"
+	,
+#include "CL/clMatrix_hadamard.cl"
+	,
+#include "CL/clMatrix_sum.cl"
+	,
+#include "CL/clMatrix_sub.cl"
+	,
+#include "CL/clMatrix_sub_in.cl"
+	,
+#include "CL/function_ReLU_diff.cl"
+	,
+#include "CL/function_ReLU.cl"
+	,
+#include "CL/function_Sigmoid_diff.cl"
+	,
+#include "CL/function_Sigmoid.cl"
+	,
+#include "CL/function_Tanh_diff.cl"
+	,
+#include "CL/function_Tanh.cl"
+	,
+#include "CL/function_Softsign_diff.cl"
+	,
+#include "CL/function_Softsign.cl"
+	,
+#include "CL/function_Softplus_diff.cl"
+	,
+#include "CL/function_Softplus.cl"
+	,
+#include "CL/function_Polynomial_diff.cl"
+	,
+#include "CL/function_Polynomial.cl"
+	,
+#include "CL/function_TruncatedPower_diff.cl"
+	,
+#include "CL/function_TruncatedPower.cl"
+	,
+#include "CL/function_Abs_diff.cl"
+	,
+#include "CL/function_Abs.cl"
+	,
+#include "CL/function_Softmax_helper.cl"
+	,
+#include "CL/function_Softmax.cl"
+	,
+#include "CL/function_Square_diff.cl"
+	,
+#include "CL/function_Square.cl"
+	,
+#include "CL/function_CrossEntropy.cl"
+	,
+#include "CL/full_apply_init.cl"
+	,
+#include "CL/full_delta_init.cl"
+	,
+#include "CL/conv_apply_img_set.cl"
+	,
+#include "CL/conv_apply_ret_set.cl"
+	,
+#include "CL/conv_apply_add_bias.cl"
+	,
+#include "CL/conv_delta_kernel_set.cl"
+	,
+#include "CL/conv_delta_img_set.cl"
+	,
+#include "CL/conv_grad_delta_set.cl"
+	,
+#include "CL/conv_grad_img_set.cl"
+	,
+#include "CL/conv_grad_bias_helper.cl"
+	,
+#include "CL/conv_grad_bias.cl"
+	,
+#include "CL/conv_grad_bias_final_reduce.cl"
+	,
+#include "CL/maxpool_delta.cl"
+	,
+#include "CL/maxpool_apply.cl"
+	,
+#include "CL/averagepool_delta.cl"
+	,
+#include "CL/averagepool_apply.cl"
+	,
+#include "CL/bn_grad.cl"
+	,
+#include "CL/bn_grad_helper.cl"
+	,
+#include "CL/bn_grad_final_reduce.cl"
+	,
+#include "CL/bn_delta.cl"
+	,
+#include "CL/bn_apply_mean_var.cl"
+	,
+#include "CL/bn_apply.cl"
+	,
+#include "CL/assign_data.cl"
+	,
+#include "CL/add_L2_regular.cl"
+	,
+#include "CL/adam.cl"
+	,
+#include "CL/add_vector_matrix.cl"
+	,
+#include "CL/add_scalar_matrix.cl"
+	,
+#include "CL/mult_vector_matrix.cl"
+};
+
 class clDeviceManager
 {
 private:
@@ -142,7 +258,7 @@ public:
 
 int clDeviceManager::build_program ( const int idx )
 {
-	std::string source = read_program(PRG_NAME[idx]);
+	std::string source = PRG_SOURCE[idx];//read_program(PRG_NAME[idx]);
 	const char* c_source = source.data();
 	size_t source_size = source.size();
 	cl_int err;
@@ -161,11 +277,16 @@ int clDeviceManager::build_program ( const int idx )
 
 std::string clDeviceManager::read_program ( const std::string& filename )
 {
-	const std::string FILE_HEADER = "../include/CL/";
-	std::string fn = FILE_HEADER + filename + ".cl";
+	std::string fn = filename;
 	std::ifstream ifs(fn);
 	std::string ret = "";
 
+	if( !ifs ){
+		printf("Can not open \"%s\"!", fn.c_str());
+		fflush(stdout);
+		exit(1);
+	}
+	
 	while( !ifs.eof() ){
 		std::string buf;
 		getline(ifs, buf);

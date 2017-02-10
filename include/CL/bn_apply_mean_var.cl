@@ -1,3 +1,8 @@
+#ifndef OCL_EXTERNAL_INCLUDE
+#define OCL_EXTERNAL_INCLUDE(...) __VA_ARGS__
+#endif
+
+OCL_EXTERNAL_INCLUDE(
 __kernel void bn_apply_mean_var ( __global float* mean, __global int* ld_mean,
 								  __global float* var, __global int* ld_var,
 								  __global float* U, __global int* prev_num_unit, __global int* ld_U )
@@ -17,3 +22,4 @@ __kernel void bn_apply_mean_var ( __global float* mean, __global int* ld_mean,
 	}
 	var[i* *ld_mean + j] /= *ld_U;
 }
+)

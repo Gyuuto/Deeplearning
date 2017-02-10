@@ -1,3 +1,8 @@
+#ifndef OCL_EXTERNAL_INCLUDE
+#define OCL_EXTERNAL_INCLUDE(...) __VA_ARGS__
+#endif
+
+OCL_EXTERNAL_INCLUDE(
 __kernel void maxpool_delta ( __global float* nx_delta, __global int* nrows_d, __global int* ld_d,
 							  __global float* U_apply, __global float* U_diff,
 							  __global float* delta, __global int* nrows_u, __global int* ld_u,
@@ -31,3 +36,4 @@ __kernel void maxpool_delta ( __global float* nx_delta, __global int* nrows_d, _
 	
 	nx_delta[(i* *nrows_d + max_idx)* *ld_d + k] = delta[(i* *nrows_u + j)* *ld_u + k] * U_diff[(i* *nrows_d + max_idx)* *ld_d + k];
 }
+)

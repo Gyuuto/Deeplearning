@@ -1,3 +1,8 @@
+#ifndef OCL_EXTERNAL_INCLUDE
+#define OCL_EXTERNAL_INCLUDE(...) __VA_ARGS__
+#endif
+
+OCL_EXTERNAL_INCLUDE(
 __kernel void clMatrix_sub_in ( __global float* y, __global int* ld_y,
 								__global float* x, __global int* ld_x,
 								__global int* sx, __global int* sy )
@@ -6,3 +11,4 @@ __kernel void clMatrix_sub_in ( __global float* y, __global int* ld_y,
 
 	y[(*sy + gid1) * *ld_y + gid2 + *sx] = x[gid1 * *ld_x + gid2];
 }
+)

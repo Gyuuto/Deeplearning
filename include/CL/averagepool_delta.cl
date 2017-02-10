@@ -1,3 +1,8 @@
+#ifndef OCL_EXTERNAL_INCLUDE
+#define OCL_EXTERNAL_INCLUDE(...) __VA_ARGS__
+#endif
+
+OCL_EXTERNAL_INCLUDE(
 __kernel void averagepool_delta ( __global float* nx_delta, __global int* nrows_d, __global int* ld_d,
 								  __global float* U_diff, __global float* delta,
 								  __global int* nrows_u, __global int* ld_u,
@@ -24,3 +29,4 @@ __kernel void averagepool_delta ( __global float* nx_delta, __global int* nrows_
 		}
 	}
 }
+)
