@@ -12,6 +12,8 @@ private:
 #ifdef USE_GPU
 	cl_mem cl_EPS;
 	cl_mem cl_num_unit, cl_prev_num_unit;
+
+	cl_mem cl_n;
 #endif
 
 	Mat<Real> mean, var;
@@ -65,8 +67,8 @@ BatchNormalize<Mat, Real>::BatchNormalize( int prev_num_map, int prev_num_unit,
 	this->t_delta_init = this->t_delta_gemm = this->t_delta_repl = this->t_delta_comm = 0.0;
 	this->t_grad_init = this->t_grad_gemm = this->t_grad_repl = this->t_grad_comm = 0.0;
 
-	this->W = std::vector<Mat<Real>>(1, Mat<Real>(1, this->num_map));
-	this->b = std::vector<Mat<Real>>(1, Mat<Real>(1, this->num_map));
+	this->W = std::vector<Mat<Real>>(1, Mat<Real>(this->num_map, 1));
+	this->b = std::vector<Mat<Real>>(1, Mat<Real>(this->num_map, 1));
 }
 
 template<template<typename> class Mat, typename Real>
@@ -77,6 +79,8 @@ BatchNormalize<Mat, Real>::~BatchNormalize()
 
 	clReleaseMemObject( cl_num_unit );
 	clReleaseMemObject( cl_prev_num_unit );
+
+	clReleaseMemObject(cl_n);
 #endif
 }
 
@@ -113,8 +117,8 @@ void BatchNormalize<Mat, Real>::init( std::mt19937& m )
 	std::uniform_real_distribution<Real> d_rand(-1.0, 1.0);
 	Matrix<Real> tmp_W = this->W[0], tmp_b = this->b[0];
 	for( int i = 0; i < this->num_map; ++i ){
-		tmp_W(0,i) = d_rand(m);
-		tmp_b(0,i) = d_rand(m);
+		tmp_W(i,0) = d_rand(m);
+		tmp_b(i,0) = d_rand(m);
 	}
 	this->W[0] = tmp_W;
 	this->b[0] = tmp_b;
@@ -132,6 +136,8 @@ void BatchNormalize<Mat, Real>::init( std::mt19937& m )
 	cl_prev_num_unit = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
 	err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_prev_num_unit, CL_TRUE, 0,
 								sizeof(int), &this->prev_num_unit, 0, NULL, NULL );
+
+	cl_n = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
 #endif
 }
 
@@ -154,8 +160,8 @@ std::pair<std::vector<Matrix<Real>>, std::vector<Matrix<Real>>> BatchNormalize<M
 	my_offset = 0;
 	my_size = this->prev_num_unit;
 #endif
-	std::vector<Matrix<Real>> nabla_W(1, Matrix<Real>(1, this->num_map));
-	std::vector<Matrix<Real>> nabla_b(1, Matrix<Real>(1, this->num_map));
+	std::vector<Matrix<Real>> nabla_W(1, Matrix<Real>(this->num_map, 1));
+	std::vector<Matrix<Real>> nabla_b(1, Matrix<Real>(this->num_map, 1));
 	auto end = std::chrono::system_clock::now();
 	this->t_grad_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
@@ -188,7 +194,7 @@ std::pair<std::vector<Matrix<Real>>, std::vector<Matrix<Real>>> BatchNormalize<M
 		end = std::chrono::system_clock::now();
 		this->t_grad_comm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 		
-		nabla_W[0](0,i) = tmp_nabla1; nabla_b[0](0,i) = tmp_nabla2;
+		nabla_W[0](i,0) = tmp_nabla1; nabla_b[0](i,0) = tmp_nabla2;
 	}
 	end = std::chrono::system_clock::now();
 	this->t_grad += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
@@ -212,10 +218,10 @@ std::pair<std::vector<clMatrix<Real>>, std::vector<clMatrix<Real>>> BatchNormali
 	my_offset = 0;
 	my_size = this->prev_num_unit;
 #endif
-	std::vector<clMatrix<Real>> nabla_W(1, clMatrix<Real>(1, this->num_map));
-	std::vector<clMatrix<Real>> nabla_b(1, clMatrix<Real>(1, this->num_map));
-	clMatrix<Real> tmp_nabla1 = clMatrix<Real>::zeros(U.n*my_size, this->num_map);
-	clMatrix<Real> tmp_nabla2 = clMatrix<Real>::zeros(U.n*my_size, this->num_map);
+	std::vector<clMatrix<Real>> nabla_W(1, clMatrix<Real>(this->num_map, 1));
+	std::vector<clMatrix<Real>> nabla_b(1, clMatrix<Real>(this->num_map, 1));
+	clMatrix<Real> tmp_nabla1 = clMatrix<Real>::zeros(this->num_map, U.n*my_size);
+	clMatrix<Real> tmp_nabla2 = clMatrix<Real>::zeros(this->num_map, U.n*my_size);
 	auto end = std::chrono::system_clock::now();
 	this->t_grad_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
@@ -236,54 +242,71 @@ std::pair<std::vector<clMatrix<Real>>, std::vector<clMatrix<Real>>> BatchNormali
 	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 12, &cl_EPS );
 	cl_device_manager.run_kernel( PRG::BN_GRAD_HELPER, my_size*U.n, this->num_map );
 
-	for( int i = my_size*U.n; i > 0; i /= cl_device_manager.get_max_work_item(0) ){
-		cl_device_manager.set_argument( PRG::BN_GRAD, 0, &tmp_nabla1.v );
-		cl_device_manager.set_argument( PRG::BN_GRAD, 1, &tmp_nabla1.N );
-		cl_device_manager.set_argument( PRG::BN_GRAD, 2, &tmp_nabla2.v );
-		cl_device_manager.set_argument( PRG::BN_GRAD, 3, &tmp_nabla2.N );
-		cl_device_manager.set_argument( PRG::BN_GRAD, 4, cl_device_manager.get_max_work_item(0)*sizeof(Real) );
-		cl_device_manager.run_kernel( PRG::BN_GRAD, i, this->num_map );
-	}
+	const int minimum_once_num = 16;
+	size_t lc1 = 1, lc2 = 1;
 
-	nabla_W[0].sub(0, 0, 1, this->num_map, tmp_nabla1);
-	nabla_b[0].sub(0, 0, 1, this->num_map, tmp_nabla2);
+	for ( int i = 2; i*i < this->num_map; ++i ){
+		if( i > cl_device_manager.get_max_work_group()/minimum_once_num ) break;
+		if( this->num_map%i == 0 ){
+			size_t x = i, y = this->num_map/i;
+			if( y > cl_device_manager.get_max_work_group()/minimum_once_num ) y = 0;
+			
+			lc2 = std::max(lc2, (size_t)std::max(x, y));
+		}
+	}
+	for ( int i = 2; i*i < U.n*my_size; ++i ){
+		if( i > cl_device_manager.get_max_work_group()/lc2 ) break;
+		if( U.n*my_size%i == 0 ){
+			size_t x = i, y = U.n*my_size/i;
+			if( y > cl_device_manager.get_max_work_group()/lc2 ) y = 0;
+			
+			lc1 = std::max(lc1, (size_t)std::max(x, y));
+		}
+	}
 	
+	cl_device_manager.set_argument( PRG::BN_GRAD, 0, &tmp_nabla1.v );
+	cl_device_manager.set_argument( PRG::BN_GRAD, 1, &tmp_nabla1.N );
+	cl_device_manager.set_argument( PRG::BN_GRAD, 2, &tmp_nabla2.v );
+	cl_device_manager.set_argument( PRG::BN_GRAD, 3, &tmp_nabla2.N );
+	cl_device_manager.set_argument( PRG::BN_GRAD, 4, cl_device_manager.get_max_work_group()*sizeof(Real) );
+	cl_device_manager.run_kernel( PRG::BN_GRAD,
+								  {(size_t)U.n*my_size, (size_t)this->num_map, 1},
+								  {lc1, lc2, 1} );
+
+	cl_int err;
+	int n = U.n*my_size / lc1;
+	err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_n, CL_TRUE, 0,
+								sizeof(Real), &n, 0, NULL, NULL );
+
+	cl_device_manager.set_argument( PRG::BN_GRAD_FINAL_REDUCE, 0, &tmp_nabla1.v );
+	cl_device_manager.set_argument( PRG::BN_GRAD_FINAL_REDUCE, 1, &tmp_nabla1.N );
+	cl_device_manager.set_argument( PRG::BN_GRAD_FINAL_REDUCE, 2, &tmp_nabla2.v );
+	cl_device_manager.set_argument( PRG::BN_GRAD_FINAL_REDUCE, 3, &tmp_nabla2.N );
+	cl_device_manager.set_argument( PRG::BN_GRAD_FINAL_REDUCE, 4, &cl_n );
+	cl_device_manager.run_kernel( PRG::BN_GRAD_FINAL_REDUCE, this->num_map );
+
+	nabla_W[0].sub(0, 0, this->num_map, 1, tmp_nabla1);
+	nabla_b[0].sub(0, 0, this->num_map, 1, tmp_nabla2);
+	
+	// cl_int err;
+	// cl_event event;
+	// cl_mem scratch_buf = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_WRITE, U.n*my_size*sizeof(Real), NULL, &err );
+	// for( int i = 0; i < this->num_map; ++i ){
+	// 	clblasSdot( U.n*my_size, nabla_W[0].v, i, tmp_nabla1.v, i*U.n*my_size, 1, E.v, 0, 1, scratch_buf, 1,
+	// 				cl_device_manager.get_queue_ptr(), 0, NULL, &event );
+	// 	clReleaseEvent(event);
+
+	// 	clblasSdot( U.n*my_size, nabla_b[0].v, i, tmp_nabla2.v, i*U.n*my_size, 1, E.v, 0, 1, scratch_buf, 1,
+	// 				cl_device_manager.get_queue_ptr(), 0, NULL, &event );
+	// 	clReleaseEvent(event);
+	// }
+
+	// clReleaseMemObject( scratch_buf );
+
 #ifdef USE_MPI
 	MPI_Allreduce(MPI_IN_PLACE, &nabla_W[0](0,0), this->num_map, get_typecount(nabla_W[0](0,0)).mpi_type, MPI_SUM, this->inner_world);
 	MPI_Allreduce(MPI_IN_PLACE, &nabla_b[0](0,0), this->num_map, get_typecount(nabla_b[0](0,0)).mpi_type, MPI_SUM, this->inner_world);
 #endif
-
-// do it opencl	
-// 	for( int i = 0; i < num_map; ++i ){
-// 		double tmp_nabla1 = 0.0, tmp_nabla2 = 0.0;
-// 		auto beg = std::chrono::system_clock::now();
-
-// #pragma omp parallel for reduction(+:tmp_nabla1)
-// 		for( int j = 0; j < my_size; ++j ){
-// 			for( int k = 0; k < U.n; ++k ){
-// 				tmp_nabla1 += delta(i*this->num_unit + my_offset+j,k)*(U_apply(i*this->prev_num_unit + my_offset+j,k) - mean(i,j))/std::sqrt(var(i,j) + EPS);
-// 			}
-// 		}
-
-// #pragma omp parallel for reduction(+:tmp_nabla2)
-// 		for( int j = 0; j < my_size; ++j ){
-// 			for( int k = 0; k < U.n; ++k ){
-// 				tmp_nabla2 += delta(i*this->num_unit + my_offset+j,k);
-// 			}
-// 		}
-// 		auto end = std::chrono::system_clock::now();
-// 		t_grad_gemm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
-
-// 		beg = std::chrono::system_clock::now();
-// #ifdef USE_MPI
-// 		MPI_Allreduce(MPI_IN_PLACE, &tmp_nabla1, 1, MPI_DOUBLE_PRECISION, MPI_SUM, inner_world);
-// 		MPI_Allreduce(MPI_IN_PLACE, &tmp_nabla2, 1, MPI_DOUBLE_PRECISION, MPI_SUM, inner_world);
-// #endif
-// 		end = std::chrono::system_clock::now();
-// 		t_grad_comm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
-		
-// 		nabla_W[0](0,i) = tmp_nabla1; nabla_b[0](0,i) = tmp_nabla2;
-// 	}
 	end = std::chrono::system_clock::now();
 	this->t_grad += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
 
@@ -337,14 +360,14 @@ Matrix<Real> BatchNormalize<Mat, Real>::calc_delta ( const Matrix<Real>& U, cons
 
 #ifdef USE_MPI
 				tmp_nx_delta(i*my_size + j,k) =
-					this->W[0](0,i)/sqrt(var(i,j) + EPS)*delta(i*this->num_unit + my_offset+j,k)*U_diff(i*this->prev_num_unit + my_offset+j,k)
-					- this->W[0](0,i)/sqrt(var(i,j) + EPS)*U_diff(i*this->prev_num_unit + my_offset+j,k)*tmp1
-					- this->W[0](0,i)/pow(var(i,j) + EPS, 1.5)*U_diff(i*this->prev_num_unit + my_offset+j,k)*(U_appl(i*this->prev_num_unit + my_offset+j,k) - mean(i,j))*tmp2;
+					this->W[0](i,0)/sqrt(var(i,j) + EPS)*delta(i*this->num_unit + my_offset+j,k)*U_diff(i*this->prev_num_unit + my_offset+j,k)
+					- this->W[0](i,0)/sqrt(var(i,j) + EPS)*U_diff(i*this->prev_num_unit + my_offset+j,k)*tmp1
+					- this->W[0](i,0)/pow(var(i,j) + EPS, 1.5)*U_diff(i*this->prev_num_unit + my_offset+j,k)*(U_appl(i*this->prev_num_unit + my_offset+j,k) - mean(i,j))*tmp2;
 #else
 				nx_delta(i*this->prev_num_unit + j,k) =
-					this->W[0](0,i)/sqrt(var(i,j) + EPS)*delta(i*this->num_unit + my_offset+j,k)*U_diff(i*this->prev_num_unit + j,k)
-					- this->W[0](0,i)/sqrt(var(i,j) + EPS)*U_diff(i*this->prev_num_unit + j,k)*tmp1
-					- this->W[0](0,i)/pow(var(i,j) + EPS, 1.5)*U_diff(i*this->prev_num_unit + j,k)*(U_appl(i*this->prev_num_unit + j,k) - mean(i,j))*tmp2;
+					this->W[0](i,0)/sqrt(var(i,j) + EPS)*delta(i*this->num_unit + my_offset+j,k)*U_diff(i*this->prev_num_unit + j,k)
+					- this->W[0](i,0)/sqrt(var(i,j) + EPS)*U_diff(i*this->prev_num_unit + j,k)*tmp1
+					- this->W[0](i,0)/pow(var(i,j) + EPS, 1.5)*U_diff(i*this->prev_num_unit + j,k)*(U_appl(i*this->prev_num_unit + j,k) - mean(i,j))*tmp2;
 #endif
 			}
 		auto end = std::chrono::system_clock::now();
@@ -497,9 +520,9 @@ Matrix<Real> BatchNormalize<Mat, Real>::apply ( const Matrix<Real>& U, bool use_
 			for( int j = 0; j < my_size; ++j ){
 				for( int k = 0; k < U.n; ++k ){
 #ifdef USE_MPI
-					tmp_ret(i*my_size + j, k) = this->W[0](0,i)*(U(i*this->prev_num_unit + my_offset+j,k) - mean(i,j))/std::sqrt(var(i,j)+EPS) + this->b[0](0,i);
+					tmp_ret(i*my_size + j, k) = this->W[0](i,0)*(U(i*this->prev_num_unit + my_offset+j,k) - mean(i,j))/std::sqrt(var(i,j)+EPS) + this->b[0](i,0);
 #else
-					ret(i*this->num_unit + j, k) = this->W[0](0,i)*(U(i*this->prev_num_unit + j,k) - mean(i,j))/std::sqrt(var(i,j)+EPS) + this->b[0](0,i);
+					ret(i*this->num_unit + j, k) = this->W[0](i,0)*(U(i*this->prev_num_unit + j,k) - mean(i,j))/std::sqrt(var(i,j)+EPS) + this->b[0](i,0);
 #endif					
 				}
 			}
@@ -651,20 +674,20 @@ void BatchNormalize<Mat, Real>::param_mix ()
 
 	auto tmp_W = this->W[0];
 #pragma omp parallel for
-	for( int i = 0; i < tmp_W.n; ++i ) w[i] = tmp_W(0,i);
+	for( int i = 0; i < tmp_W.n; ++i ) w[i] = tmp_W(i,0);
 
 	auto tmp_b = this->b[0];
 #pragma omp parallel for
-	for( int i = 0; i < tmp_b.n; ++i ) w[tmp+i] = tmp_b(0,i);
+	for( int i = 0; i < tmp_b.n; ++i ) w[tmp+i] = tmp_b(i,0);
 
 	MPI_Allreduce(MPI_IN_PLACE, &w[0], cnt, get_typecount(w[0]).mpi_type, MPI_SUM, this->outer_world);
 		
 #pragma omp parallel for
-	for( int i = 0; i < tmp_W.n; ++i ) tmp_W(0,i) = w[i] / nprocs;
+	for( int i = 0; i < tmp_W.n; ++i ) tmp_W(i,0) = w[i] / nprocs;
 	this->W[0] = tmp_W;
 	
 #pragma omp parallel for
-	for( int i = 0; i < tmp_b.n; ++i ) tmp_b(0,i) = w[tmp + i] / nprocs;
+	for( int i = 0; i < tmp_b.n; ++i ) tmp_b(i,0) = w[tmp + i] / nprocs;
 	this->b[0] = tmp_b;
 }
 #endif
