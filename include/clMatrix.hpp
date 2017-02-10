@@ -270,7 +270,7 @@ struct clMatrix
 		
 		return buf.get_element(0,0);
 	}
-	
+
 	static T norm_fro ( const clMatrix<T>& mat )
 	{
 		int m = mat.m, n = mat.n;
@@ -531,16 +531,34 @@ struct clMatrix
 									sizeof(int), &y, 0, NULL, NULL );
 
 		cl_device_manager.set_argument( PRG::CLMAT_SUB_IN, 0, &v );
-		cl_device_manager.set_argument( PRG::CLMAT_SUB_IN, 1, &mat.v );
-		cl_device_manager.set_argument( PRG::CLMAT_SUB_IN, 2, &N );
-		cl_device_manager.set_argument( PRG::CLMAT_SUB_IN, 3, &buf_x );
-		cl_device_manager.set_argument( PRG::CLMAT_SUB_IN, 4, &buf_y );
+		cl_device_manager.set_argument( PRG::CLMAT_SUB_IN, 1, &N );
+		cl_device_manager.set_argument( PRG::CLMAT_SUB_IN, 2, &mat.v );
+		cl_device_manager.set_argument( PRG::CLMAT_SUB_IN, 3, &mat.N );
+		cl_device_manager.set_argument( PRG::CLMAT_SUB_IN, 4, &buf_x );
+		cl_device_manager.set_argument( PRG::CLMAT_SUB_IN, 5, &buf_y );
 		cl_device_manager.run_kernel( PRG::CLMAT_SUB_IN, h, w );
 
 		clReleaseMemObject( buf_x );
 		clReleaseMemObject( buf_y );
 	}
 
+	void sum_in ( const int x, const int y, const clMatrix<T>& A )
+	{
+		int m = A.m, n = A.n;
+		clMatrix<T> buf = A;
+		
+		cl_int err;
+		cl_event event;
+
+		for( int i = m*n; i > 0; i /= cl_device_manager.get_max_work_item(0) ){
+			cl_device_manager.set_argument( PRG::CLMAT_SUM, 0, &buf.v );
+			cl_device_manager.set_argument( PRG::CLMAT_SUM, 1, cl_device_manager.get_max_work_item(0)*sizeof(T) );
+			cl_device_manager.run_kernel( PRG::CLMAT_SUM, i );
+		}
+
+		this->sub(x, y, 1, 1, buf);
+	}
+	
 	Matrix<T> get_matrix ( ) const
 	{
 		cl_int err;
