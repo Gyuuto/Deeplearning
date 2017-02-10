@@ -946,7 +946,7 @@ template<template<typename> class Mat, typename Real>
 void Neuralnet<Mat, Real>::set_W ( const std::string& filename )
 {
 	for( int i = 0; i < layer.size(); ++i ){
-		layer[i]->set_W("layer_" + std::to_string(i) + "_" + filename);
+		layer[i]->set_W(filename + "_layer_" + std::to_string(i));
 	}
 }
 
@@ -954,7 +954,7 @@ template<template<typename> class Mat, typename Real>
 void Neuralnet<Mat, Real>::output_W ( const std::string& filename ) const
 {
 	for( int i = 0; i < layer.size(); ++i ){
-		layer[i]->output_W("layer_" + std::to_string(i) + "_" + filename);
+		layer[i]->output_W(filename + "_layer_" + std::to_string(i));
 	}
 }
 

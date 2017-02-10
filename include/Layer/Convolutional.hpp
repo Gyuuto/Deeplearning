@@ -1093,12 +1093,10 @@ void Convolutional<Mat, Real>::output_W ( const std::string& filename )
 		for( int i = 0; i < tmp_W.m; ++i )
 			for( int j = 0; j < tmp_W.n; ++j )
 				ofs.write((char*)&tmp_W(i,j), sizeof(tmp_W(i,j)));
-		this->W[0] = tmp_W;
 
 		Matrix<Real> tmp_b = this->b[0];
 		for( int i = 0; i < this->num_map; ++i )
 			ofs.write((char*)&tmp_b(0,i), sizeof(tmp_b(0,i)));
-		this->b[0] = tmp_b;
 #ifdef USE_MPI
 	}
 #endif

@@ -642,6 +642,9 @@ void BatchNormalize<Mat, Real>::set_W ( const std::string& filename )
 	Matrix<Real> tmp_W = this->W[0], tmp_b = this->b[0];
 	ifs.read((char*)&tmp_W(0,0), this->num_map*sizeof(tmp_W(0,0)));
 	ifs.read((char*)&tmp_b(0,0), this->num_map*sizeof(tmp_b(0,0)));
+
+	this->W[0] = tmp_W;
+	this->b[0] = tmp_b;
 }
 
 template<template<typename> class Mat, typename Real>
