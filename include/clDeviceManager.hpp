@@ -34,12 +34,16 @@ enum PRG{
 	CONV_DELTA_IMG_SET,
 	CONV_GRAD_DELTA_SET,
 	CONV_GRAD_IMG_SET,
+	CONV_GRAD_BIAS_HELPER,
+	CONV_GRAD_BIAS,
+	CONV_GRAD_BIAS_FINAL_REDUCE,
 	MAXPOOL_DELTA,
 	MAXPOOL_APPLY,
 	AVEPOOL_DELTA,
 	AVEPOOL_APPLY,
 	BN_GRAD,
 	BN_GRAD_HELPER,
+	BN_GRAD_FINAL_REDUCE,
 	BN_DELTA,
 	BN_APPLY_MEAN_VAR,
 	BN_APPLY,
@@ -80,12 +84,16 @@ const static std::string PRG_NAME[] = {
 	"conv_delta_img_set",
 	"conv_grad_delta_set",
 	"conv_grad_img_set",
+	"conv_grad_bias_helper",
+	"conv_grad_bias",
+	"conv_grad_bias_final_reduce",
 	"maxpool_delta",
 	"maxpool_apply",
 	"averagepool_delta",
 	"averagepool_apply",
 	"bn_grad",
 	"bn_grad_helper",
+	"bn_grad_final_reduce",
 	"bn_delta",
 	"bn_apply_mean_var",
 	"bn_apply",
@@ -127,6 +135,7 @@ public:
 	cl_command_queue* get_queue_ptr ();
 
 	void run_kernel ( int kernel_idx, size_t gl_work_size1, size_t gl_work_size2 = 1, size_t gl_work_size3 = 1 );
+	void run_kernel ( int kernel_idx, std::vector<size_t> gl_work, std::vector<size_t> lc_work );
 	void set_argument ( int kernel_idx, int arg_idx, const void* val );
 	void set_argument ( int kernel_idx, int arg_idx, const size_t size );
 }cl_device_manager;
@@ -233,10 +242,23 @@ void clDeviceManager::run_kernel ( int kernel_idx, size_t gl_work_size1, size_t 
 
 	cl_event event;
 
-	size_t global_work_size[3] = { gl_work_size1, gl_work_size2, gl_work_size3 },
-		local_work_size[3] = { 1, 1, 0 };
-	
+	size_t global_work_size[3] = { gl_work_size1, gl_work_size2, gl_work_size3 };
+		
 	cl_int err = clEnqueueNDRangeKernel(queue, kernel[kernel_idx], 3, NULL, global_work_size, NULL, 0, NULL, &event);
+	if( err != 0 ) printf("Kernel runnning failed : %s, error_code = %d\n", PRG_NAME[kernel_idx].c_str(), err);
+	clWaitForEvents(1, &event);
+	clReleaseEvent(event);
+}
+
+void clDeviceManager::run_kernel ( int kernel_idx, std::vector<size_t> gl_work_size, std::vector<size_t> lc_work_size )
+{
+	if( program[kernel_idx] == NULL ){
+		build_program( kernel_idx );
+	}
+
+	cl_event event;
+
+	cl_int err = clEnqueueNDRangeKernel(queue, kernel[kernel_idx], 3, NULL, &gl_work_size[0], &lc_work_size[0], 0, NULL, &event);
 	if( err != 0 ) printf("Kernel runnning failed : %s, error_code = %d\n", PRG_NAME[kernel_idx].c_str(), err);
 	clWaitForEvents(1, &event);
 	clReleaseEvent(event);
