@@ -504,7 +504,7 @@ void FullyConnected<Mat, Real>::set_W ( const std::string& filename )
 #ifdef USE_MPI
 		ifs.seekg((this->num_unit*this->W[i].n - (offset + my_size))*sizeof(tmp_W(0,0)), std::ios::cur);
 #endif
-
+		
 		Matrix<Real> tmp_b = this->b[i];
 		my_size = this->b[i].m; offset = 0;
 #ifdef USE_MPI
@@ -570,7 +570,7 @@ void FullyConnected<Mat, Real>::output_W ( const std::string& filename )
 		}
 		for( int i = 0; i < this->num_map; ++i ){
 			Matrix<Real> tmp_b = this->b[i];
-			MPI_Send(&tmp_b(0,0), my_size, get_typecount(tmp_b(0, 0)).mpi_type, 0, 0, this->inner_world);
+			MPI_Send(&tmp_b(0,0), my_size/this->W[0].n, get_typecount(tmp_b(0, 0)).mpi_type, 0, 0, this->inner_world);
 		}
 	}
 #endif
