@@ -1,3 +1,8 @@
+#ifndef OCL_EXTERNAL_INCLUDE
+#define OCL_EXTERNAL_INCLUDE(...) __VA_ARGS__
+#endif
+
+OCL_EXTERNAL_INCLUDE(
 __kernel void function_Sigmoid_diff ( __global float* y, __global float* x, __constant float* alpha )
 {
 	int gid = get_global_id(0);
@@ -6,3 +11,4 @@ __kernel void function_Sigmoid_diff ( __global float* y, __global float* x, __co
 	y[gid] = *alpha*exp(-*alpha*x[gid])/(tmp*tmp);
 }
 
+)

@@ -1,3 +1,8 @@
+#ifndef OCL_EXTERNAL_INCLUDE
+#define OCL_EXTERNAL_INCLUDE(...) __VA_ARGS__
+#endif
+
+OCL_EXTERNAL_INCLUDE(
 __kernel void function_TruncatedPower ( __global float* y, __global float* x, __constant int* n )
 {
 	int gid = get_global_id(0);
@@ -5,3 +10,4 @@ __kernel void function_TruncatedPower ( __global float* y, __global float* x, __
 	y[gid] = (x[gid] < 0.0 ? 0.0 : pown(x[gid], *n));
 }
 
+)

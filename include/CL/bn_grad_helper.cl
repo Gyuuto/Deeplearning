@@ -1,3 +1,8 @@
+#ifndef OCL_EXTERNAL_INCLUDE
+#define OCL_EXTERNAL_INCLUDE(...) __VA_ARGS__
+#endif
+
+OCL_EXTERNAL_INCLUDE(
 __kernel void bn_grad_helper ( __global float* tmp_nabla1, __global int* ld_na1,
 							   __global float* tmp_nabla2, __global int* ld_na2,
 							   __global float* delta, __global float* U_apply,
@@ -13,3 +18,4 @@ __kernel void bn_grad_helper ( __global float* tmp_nabla1, __global int* ld_na1,
 
 	tmp_nabla2[i* *ld_na1 + k* *num_unit + j] = delta[(i* *num_unit + j)* *ld_U + k];
 }
+)

@@ -1,3 +1,8 @@
+#ifndef OCL_EXTERNAL_INCLUDE
+#define OCL_EXTERNAL_INCLUDE(...) __VA_ARGS__
+#endif
+
+OCL_EXTERNAL_INCLUDE(
 __kernel void conv_apply_img_set ( __global float* img, __global int* ld_img,
 								   __global float* U, __global int* nrows, __global int* ldu,
 								   __global int* i, __global int* mn,
@@ -13,3 +18,4 @@ __kernel void conv_apply_img_set ( __global float* img, __global int* ld_img,
 		img[(l * get_global_size(2) + j)* *ld_img + kst] = 0.0;
 	}
 }
+)

@@ -1,3 +1,8 @@
+#ifndef OCL_EXTERNAL_INCLUDE
+#define OCL_EXTERNAL_INCLUDE(...) __VA_ARGS__
+#endif
+
+OCL_EXTERNAL_INCLUDE(
 __kernel void bn_delta ( __global float* nx_delta, __global int* prev_num_unit, __global int* ld_nx,
 						 __global float* U_apply, __global float* U_diff, __global float* delta, __global int* ld_U,
 						 __global float* mean, __global int* ld_mean,
@@ -19,3 +24,4 @@ __kernel void bn_delta ( __global float* nx_delta, __global int* prev_num_unit, 
 		W[i]/sqrt(var[i* *ld_var + j] + *EPS)*U_diff[(i* *prev_num_unit + j)* *ld_U + k]*tmp1 -
 		W[i]/powr(var[i* *ld_var + j] + *EPS, 1.5f)*U_diff[(i* *prev_num_unit + j)* *ld_U + k]*(U_apply[(i* *prev_num_unit + j)* *ld_U + k] - mean[i* *ld_mean + j])*tmp2;
 }
+)

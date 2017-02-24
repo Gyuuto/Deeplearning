@@ -161,6 +161,7 @@ void Convolutional<Mat, Real>::init ( std::mt19937& mt )
 	const int gap = prev_ldu + 2*pad;
 
 	feed_idx.resize(this->num_unit*m*n);
+#pragma omp parallel for
 	for( int i = 0; i < this->num_unit; ++i ){
 		int x = i%ldu, y = i/ldu;
 		for( int s = 0; s < m; ++s )
@@ -176,7 +177,7 @@ void Convolutional<Mat, Real>::init ( std::mt19937& mt )
 			}
 
 	}
-		
+	
 #ifdef USE_GPU
 	cl_int err;
 	cl_feed_idx = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, this->num_unit*m*n*sizeof(int), NULL, &err);

@@ -1,3 +1,8 @@
+#ifndef OCL_EXTERNAL_INCLUDE
+#define OCL_EXTERNAL_INCLUDE(...) __VA_ARGS__
+#endif
+
+OCL_EXTERNAL_INCLUDE(
 __kernel void maxpool_apply ( __global float* ret, __global int* num_unit, __global int* ld_d,
 							  __global float* U, __global float* S,
 							  __global int* prev_num_unit, __global int* ld_u,
@@ -32,3 +37,4 @@ __kernel void maxpool_apply ( __global float* ret, __global int* num_unit, __glo
 	ret[(i* *num_unit + j)* *ld_d + k] = U[(i* *prev_num_unit + max_idx)* *ld_u + k];
 	S[(i* *num_unit + j)* *ld_d + k] = max_idx;
 }
+)

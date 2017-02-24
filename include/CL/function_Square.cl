@@ -1,3 +1,8 @@
+#ifndef OCL_EXTERNAL_INCLUDE
+#define OCL_EXTERNAL_INCLUDE(...) __VA_ARGS__
+#endif
+
+OCL_EXTERNAL_INCLUDE(
 __kernel void function_Square ( __global float* y, __local float* partial_sum )
 {
 	int lid = get_local_id(0), lid_size = get_local_size(0);
@@ -14,3 +19,4 @@ __kernel void function_Square ( __global float* y, __local float* partial_sum )
 	}
 	if( lid == 0 ) y[get_group_id(0)] = partial_sum[0];
 }
+)

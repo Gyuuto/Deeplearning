@@ -1,3 +1,8 @@
+#ifndef OCL_EXTERNAL_INCLUDE
+#define OCL_EXTERNAL_INCLUDE(...) __VA_ARGS__
+#endif
+
+OCL_EXTERNAL_INCLUDE(
 __kernel void adam ( __global float* adam_v, __global float* adam_r,
 					 __global float* update_w, __global float* nabla_w,
 					 __constant float* adam_beta, __constant float* adam_gamma,
@@ -13,3 +18,4 @@ __kernel void adam ( __global float* adam_v, __global float* adam_r,
 	float r_hat = adam_r[gid] / (1.0 - *adam_gamma_);
 	update_w[gid] = -*EPS * v_hat / (sqrt(r_hat) + *adam_eps);
 }
+)

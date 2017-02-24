@@ -35,13 +35,13 @@ public:
 
 	Matrix<Real> calc_delta ( const Matrix<Real>& U, const Matrix<Real>& delta );
 #ifdef USE_GPU
-	clMatrix<Real> calc_delta ( const std::clMatrix<Real>& U, const clMatrix<Real>& delta );
+	clMatrix<Real> calc_delta ( const clMatrix<Real>& U, const clMatrix<Real>& delta );
 #endif
 	void update_W ( const std::vector<Mat<Real>>& dW, const std::vector<Mat<Real>>& db );
 	
 	Matrix<Real> apply ( const Matrix<Real>& U, bool use_func = true );
 #ifdef USE_GPU
-	clMatrix<Real> apply ( clMatrix<Real>& U, bool use_func = true );
+	clMatrix<Real> apply ( const clMatrix<Real>& U, bool use_func = true );
 #endif
 
 	void set_W( const std::string& filename );
@@ -296,7 +296,7 @@ clMatrix<Real> Dropout<Mat, Real>::apply ( const clMatrix<Real>& U, bool use_fun
 	this->t_apply_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
 	beg = std::chrono::system_clock::now();
-	if( use_func ) tmp_ret[i] *= (1.0 - dropout_p);
+	if( use_func ) tmp_ret *= (1.0 - dropout_p);
 	else{
 		cl_device_manager.set_argument( PRG::MULT_VEC_MAT, 0, &tmp_ret.v );
 		cl_device_manager.set_argument( PRG::MULT_VEC_MAT, 1, &mask.v );

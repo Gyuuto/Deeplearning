@@ -1,3 +1,8 @@
+#ifndef OCL_EXTERNAL_INCLUDE
+#define OCL_EXTERNAL_INCLUDE(...) __VA_ARGS__
+#endif
+
+OCL_EXTERNAL_INCLUDE(
 __kernel void bn_grad ( __global float* tmp_nabla1, __global int* ld_na1,
 						__global float* tmp_nabla2, __global int* ld_na2,
 						__local float* partial_sum )
@@ -39,3 +44,4 @@ __kernel void bn_grad ( __global float* tmp_nabla1, __global int* ld_na1,
 	if( lid1 == 0 ) tmp_nabla2[i* *ld_na2 + get_group_id(0)] = partial_sum[lid2*lid1_size];
 }
 
+)
