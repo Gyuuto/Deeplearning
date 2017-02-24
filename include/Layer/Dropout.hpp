@@ -156,8 +156,8 @@ Matrix<Real> Dropout<Mat, Real>::calc_delta ( const Matrix<Real>& U, const Matri
 
 #ifdef USE_MPI
 	for( int i = 0; i < this->prev_num_map; ++i )
-		MPI_Allgatherv(MPI_IN_PLACE, size[rank], MPI_DOUBLE_PRECISION,
-					   &nx_delta(i*this->num_unit,0), &size[0], &offset[0], MPI_DOUBLE_PRECISION, inner_world);
+		MPI_Allgatherv(MPI_IN_PLACE, size[this->rank], get_typecount(nx_delta(i*this->num_unit,0)).mpi_type,
+					   &nx_delta(i*this->num_unit,0), &size[0], &offset[0], get_typecount(nx_delta(i*this->num_unit,0)).mpi_type, this->inner_world);
 #endif
 	auto end = std::chrono::system_clock::now();
 
@@ -225,7 +225,6 @@ Matrix<Real> Dropout<Mat, Real>::apply ( const Matrix<Real>& U, bool use_func )
 	auto tot_beg = std::chrono::system_clock::now();
 	auto beg = tot_beg;
 
-	std::vector<Matrix<Real>> ret(this->num_map), tmp_ret(this->num_map);
 	int my_size = this->num_unit, my_offset = 0;
 #ifdef USE_MPI
 	std::vector<int> size(this->nprocs), offset(this->nprocs);
@@ -238,10 +237,8 @@ Matrix<Real> Dropout<Mat, Real>::apply ( const Matrix<Real>& U, bool use_func )
 	my_offset = offset[this->rank] / U.n;
 #endif
 
-	for( int i = 0; i < this->prev_num_map; ++i ){
-		ret[i] = Matrix<Real>(this->num_unit, U.n);
-		tmp_ret[i] = Matrix<Real>(my_size, U.n);
-	}		
+	Matrix<Real> ret(this->num_map*this->num_unit, U.n), tmp_ret(this->num_map*my_size, U.n);
+
 	auto end = std::chrono::system_clock::now();
 	this->t_apply_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
@@ -252,26 +249,25 @@ Matrix<Real> Dropout<Mat, Real>::apply ( const Matrix<Real>& U, bool use_func )
 #pragma omp for nowait
 			for( int j = 0; j < my_size; ++j )
 				for( int k = 0; k < U.n; ++k )
-					tmp_ret[i](j,k) = U(i*this->num_unit + my_offset+j,k)*(use_func ? 1.0 - dropout_p : mask(my_offset+j,i));
+					tmp_ret(i*my_size + j,k) = U(i*this->num_unit + my_offset+j,k)*(use_func ? 1.0 - dropout_p : mask(my_offset+j,i));
 		}
 	}
 	
-	if( use_func )
-		for( int i = 0; i < this->num_map; ++i )
-			tmp_ret[i] = (*this->func)(tmp_ret[i], false);
-
 #ifdef USE_MPI
 	for( int i = 0; i < this->num_map; ++i )
-		MPI_Allgatherv(&tmp_ret[i](0,0), size[rank], MPI_DOUBLE_PRECISION,
-					   &ret[i](0,0), &size[0], &offset[0], MPI_DOUBLE_PRECISION, inner_world);
+		MPI_Allgatherv(&tmp_ret(i*my_size,0), size[this->rank], get_typecount(tmp_ret(i*my_size,0)).mpi_type,
+					   &ret(i*this->num_unit,0), &size[0], &offset[0], get_typecount(ret(i*this->num_unit,0)).mpi_type, this->inner_world);
 #else
 	ret = tmp_ret;
 #endif
 	end = std::chrono::system_clock::now();
 	this->t_apply_gemm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+	if( use_func ) ret = (*this->func)(ret, false);
+
+
 	this->t_apply += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
 	
-	return Matrix<Real>::to_matrix(ret);
+	return ret;
 }
 
 #ifdef USE_GPU
