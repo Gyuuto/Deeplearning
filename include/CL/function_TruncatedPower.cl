@@ -3,7 +3,7 @@
 #endif
 
 OCL_EXTERNAL_INCLUDE(
-__kernel void function_TruncatedPower ( __global float* y, __global float* x, __constant int* n )
+__kernel void function_TruncatedPower ( __global float* y, __global float* x, __global int* n )
 {
 	int gid = get_global_id(0);
 

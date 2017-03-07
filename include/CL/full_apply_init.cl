@@ -3,7 +3,7 @@
 #endif
 
 OCL_EXTERNAL_INCLUDE(
-__kernel void full_apply_init ( __global float* v, __global float* u, __constant bool* use_bias )
+__kernel void full_apply_init ( __global float* v, __global float* u, __global bool* use_bias )
 {
 	int ld = get_global_size(1);
 	int gid1 = get_global_id(0), gid2 = get_global_id(1);

@@ -3,7 +3,7 @@
 #endif
 
 OCL_EXTERNAL_INCLUDE(
-__kernel void clMatrix_eye( __global float* v, __constant int* m, __constant int* n )
+__kernel void clMatrix_eye( __global float* v, __global int* m, __global int* n )
 {
 	int gid1 = get_global_id(0);
 

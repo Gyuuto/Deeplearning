@@ -5,9 +5,9 @@
 OCL_EXTERNAL_INCLUDE(
 __kernel void adam ( __global float* adam_v, __global float* adam_r,
 					 __global float* update_w, __global float* nabla_w,
-					 __constant float* adam_beta, __constant float* adam_gamma,
-					 __constant float* adam_beta_, __constant float* adam_gamma_,
-					 __constant float* EPS, __constant float* adam_eps )
+					 __global float* adam_beta, __global float* adam_gamma,
+					 __global float* adam_beta_, __global float* adam_gamma_,
+					 __global float* EPS, __global float* adam_eps )
 {
 	int gid = get_global_id(0);
 

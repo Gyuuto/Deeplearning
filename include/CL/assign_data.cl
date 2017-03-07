@@ -3,7 +3,7 @@
 #endif
 
 OCL_EXTERNAL_INCLUDE(
-__kernel void assign_data ( __global float* y, __global float* x, __global int* idx, __global int* offset, __constant int* N )
+__kernel void assign_data ( __global float* y, __global float* x, __global int* idx, __global int* offset, __global int* N )
 {
 	int ld = get_global_size(1);
 	int gid1 = get_global_id(0), gid2 = get_global_id(1);

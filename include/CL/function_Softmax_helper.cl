@@ -3,7 +3,7 @@
 #endif
 
 OCL_EXTERNAL_INCLUDE(
-__kernel void function_Softmax_helper ( __global float* x, __global float* max_x, __global float* sum_x, __constant int* m, __constant int* n )
+__kernel void function_Softmax_helper ( __global float* x, __global float* max_x, __global float* sum_x, __global int* m, __global int* n )
 {
 	int i;
 	int gid = get_global_id(0);
