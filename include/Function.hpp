@@ -14,9 +14,9 @@ template<typename T>
 class Function
 {
 public:
-	virtual Matrix<T> operator() ( const Matrix<T>& x, const bool& isdiff ) = 0;
+	virtual Matrix<T> operator() ( const Matrix<T>& x, const bool& isdiff ) const = 0;
 #ifdef USE_GPU
-	virtual clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ) = 0;
+	virtual clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ) const = 0;
 #endif
 };
 
@@ -24,9 +24,9 @@ template<typename T>
 class LossFunction
 {
 public:
-	virtual Matrix<T> operator() ( const Matrix<T>& x, const Matrix<T>& d, const bool& isdiff ) = 0;
+	virtual Matrix<T> operator() ( const Matrix<T>& x, const Matrix<T>& d, const bool& isdiff ) const = 0;
 #ifdef USE_GPU
-	virtual clMatrix<T> operator() ( const clMatrix<T>& x, const clMatrix<T>& d, const bool& isdiff ) = 0;	
+	virtual clMatrix<T> operator() ( const clMatrix<T>& x, const clMatrix<T>& d, const bool& isdiff ) const = 0;	
 #endif
 };
 
@@ -34,7 +34,7 @@ template<typename T>
 class Identity : public Function<T>
 {
 public:
-	inline Matrix<T> operator() ( const Matrix<T>& x, const bool& isdiff ){
+	Matrix<T> operator() ( const Matrix<T>& x, const bool& isdiff ) const{
 		if( isdiff ){
 			return Matrix<T>::ones(x.m, x.n);
 		}
@@ -44,7 +44,7 @@ public:
 	}
 
 #ifdef USE_GPU
-	inline clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ){
+	clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ) const{
 		if( isdiff ){
 			return clMatrix<T>::ones(x.m, x.n);
 		}
@@ -59,7 +59,7 @@ template<typename T>
 class ReLU : public Function<T>
 {
 public:
-	inline Matrix<T> operator() ( const Matrix<T>& x, const bool& isdiff ){
+	Matrix<T> operator() ( const Matrix<T>& x, const bool& isdiff ) const{
 		Matrix<T> y(x.m, x.n);
 
 		if( isdiff ){
@@ -75,7 +75,7 @@ public:
 	}
 
 #ifdef USE_GPU
-	inline clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ){
+	clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ) const{
 		clMatrix<T> y(x.m, x.n);
 
 		if( isdiff ){
@@ -95,28 +95,87 @@ public:
 };
 
 template<typename T>
+class LeakyReLU : public Function<T>
+{
+public:
+	double alpha;
+#ifdef USE_GPU
+	cl_mem cl_alpha;
+#endif
+	
+	LeakyReLU ( const double alpha = 0.2 ) :alpha(alpha)
+	{
+#ifdef USE_GPU
+		cl_int err;
+		cl_alpha = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(T), NULL, &err);
+		err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_alpha, CL_TRUE, 0,
+									sizeof(T), &alpha, 0, NULL, NULL );
+#endif
+	}
+
+	Matrix<T> operator() ( const Matrix<T>& x, const bool& isdiff ) const{
+		Matrix<T> y(x.m, x.n);
+
+		if( isdiff ){
+#pragma omp parallel for schedule(auto)
+			for( int i = 0; i < y.m*y.n; ++i ) y.v[i] = x.v[i] <= 0.0 ? alpha : 1.0;
+		}
+		else{
+#pragma omp parallel for schedule(auto)
+			for( int i = 0; i < y.m*y.n; ++i ) y.v[i] = (x.v[i] <= 0.0 ? alpha : 1.0)*x.v[i];
+		}
+
+		return y;
+	}
+
+#ifdef USE_GPU
+	clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ) const{
+		clMatrix<T> y(x.m, x.n);
+
+		if( isdiff ){
+			cl_device_manager.set_argument( PRG::FUNC_LEAKYRELU_DIFF, 0, &y.v );
+			cl_device_manager.set_argument( PRG::FUNC_LEAKYRELU_DIFF, 1, &x.v );
+			cl_device_manager.set_argument( PRG::FUNC_LEAKYRELU_DIFF, 2, &cl_alpha );
+			cl_device_manager.run_kernel( PRG::FUNC_LEAKYRELU_DIFF, y.m*y.n, 1 );
+		}
+		else{
+			cl_device_manager.set_argument( PRG::FUNC_LEAKYRELU, 0, &y.v );
+			cl_device_manager.set_argument( PRG::FUNC_LEAKYRELU, 1, &x.v );
+			cl_device_manager.set_argument( PRG::FUNC_LEAKYRELU, 2, &cl_alpha );
+			cl_device_manager.run_kernel( PRG::FUNC_LEAKYRELU, y.m*y.n, 1 );
+		}
+
+		return y;
+	}
+#endif
+};
+
+template<typename T>
 class Sigmoid : public Function<T>
 {
 public:
 	T alpha;
 #ifdef USE_GPU
 	cl_mem cl_alpha;
+#endif
 	Sigmoid( T alpha = 1.0 ) :alpha(alpha)
 	{
-		T f_alpha = this->alpha;
+#ifdef USE_GPU
 		cl_int err;
 		cl_alpha = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(T), NULL, &err);
 		err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_alpha, CL_TRUE, 0,
-									sizeof(T), &f_alpha, 0, NULL, NULL );
+									sizeof(T), &alpha, 0, NULL, NULL );
+#endif
 	}
 
+#ifdef USE_GPU
 	~Sigmoid ()
 	{
 		clReleaseMemObject( cl_alpha );
 	}
 #endif
 	
-	inline Matrix<T> operator() ( const Matrix<T>& x, const bool& isdiff ){
+	Matrix<T> operator() ( const Matrix<T>& x, const bool& isdiff ) const{
 		Matrix<T> y(x.m, x.n);
 
 		if( isdiff ){
@@ -135,7 +194,7 @@ public:
 	}
 
 #ifdef USE_GPU
-	inline clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ){
+	clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ) const{
 		clMatrix<T> y(x.m, x.n);
 		cl_int err;
 		
@@ -161,7 +220,7 @@ template<typename T>
 class Tanh : public Function<T>
 {
 public:
-	inline Matrix<T> operator() ( const Matrix<T>& x, const bool& isdiff ){
+	Matrix<T> operator() ( const Matrix<T>& x, const bool& isdiff ) const{
 		Matrix<T> y(x.m, x.n);
 
 		if( isdiff ){
@@ -180,7 +239,7 @@ public:
 	}
 
 #ifdef USE_GPU
-	inline clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ){
+	clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ) const{
 		clMatrix<T> y(x.m, x.n);
 
 		if( isdiff ){
@@ -202,7 +261,7 @@ public:
 template<typename T>
 class Softsign : public Function<T>
 {
-	inline Matrix<T> operator() ( const Matrix<T>& x, const bool& isdiff ){
+	Matrix<T> operator() ( const Matrix<T>& x, const bool& isdiff ) const{
 		Matrix<T> y(x.m, x.n);
 
 		if( isdiff ){
@@ -224,7 +283,7 @@ class Softsign : public Function<T>
 	}
 
 #ifdef USE_GPU
-	inline clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ){
+	clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ) const{
 		clMatrix<T> y(x.m, x.n);
 
 		if( isdiff ){
@@ -246,7 +305,7 @@ class Softsign : public Function<T>
 template<typename T>
 class Softplus : public Function<T>
 {
-	inline Matrix<T> operator() ( const Matrix<T>& x, const bool& isdiff ){
+	Matrix<T> operator() ( const Matrix<T>& x, const bool& isdiff ) const{
 		Matrix<T> y(x.m, x.n);
 
 		if( isdiff ){
@@ -265,7 +324,7 @@ class Softplus : public Function<T>
 	}
 
 #ifdef USE_GPU
-	inline clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ){
+	clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ) const{
 		clMatrix<T> y(x.m, x.n);
 
 		if( isdiff ){
@@ -307,7 +366,7 @@ class Polynomial : public Function<T>
 	}
 #endif
 	
-	inline Matrix<T> operator() ( const Matrix<T>& x, const bool& isdiff ){
+	Matrix<T> operator() ( const Matrix<T>& x, const bool& isdiff ) const{
 		Matrix<T> y(x.m, x.n);
 
 		if( isdiff ){
@@ -323,7 +382,7 @@ class Polynomial : public Function<T>
 	}
 
 #ifdef USE_GPU
-	inline clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ){
+	clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ) const{
 		clMatrix<T> y(x.m, x.n);
 
 		if( isdiff ){
@@ -365,7 +424,7 @@ class TruncatedPower : public Function<T>
 	}	
 #endif
 
-	inline Matrix<T> operator() ( const Matrix<T>& x, const bool& isdiff ){
+	Matrix<T> operator() ( const Matrix<T>& x, const bool& isdiff ) const{
 		Matrix<T> y(x.m, x.n);
 
 		if( isdiff ){
@@ -381,7 +440,7 @@ class TruncatedPower : public Function<T>
 	}
 
 #ifdef USE_GPU
-	inline clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ){
+	clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ) const{
 		clMatrix<T> y(x.m, x.n);
 
 		if( isdiff ){
@@ -405,7 +464,7 @@ class TruncatedPower : public Function<T>
 template<typename T>
 class Abs : public Function<T>
 {
-	inline Matrix<T> operator() ( const Matrix<T>& x, const bool& isdiff ){
+	Matrix<T> operator() ( const Matrix<T>& x, const bool& isdiff ) const{
 		Matrix<T> y(x.m, x.n);
 
 		if( isdiff ){
@@ -426,7 +485,7 @@ class Abs : public Function<T>
 	}
 
 #ifdef USE_GPU
-	inline clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ){
+	clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ) const{
 		clMatrix<T> y(x.m, x.n);
 
 		if( isdiff ){
@@ -446,10 +505,156 @@ class Abs : public Function<T>
 };
 
 template<typename T>
+class Pow : public Function<T>
+{
+public:
+	T n;
+#ifdef USE_GPU
+	cl_mem cl_n;
+#endif
+	Pow ( T n = 1.0 ) :n(n)
+	{
+#ifdef USE_GPU
+		cl_int err;
+		cl_n = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(T), NULL, &err );
+		err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_n, CL_TRUE, 0,
+									sizeof(T), &n, 0, NULL, NULL );
+#endif
+	}
+#ifdef USE_GPU
+	~Pow ()
+	{
+		clReleaseMemObject(cl_n);
+	}
+#endif
+
+	Matrix<T> operator () ( const Matrix<T>& x, const bool& isdiff ) const {
+		Matrix<T> y(x.m, x.n);
+		
+		if( isdiff ){
+#pragma omp parallel for
+			for( int i = 0; i < y.m*y.n; ++i )
+				y.v[i] = n*pow(x.v[i], n-1);
+		}
+		else{
+#pragma omp parallel for
+			for( int i = 0; i < y.m*y.n; ++i )
+				y.v[i] = pow(x.v[i], n);
+		}
+
+		return y;
+	}
+
+#ifdef USE_GPU
+	clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ) const{
+		clMatrix<T> y(x.m, x.n);
+
+		if( isdiff ){
+			cl_device_manager.set_argument( PRG::FUNC_POW_DIFF, 0, &y.v );
+			cl_device_manager.set_argument( PRG::FUNC_POW_DIFF, 1, &x.v );
+			cl_device_manager.set_argument( PRG::FUNC_POW_DIFF, 2, &cl_n );
+			cl_device_manager.run_kernel( PRG::FUNC_POW_DIFF, y.m*y.n, 1 );
+		}
+		else{
+			cl_device_manager.set_argument( PRG::FUNC_POW, 0, &y.v );
+			cl_device_manager.set_argument( PRG::FUNC_POW, 1, &x.v );
+			cl_device_manager.set_argument( PRG::FUNC_POW, 2, &cl_n );
+			cl_device_manager.run_kernel( PRG::FUNC_POW, y.m*y.n, 1 );
+		}
+			
+		return y;
+	}
+#endif
+};
+
+template<typename T>
+class Log : public Function<T>
+{
+public:
+	Matrix<T> operator () ( const Matrix<T>& x, const bool& isdiff ) const{
+		Matrix<T> y(x.m, x.n);
+		
+		if( isdiff ){
+#pragma omp parallel for
+			for( int i = 0; i < y.m*y.n; ++i )
+				y.v[i] = 1.0/x.v[i];
+		}
+		else{
+#pragma omp parallel for
+			for( int i = 0; i < y.m*y.n; ++i )
+				y.v[i] = log(x.v[i]);
+		}
+
+		return y;
+	}
+
+#ifdef USE_GPU
+	clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ) const{
+		clMatrix<T> y(x.m, x.n);
+
+		if( isdiff ){
+			cl_device_manager.set_argument( PRG::FUNC_LOG_DIFF, 0, &y.v );
+			cl_device_manager.set_argument( PRG::FUNC_LOG_DIFF, 1, &x.v );
+			cl_device_manager.run_kernel( PRG::FUNC_LOG_DIFF, y.m*y.n, 1 );
+		}
+		else{
+			cl_device_manager.set_argument( PRG::FUNC_LOG, 0, &y.v );
+			cl_device_manager.set_argument( PRG::FUNC_LOG, 1, &x.v );
+			cl_device_manager.run_kernel( PRG::FUNC_LOG, y.m*y.n, 1 );
+		}
+			
+		return y;
+	}
+#endif
+};
+
+template<typename T>
+class Exp : public Function<T>
+{
+public:
+	Matrix<T> operator () ( const Matrix<T>& x, const bool& isdiff ) const{
+		Matrix<T> y(x.m, x.n);
+		
+		if( isdiff ){
+#pragma omp parallel for
+			for( int i = 0; i < y.m*y.n; ++i )
+				y.v[i] = exp(x.v[i]);
+		}
+		else{
+#pragma omp parallel for
+			for( int i = 0; i < y.m*y.n; ++i )
+				y.v[i] = exp(x.v[i]);
+		}
+
+		return y;
+	}
+
+#ifdef USE_GPU
+	clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ) const{
+		clMatrix<T> y(x.m, x.n);
+
+		if( isdiff ){
+			cl_device_manager.set_argument( PRG::FUNC_EXP_DIFF, 0, &y.v );
+			cl_device_manager.set_argument( PRG::FUNC_EXP_DIFF, 1, &x.v );
+			cl_device_manager.run_kernel( PRG::FUNC_EXP_DIFF, y.m*y.n, 1 );
+		}
+		else{
+			cl_device_manager.set_argument( PRG::FUNC_EXP, 0, &y.v );
+			cl_device_manager.set_argument( PRG::FUNC_EXP, 1, &x.v );
+			cl_device_manager.run_kernel( PRG::FUNC_EXP, y.m*y.n, 1 );
+		}
+			
+		return y;
+	}
+#endif
+};
+
+
+template<typename T>
 class Softmax : public Function<T>
 {
 public:
-	inline Matrix<T> operator() ( const Matrix<T>& x, const bool& isdiff ){
+	Matrix<T> operator() ( const Matrix<T>& x, const bool& isdiff ) const{
 		if( isdiff ){
 			return Matrix<T>::ones(x.m, x.n);
 		}
@@ -475,7 +680,7 @@ public:
 	}
 
 #ifdef USE_GPU
-	inline clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ){
+	clMatrix<T> operator() ( const clMatrix<T>& x, const bool& isdiff ) const{
 		if( isdiff ){
 			return clMatrix<T>::ones(x.m, x.n);
 		}
@@ -511,7 +716,7 @@ template<typename T>
 class Square : public LossFunction<T>
 {
 public:
-	inline Matrix<T> operator() ( const Matrix<T>& x, const Matrix<T>& d, const bool& isdiff ){
+	Matrix<T> operator() ( const Matrix<T>& x, const Matrix<T>& d, const bool& isdiff ) const{
 		if( isdiff ){
 			Matrix<T> y(x.m, x.n);
 #pragma omp parallel for schedule(auto)
@@ -534,7 +739,7 @@ public:
 	}
 
 #ifdef USE_GPU
-	inline clMatrix<T> operator() ( const clMatrix<T>& x, const clMatrix<T>& d, const bool& isdiff ){
+	clMatrix<T> operator() ( const clMatrix<T>& x, const clMatrix<T>& d, const bool& isdiff ) const{
 		if( isdiff ){
 			clMatrix<T> y(x.m, x.n);
 
@@ -566,7 +771,7 @@ template<typename T>
 class CrossEntropy : public LossFunction<T>
 {
 public:
-	inline Matrix<T> operator() ( const Matrix<T>& x, const Matrix<T>& d, const bool& isdiff ){
+	Matrix<T> operator() ( const Matrix<T>& x, const Matrix<T>& d, const bool& isdiff ) const{
 		if( isdiff ){
 			Matrix<T> y(x.m, x.n);
 
@@ -588,7 +793,7 @@ public:
 	}
 
 #ifdef USE_GPU
-	inline clMatrix<T> operator() ( const clMatrix<T>& x, const clMatrix<T>& d, const bool& isdiff ){
+	clMatrix<T> operator() ( const clMatrix<T>& x, const clMatrix<T>& d, const bool& isdiff ) const{
 		if( isdiff ){
 			clMatrix<T> y(x.m, x.n);
 
