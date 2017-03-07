@@ -8,7 +8,7 @@ template<template<typename> class Mat, typename Real>
 class BatchNormalize : public Layer<Mat, Real>
 {
 private:
-	const Real EPS = 1.0E-8;
+	const Real EPS = 1.0E-1;
 #ifdef USE_GPU
 	cl_mem cl_EPS;
 	cl_mem cl_num_unit, cl_prev_num_unit;
@@ -348,7 +348,7 @@ Matrix<Real> BatchNormalize<Mat, Real>::calc_delta ( const Matrix<Real>& U, cons
 	for( int i = 0; i < this->num_map; ++i ){
 		auto beg = std::chrono::system_clock::now();
 		
-#pragma omp parallel for 
+//#pragma omp parallel for 
 		for( int j = 0; j < my_size; ++j )
 			for( int k = 0; k < U.n; ++k ){
 				Real tmp1 = 0.0, tmp2 = 0.0;
@@ -365,7 +365,7 @@ Matrix<Real> BatchNormalize<Mat, Real>::calc_delta ( const Matrix<Real>& U, cons
 					- this->W[0](i,0)/pow(var(i,j) + EPS, 1.5)*U_diff(i*this->prev_num_unit + my_offset+j,k)*(U_appl(i*this->prev_num_unit + my_offset+j,k) - mean(i,j))*tmp2;
 #else
 				nx_delta(i*this->prev_num_unit + j,k) =
-					this->W[0](i,0)/sqrt(var(i,j) + EPS)*delta(i*this->num_unit + my_offset+j,k)*U_diff(i*this->prev_num_unit + j,k)
+					this->W[0](i,0)/sqrt(var(i,j) + EPS)*delta(i*this->num_unit + j,k)*U_diff(i*this->prev_num_unit + j,k)
 					- this->W[0](i,0)/sqrt(var(i,j) + EPS)*U_diff(i*this->prev_num_unit + j,k)*tmp1
 					- this->W[0](i,0)/pow(var(i,j) + EPS, 1.5)*U_diff(i*this->prev_num_unit + j,k)*(U_appl(i*this->prev_num_unit + j,k) - mean(i,j))*tmp2;
 #endif
@@ -493,7 +493,9 @@ Matrix<Real> BatchNormalize<Mat, Real>::apply ( const Matrix<Real>& U, bool use_
 		for( int i = 0; i < this->num_map; ++i ){
 #pragma omp for nowait
 			for( int j = 0; j < my_size; ++j ){
-				for( int k = 0; k < U.n; ++k ) mean(i,j) += U(i*this->prev_num_unit + my_offset+j, k);
+				for( int k = 0; k < U.n; ++k ){
+					mean(i,j) += U(i*this->prev_num_unit + my_offset+j, k);
+				}
 			}
 		}
 	}

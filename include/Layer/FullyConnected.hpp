@@ -209,15 +209,16 @@ std::pair<std::vector<clMatrix<Real>>, std::vector<clMatrix<Real>>> FullyConnect
 	clMatrix<Real> U_ = (*this->prev_func)(U, false);
 	end = std::chrono::system_clock::now();
 	this->t_grad_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+	clMatrix<Real> tmp_delta(this->W[0].m, delta.n);
 	for( int i = 0; i < this->num_map; ++i ){
 		// beg = std::chrono::system_clock::now();
 		// tmp_delta = delta[i];
 		// end = std::chrono::system_clock::now();
 		// this->t_grad_repl += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
-
+		tmp_delta = delta.sub(i*this->num_unit, 0, this->num_unit, delta.n);
 		beg = std::chrono::system_clock::now();
-		nabla_W[i] = delta*clMatrix<Real>::transpose(U_);
-		if( this->is_use_bias ) nabla_b[i] = delta*e;
+		nabla_W[i] = tmp_delta*clMatrix<Real>::transpose(U_);
+		if( this->is_use_bias ) nabla_b[i] = tmp_delta*e;
 		else nabla_b[i] = Matrix<Real>::zeros(delta.m, 1);
 		end = std::chrono::system_clock::now();
 		this->t_grad_gemm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;

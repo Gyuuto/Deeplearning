@@ -355,6 +355,21 @@ struct Matrix
 		return ret;
 	}
 
+	friend Matrix<T> operator - ( const Matrix<T>& m1 )
+	{
+		int m = m1.m, n = m1.n;
+		Matrix<T> ret(m, n);
+#ifdef USE_EIGEN
+		ret.v = -m1.v;
+#else
+#pragma omp parallel for
+		for( int i = 0; i < m*n; ++i ) ret.v[i] = -m1.v[i];
+#endif
+		cnt_flop += (long long)m*n;
+
+		return ret;
+	}
+
 	friend Matrix<T> operator * ( const T& c, const Matrix<T>& m1 )
 	{
 		int m = m1.m, n = m1.n;

@@ -409,7 +409,7 @@ struct clMatrix
 		return *this;
 	}
 
-	friend clMatrix<T> operator + ( clMatrix<T>& m1, clMatrix<T>& m2 )
+	friend clMatrix<T> operator + ( const clMatrix<T>& m1, const clMatrix<T>& m2 )
 	{
 		int m = m1.m, n = m1.n;
 		clMatrix<T> ret = m1;
@@ -442,6 +442,11 @@ struct clMatrix
 		cnt_flop += (long long)m*n;
 
 		return ret;
+	}
+
+	friend clMatrix<T> operator - ( const clMatrix<T>& m1 )
+	{
+		return -1*m1;
 	}
 
 	friend clMatrix<float> operator * ( const clMatrix<float>& m1, const clMatrix<float>& m2 )
@@ -514,7 +519,7 @@ struct clMatrix
 
 		clReleaseMemObject( buf_x );
 		clReleaseMemObject( buf_y );
-		
+
 		return ret;
 	}
 
