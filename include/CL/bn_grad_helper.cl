@@ -11,11 +11,11 @@ __kernel void bn_grad_helper ( __global float* tmp_nabla1, __global int* ld_na1,
 							   __global float* var, __global int* ld_var,
 							   __global float* EPS )
 {
-	int j = get_global_id(0) / *ld_U, i = get_global_id(1), k = get_global_id(0) % *ld_U;
+	int j = get_global_id(1), i = get_global_id(2), k = get_global_id(0);
 
-	tmp_nabla1[i* *ld_na1 + (k* *num_unit + j)] =
+	tmp_nabla1[i* *ld_na1 + (k* *num_unit + j)] = 
 		delta[(i* *num_unit + j)* *ld_U + k]*(U_apply[(i* *num_unit + j)* *ld_U + k] - mean[i* *ld_mean + j])/sqrt(var[i* *ld_var + j] + *EPS);
 
-	tmp_nabla2[i* *ld_na1 + k* *num_unit + j] = delta[(i* *num_unit + j)* *ld_U + k];
+	tmp_nabla2[i* *ld_na2 + k* *num_unit + j] = delta[(i* *num_unit + j)* *ld_U + k];
 }
 )

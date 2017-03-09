@@ -15,11 +15,11 @@ __kernel void bn_apply_mean_var ( __global float* mean, __global int* ld_mean,
 	}
 	mean[i* *ld_mean + j] /= *ld_U;
 	
-	var[i* *ld_mean + j] = 0.0;
+	var[i* *ld_var + j] = 0.0;
 	for( int k = 0; k < *ld_U; ++k ){
-		float tmp = (U[(i* *prev_num_unit + j)* *ld_U + k] - mean[i* *ld_var + j]);
+		float tmp = (U[(i* *prev_num_unit + j)* *ld_U + k] - mean[i* *ld_mean + j]);
 		var[i* *ld_var + j] += tmp*tmp;
 	}
-	var[i* *ld_mean + j] /= *ld_U;
+	var[i* *ld_var + j] /= *ld_U;
 }
 )

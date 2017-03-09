@@ -22,6 +22,6 @@ __kernel void bn_delta ( __global float* nx_delta, __global int* prev_num_unit, 
 	nx_delta[(i* *prev_num_unit + j)* *ld_U + k] = 
 		W[i]/sqrt(var[i* *ld_var + j] + *EPS)*delta[(i* *prev_num_unit + j)* *ld_U + k]*U_diff[(i* *prev_num_unit + j)* *ld_U + k] -
 		W[i]/sqrt(var[i* *ld_var + j] + *EPS)*U_diff[(i* *prev_num_unit + j)* *ld_U + k]*tmp1 -
-		W[i]/powr(var[i* *ld_var + j] + *EPS, 1.5f)*U_diff[(i* *prev_num_unit + j)* *ld_U + k]*(U_apply[(i* *prev_num_unit + j)* *ld_U + k] - mean[i* *ld_mean + j])*tmp2;
+		W[i]/(powr(var[i* *ld_var + j], 1.5f) + *EPS)*U_diff[(i* *prev_num_unit + j)* *ld_U + k]*(U_apply[(i* *prev_num_unit + j)* *ld_U + k] - mean[i* *ld_mean + j])*tmp2;
 }
 )
