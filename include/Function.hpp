@@ -98,21 +98,28 @@ template<typename T>
 class LeakyReLU : public Function<T>
 {
 public:
-	double alpha;
+	T alpha;
 #ifdef USE_GPU
 	cl_mem cl_alpha;
 #endif
 	
-	LeakyReLU ( const double alpha = 0.2 ) :alpha(alpha)
+	LeakyReLU ( const T alpha = 0.2 ) :alpha(alpha)
 	{
 #ifdef USE_GPU
 		cl_int err;
 		cl_alpha = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(T), NULL, &err);
 		err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_alpha, CL_TRUE, 0,
-									sizeof(T), &alpha, 0, NULL, NULL );
+									sizeof(T), &(this->alpha), 0, NULL, NULL );
 #endif
 	}
 
+#ifdef USE_GPU
+	~LeakyReLU ()
+	{
+		clReleaseMemObject(cl_alpha);
+	}
+#endif
+	
 	Matrix<T> operator() ( const Matrix<T>& x, const bool& isdiff ) const{
 		Matrix<T> y(x.m, x.n);
 

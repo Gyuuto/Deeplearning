@@ -183,7 +183,7 @@ void TransposedConvolutional<Mat, Real>::init ( std::mt19937& mt, MPI_Comm inner
 	cl_int err;
 	cl_feed_idx = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, this->num_unit*m*n*sizeof(int), NULL, &err);
 	err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_feed_idx, CL_TRUE, 0,
-								this->num_unit*m*n*sizeof(int), &feed_idx[0], 0, NULL, NULL );
+								feed_idx.size()*sizeof(int), &feed_idx[0], 0, NULL, NULL );
 
 	cl_num_unit = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
 	err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_num_unit, CL_TRUE, 0,
@@ -234,15 +234,6 @@ std::pair<std::vector<Matrix<Real>>, std::vector<Matrix<Real>>> TransposedConvol
 	std::vector<Matrix<Real>> nabla_b(1, Matrix<Real>(this->num_map, 1));
 
 	Matrix<Real> U_ = (*this->prev_func)(U, false);
-	// const int prev_X = this->prev_ldu, prev_Y = this->prev_num_map/this->prev_ldu;
-	// Matrix<Real> U_apply = (*this->prev_func)(U, false);
-	// Matrix<Real> U_ = Matrix<Real>::zeros(this->prev_num_map*this->prev_num_unit*stride*stride, U.n);
-	// for( int i = 0; i < this->prev_num_map; ++i ){
-	// 	for( int y = 0; y < prev_Y; ++y )
-	// 		for( int x = 0; x < prev_X; ++x )
-	// 			for( int n = 0; n < U.n; ++n )
-	// 				U_(i*this->prev_num_unit*stride*stride + y*prev_ldu*stride + x*stride, n) = U_apply(i*this->prev_num_unit + y*prev_ldu + x, n);
-	// }
 	auto end = std::chrono::system_clock::now();
 	this->t_grad_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
@@ -259,7 +250,7 @@ std::pair<std::vector<Matrix<Real>>, std::vector<Matrix<Real>>> TransposedConvol
 					for( int j = 0; j < my_size; ++j )
 						for( int s = 0; s < m*n; ++s ){
 							if( feed_idx[(j+offset)*m*n + s] != -1 )
-								U_mat(k*m*n + s, j + l*my_size) = U_(k*this->prev_num_unit*stride*stride + feed_idx[(j+offset)*m*n + s], l+i);
+								U_mat(k*m*n + s, j + l*my_size) = U_(k*this->prev_num_unit + feed_idx[(j+offset)*m*n + s], l+i);
 							else
 								U_mat(k*m*n + s, j + l*my_size) = 0.0;
 						}

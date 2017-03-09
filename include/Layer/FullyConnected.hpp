@@ -167,7 +167,7 @@ std::pair<std::vector<Matrix<Real>>, std::vector<Matrix<Real>>> FullyConnected<M
 				tmp_delta(k,l) = delta(i*this->num_unit + k + offset,l);
 		end = std::chrono::system_clock::now();
 		this->t_grad_repl += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
-			
+
 		beg = std::chrono::system_clock::now();
 		nabla_W[i] = tmp_delta*Matrix<Real>::transpose(U_);
 		if( this->is_use_bias ) nabla_b[i] = tmp_delta*e;
@@ -239,7 +239,7 @@ Matrix<Real> FullyConnected<Mat, Real>::calc_delta ( const Matrix<Real>& U, cons
 #ifdef USE_MPI
 	offset = this->rank*this->num_unit/this->nprocs;
 #endif
-	Matrix<Real> tmp_delta(this->W[0].m, delta.n), tmp, nx_delta;
+	Matrix<Real> tmp_delta(this->num_map*this->W[0].m, delta.n), tmp, nx_delta;
 	auto end = std::chrono::system_clock::now();
 	this->t_delta_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
@@ -258,6 +258,7 @@ Matrix<Real> FullyConnected<Mat, Real>::calc_delta ( const Matrix<Real>& U, cons
 	this->t_delta_repl += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
 	beg = std::chrono::system_clock::now();
+	Matrix<Real>::zeros(this->W[0].n, tmp_delta.n);
 	tmp = Matrix<Real>::zeros(this->W[0].n, tmp_delta.n);
 	if( this->W[0].m != 0 ){
 		for( int i = 0; i < this->num_map; ++i )
