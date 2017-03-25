@@ -232,7 +232,10 @@ struct Matrix
 	{
 #ifdef USE_EIGEN
 		return v(i, j);
-#else		
+#else
+		assert( 0 <= i && i < m );
+		assert( 0 <= j && j < n );
+
 		return v[i*n + j];
 #endif
 	}
@@ -242,6 +245,9 @@ struct Matrix
 #ifdef USE_EIGEN
 		return v(i, j);
 #else		
+		assert( 0 <= i && i < m );
+		assert( 0 <= j && j < n );
+
 		return v[i*n + j];
 #endif
 	}
@@ -425,6 +431,15 @@ struct Matrix
 		for( int i = 0; i < w; ++i )
 			for( int j = 0; j < h; ++j )
 				(*this)(y+j, x+i) = mat(j, i);
+	}
+
+	void clip ( const T& val )
+	{
+#pragma omp parallel for
+		for( int i = 0; i < m*n; ++i ){
+			if( v[i] > val ) v[i] = val;
+			else if( v[i] < -val ) v[i] = -val;
+		}
 	}
 };
 
