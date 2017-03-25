@@ -13,7 +13,8 @@ struct ADAM
 {
 	const Real beta = 0.9, gamma = 0.999, eps = 1.0E-8;
 	Real EPS, beta_ = 1.0, gamma_ = 1.0;
-
+	Real threshold;
+	
 	std::vector<Mat<Real>> v_W, r_W;
 	std::vector<Mat<Real>> v_b, r_b;
 
@@ -28,13 +29,15 @@ struct ADAM<Matrix, Real>
 {
 	const Real beta = 0.9, gamma = 0.999, eps = 1.0E-8;
 	Real EPS, beta_ = 1.0, gamma_ = 1.0;
-
+	Real threshold;
+	
 	std::vector<Matrix<Real>> v_W, r_W;
 	std::vector<Matrix<Real>> v_b, r_b;
 
-	ADAM( const std::vector<Matrix<Real>>& W, const std::vector<Matrix<Real>>& b, Real EPS )
+	ADAM( const std::vector<Matrix<Real>>& W, const std::vector<Matrix<Real>>& b, Real EPS, Real threshold = -1.0 )
 	{
 		this->EPS = EPS;
+		this->threshold = threshold;
 
 		if( W.size() == 0 || W[0].m == 0 || W[0].n == 0 ){
 			v_W = std::vector<Matrix<Real>>();
@@ -63,11 +66,15 @@ struct ADAM<Matrix, Real>
 		std::vector<Matrix<Real>> update_W(nabla_W.size()), update_b(nabla_b.size());
 		for( int i = 0; i < nabla_W.size(); ++i ){
 			update_W[i] = Matrix<Real>(nabla_W[i].m, nabla_W[i].n);
+
+			auto tmp_nabla = nabla_W[i];
+			if( threshold > 0.0 ) tmp_nabla.clip( threshold );
+
 #pragma omp parallel for
 			for( int j = 0; j < update_W[i].m; ++j )
 				for( int k = 0; k < update_W[i].n; ++k ){
-					v_W[i](j,k) = beta*v_W[i](j,k) + (1.0 - beta)*nabla_W[i](j,k);
-					r_W[i](j,k) = gamma*r_W[i](j,k) + (1.0 - gamma)*(nabla_W[i](j,k)*nabla_W[i](j,k));
+					v_W[i](j,k) = beta*v_W[i](j,k) + (1.0 - beta)*tmp_nabla(j,k);
+					r_W[i](j,k) = gamma*r_W[i](j,k) + (1.0 - gamma)*(tmp_nabla(j,k)*tmp_nabla(j,k));
 
 					auto v_hat = v_W[i](j,k) / (1.0 - beta_);
 					auto r_hat = r_W[i](j,k) / (1.0 - gamma_);
@@ -99,6 +106,8 @@ struct ADAM<clMatrix, Real>
 {
 	const Real beta = 0.9, gamma = 0.999, eps = 1.0E-8;
 	Real EPS, beta_ = 1.0, gamma_ = 1.0;
+	Real threshold;
+	
 	cl_mem cl_beta, cl_gamma, cl_eps;
 	cl_mem cl_EPS, cl_beta_, cl_gamma_;
 
@@ -108,6 +117,8 @@ struct ADAM<clMatrix, Real>
 	ADAM( const ADAM<clMatrix, Real>& adam )
 	{
 		this->EPS = adam.EPS;
+		this->threshold = adam.threshold;
+
 		this->beta_ = adam.beta_;
 		this->gamma_ = adam.gamma_;
 		this->v_W = adam.v_W; this->r_W = adam.r_W;
@@ -127,10 +138,12 @@ struct ADAM<clMatrix, Real>
 		clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_eps, CL_TRUE, 0, sizeof(Real), &eps, 0, NULL, NULL );
 		clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_EPS, CL_TRUE, 0, sizeof(Real), &EPS, 0, NULL, NULL );
 	}
-	ADAM( const std::vector<clMatrix<Real>>& W, const std::vector<clMatrix<Real>>& b, Real EPS )
+
+	ADAM( const std::vector<clMatrix<Real>>& W, const std::vector<clMatrix<Real>>& b, Real EPS, Real threshold = -1.0 )
 	{
 		this->EPS = EPS;
-
+		this->threshold = threshold;
+		
 		if( W.size() == 0 || W[0].m == 0 || W[0].n == 0 ){
 			v_W = std::vector<clMatrix<Real>>();
 			r_W = std::vector<clMatrix<Real>>();
@@ -179,6 +192,8 @@ struct ADAM<clMatrix, Real>
 	const ADAM& operator = ( const ADAM<clMatrix, Real>& adam )
 	{
 		this->EPS = adam.EPS;
+		this->threshold = adam.threshold;
+
 		this->beta_ = adam.beta_;
 		this->gamma_ = adam.gamma_;
 		this->v_W = adam.v_W; this->r_W = adam.r_W;
@@ -201,12 +216,17 @@ struct ADAM<clMatrix, Real>
 
 		if( nabla_W.size() == 0 ) return std::make_pair(std::vector<clMatrix<Real>>(), std::vector<clMatrix<Real>>());
 
-		std::vector<clMatrix<Real>> update_W(nabla_W.size(), clMatrix<Real>(nabla_W[0].m, nabla_W[0].n)), update_b(nabla_b.size(), clMatrix<Real>(nabla_b[0].m, nabla_b[0].n));
+		std::vector<clMatrix<Real>> update_W(nabla_W.size()), update_b(nabla_b.size());
 		for( int i = 0; i < nabla_W.size(); ++i ){
+			update_W[i] = clMatrix<Real>(nabla_W[i].m, nabla_W[i].n);
+
+			auto tmp_nabla = nabla_W[i];
+			if( threshold > 0.0 ) tmp_nabla.clip(threshold);
+
 			cl_device_manager.set_argument( PRG::ADAM, 0, &v_W[i].v );
 			cl_device_manager.set_argument( PRG::ADAM, 1, &r_W[i].v );
 			cl_device_manager.set_argument( PRG::ADAM, 2, &update_W[i].v );
-			cl_device_manager.set_argument( PRG::ADAM, 3, &nabla_W[i].v );
+			cl_device_manager.set_argument( PRG::ADAM, 3, &tmp_nabla.v );
 			cl_device_manager.set_argument( PRG::ADAM, 4, &cl_beta );
 			cl_device_manager.set_argument( PRG::ADAM, 5, &cl_gamma );
 			cl_device_manager.set_argument( PRG::ADAM, 6, &cl_beta_ );
@@ -217,6 +237,8 @@ struct ADAM<clMatrix, Real>
 		}
 
 		for( int i = 0; i < nabla_b.size(); ++i ){
+			update_b[i] = clMatrix<Real>(nabla_b[i].m, nabla_b[i].n);
+			
 			cl_device_manager.set_argument( PRG::ADAM, 0, &v_b[i].v );
 			cl_device_manager.set_argument( PRG::ADAM, 1, &r_b[i].v );
 			cl_device_manager.set_argument( PRG::ADAM, 2, &update_b[i].v );
