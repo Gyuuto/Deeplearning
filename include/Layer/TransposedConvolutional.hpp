@@ -627,7 +627,10 @@ clMatrix<Real> TransposedConvolutional<Mat, Real>::calc_delta ( const clMatrix<R
 	cl_device_manager.set_argument( PRG::CONV_DELTA_KERNEL_SET, 0, &kernel.v );
 	cl_device_manager.set_argument( PRG::CONV_DELTA_KERNEL_SET, 1, &this->W[0].v );
 	cl_device_manager.run_kernel( PRG::CONV_DELTA_KERNEL_SET, this->prev_num_map, this->num_map, m*n );
-	
+
+	err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_k, CL_TRUE, 0,
+								sizeof(int), &this->prev_num_unit, 0, NULL, NULL );
+
 	clMatrix<Real> input_image(my_size*once_num, m*n*this->num_map);
 	std::vector<clMatrix<Real>> tmp_img(delta.n/once_num + 1);
 	for( int i = 0; i < delta.n; i += once_num ){
@@ -646,9 +649,9 @@ clMatrix<Real> TransposedConvolutional<Mat, Real>::calc_delta ( const clMatrix<R
 		cl_device_manager.set_argument( PRG::CONV_DELTA_IMG_SET, 4, &delta.N );
 		cl_device_manager.set_argument( PRG::CONV_DELTA_IMG_SET, 5, &cl_i );
 		cl_device_manager.set_argument( PRG::CONV_DELTA_IMG_SET, 6, &cl_filter_size );
-		cl_device_manager.set_argument( PRG::CONV_DELTA_IMG_SET, 7, &cl_num_unit );
+		cl_device_manager.set_argument( PRG::CONV_DELTA_IMG_SET, 7, &cl_k );
 		cl_device_manager.set_argument( PRG::CONV_DELTA_IMG_SET, 8, &cl_feed_idx );
-		cl_device_manager.run_kernel( PRG::CONV_DELTA_IMG_SET, this->num_map*m*n, size, my_size );
+		cl_device_manager.run_kernel( PRG::CONV_DELTA_IMG_SET, this->num_map*m*n, size, this->num_unit );
 		auto end = std::chrono::system_clock::now();
 		this->t_delta_repl += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
@@ -715,19 +718,18 @@ clMatrix<Real> TransposedConvolutional<Mat, Real>::calc_delta ( const clMatrix<R
 #else
 	beg = std::chrono::system_clock::now();
 
-	err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_i, CL_TRUE, 0,
-								sizeof(int), &my_size, 0, NULL, NULL );
 	for( int k = 0; k < tmp_img.size(); ++k ){
-		err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_k, CL_TRUE, 0,
+		err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_i, CL_TRUE, 0,
 									sizeof(int), &k, 0, NULL, NULL );
 		cl_device_manager.set_argument( PRG::CONV_APPLY_RET_SET, 0, &nx_delta.v );
 		cl_device_manager.set_argument( PRG::CONV_APPLY_RET_SET, 1, &nx_delta.N );
 		cl_device_manager.set_argument( PRG::CONV_APPLY_RET_SET, 2, &tmp_img[k].v );
 		cl_device_manager.set_argument( PRG::CONV_APPLY_RET_SET, 3, &tmp_img[k].N );
-		cl_device_manager.set_argument( PRG::CONV_APPLY_RET_SET, 4, &cl_k );
-		cl_device_manager.set_argument( PRG::CONV_APPLY_RET_SET, 5, &cl_i );
+		cl_device_manager.set_argument( PRG::CONV_APPLY_RET_SET, 4, &cl_i );
+		cl_device_manager.set_argument( PRG::CONV_APPLY_RET_SET, 5, &cl_k );
 		cl_device_manager.run_kernel( PRG::CONV_APPLY_RET_SET, once_num, this->prev_num_map, this->prev_num_unit );
 	}	
+
 	end = std::chrono::system_clock::now();
 	this->t_delta_repl += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 #endif
@@ -1078,7 +1080,7 @@ void TransposedConvolutional<Mat, Real>::set_W ( const std::string& filename )
 
 	Matrix<Real> tmp_b = this->b[0];
 	for( int i = 0; i < this->num_map; ++i )
-		ifs.read((char*)&tmp_b(0,i), sizeof(tmp_b(0,i)));
+		ifs.read((char*)&tmp_b(i,0), sizeof(tmp_b(i,0)));
 	this->b[0] = tmp_b;
 }
 
@@ -1097,7 +1099,7 @@ void TransposedConvolutional<Mat, Real>::output_W ( const std::string& filename 
 
 		Matrix<Real> tmp_b = this->b[0];
 		for( int i = 0; i < this->num_map; ++i )
-			ofs.write((char*)&tmp_b(0,i), sizeof(tmp_b(0,i)));
+			ofs.write((char*)&tmp_b(i,0), sizeof(tmp_b(i,0)));
 #ifdef USE_MPI
 	}
 #endif

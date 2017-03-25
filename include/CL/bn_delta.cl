@@ -9,15 +9,16 @@ __kernel void bn_delta ( __global float* nx_delta, __global int* prev_num_unit, 
 						 __global float* var, __global int* ld_var,
 						 __global float* W, __global float* EPS )
 {
+	int N = get_global_size(0);
 	int k = get_global_id(0), j = get_global_id(1), i = get_global_id(2);
 
 	float tmp1 = 0.0f, tmp2 = 0.0f;
-	for( int l = 0; l < *ld_U; ++l ){
+	for( int l = 0; l < N; ++l ){
 		tmp1 += delta[(i* *prev_num_unit + j)* *ld_U + l];
 		tmp2 += delta[(i* *prev_num_unit + j)* *ld_U + l] * (U_apply[(i* *prev_num_unit + j)* *ld_U + l] - mean[i* *ld_mean + j]);
 	}
-	tmp1 /= *ld_U;
-	tmp2 /= *ld_U;
+	tmp1 /= N;
+	tmp2 /= N;
 
 	nx_delta[(i* *prev_num_unit + j)* *ld_U + k] = 
 		W[i]/sqrt(var[i* *ld_var + j] + *EPS)*delta[(i* *prev_num_unit + j)* *ld_U + k]*U_diff[(i* *prev_num_unit + j)* *ld_U + k] -

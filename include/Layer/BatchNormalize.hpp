@@ -16,6 +16,7 @@ private:
 	cl_mem cl_n;
 #endif
 
+	Mat<Real> tmp_mean, tmp_var;
 	Mat<Real> mean, var;
 public:
 	BatchNormalize( int prev_num_map, int prev_num_unit,
@@ -111,8 +112,8 @@ void BatchNormalize<Mat, Real>::init( std::mt19937& m )
 	offset = 0;
 	my_size = this->num_unit;
 #endif
-	mean = Mat<Real>(this->num_map, my_size);
-	var = Mat<Real>(this->num_map, my_size);
+	mean = Mat<Real>::zeros(this->num_map, my_size); var = Mat<Real>::ones(this->num_map, my_size);
+	tmp_mean = Mat<Real>(this->num_map, my_size); tmp_var = Mat<Real>(this->num_map, my_size);
 
 	std::uniform_real_distribution<Real> d_rand(-1.0, 1.0);
 	Matrix<Real> tmp_W = this->W[0], tmp_b = this->b[0];
@@ -173,7 +174,7 @@ std::pair<std::vector<Matrix<Real>>, std::vector<Matrix<Real>>> BatchNormalize<M
 #pragma omp parallel for reduction(+:tmp_nabla1)
 		for( int j = 0; j < my_size; ++j ){
 			for( int k = 0; k < U.n; ++k ){
-				tmp_nabla1 += delta(i*this->num_unit + my_offset+j,k)*(U_apply(i*this->prev_num_unit + my_offset+j,k) - mean(i,j))/std::sqrt(var(i,j) + EPS);
+				tmp_nabla1 += delta(i*this->num_unit + my_offset+j,k)*(U_apply(i*this->prev_num_unit + my_offset+j,k) - tmp_mean(i,j))/std::sqrt(tmp_var(i,j) + EPS);
 			}
 		}
 
@@ -235,10 +236,10 @@ std::pair<std::vector<clMatrix<Real>>, std::vector<clMatrix<Real>>> BatchNormali
 	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 5, &U_apply.v );
 	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 6, &cl_num_unit );
 	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 7, &U.N );
-	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 8, &mean.v );
-	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 9, &mean.N );
-	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 10, &var.v );
-	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 11, &var.N );
+	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 8, &tmp_mean.v );
+	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 9, &tmp_mean.N );
+	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 10, &tmp_var.v );
+	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 11, &tmp_var.N );
 	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 12, &cl_EPS );
 	cl_device_manager.run_kernel( PRG::BN_GRAD_HELPER, U.n, my_size, this->num_map );
 
@@ -276,7 +277,7 @@ std::pair<std::vector<clMatrix<Real>>, std::vector<clMatrix<Real>>> BatchNormali
 	cl_int err;
 	int n = U.n*my_size / lc1;
 	err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_n, CL_TRUE, 0,
-								sizeof(Real), &n, 0, NULL, NULL );
+								sizeof(int), &n, 0, NULL, NULL );
 
 	cl_device_manager.set_argument( PRG::BN_GRAD_FINAL_REDUCE, 0, &tmp_nabla1.v );
 	cl_device_manager.set_argument( PRG::BN_GRAD_FINAL_REDUCE, 1, &tmp_nabla1.N );
@@ -353,7 +354,7 @@ Matrix<Real> BatchNormalize<Mat, Real>::calc_delta ( const Matrix<Real>& U, cons
 			Real tmp1 = 0.0, tmp2 = 0.0;
 			for( int l = 0; l < U.n; ++l ){
 				tmp1 += delta(i*this->num_unit + my_offset+j,l);
-				tmp2 += delta(i*this->num_unit + my_offset+j,l)*(U_appl(i*this->prev_num_unit + my_offset+j,l) - mean(i,j));
+				tmp2 += delta(i*this->num_unit + my_offset+j,l)*(U_appl(i*this->prev_num_unit + my_offset+j,l) - tmp_mean(i,j));
 			}
 			tmp1 /= U.n; tmp2 /= U.n;
 			
@@ -361,14 +362,14 @@ Matrix<Real> BatchNormalize<Mat, Real>::calc_delta ( const Matrix<Real>& U, cons
 
 #ifdef USE_MPI
 				tmp_nx_delta(i*my_size + j,k) =
-					this->W[0](i,0)/sqrt(var(i,j) + EPS)*delta(i*this->num_unit + my_offset+j,k)*U_diff(i*this->prev_num_unit + my_offset+j,k)
-					- this->W[0](i,0)/sqrt(var(i,j) + EPS)*U_diff(i*this->prev_num_unit + my_offset+j,k)*tmp1
-					- this->W[0](i,0)/(pow(var(i,j), 1.5) + EPS)*U_diff(i*this->prev_num_unit + my_offset+j,k)*(U_appl(i*this->prev_num_unit + my_offset+j,k) - mean(i,j))*tmp2;
+					this->W[0](i,0)/sqrt(tmp_var(i,j) + EPS)*delta(i*this->num_unit + my_offset+j,k)*U_diff(i*this->prev_num_unit + my_offset+j,k)
+					- this->W[0](i,0)/sqrt(tmp_var(i,j) + EPS)*U_diff(i*this->prev_num_unit + my_offset+j,k)*tmp1
+					- this->W[0](i,0)/(pow(tmp_var(i,j), 1.5) + EPS)*U_diff(i*this->prev_num_unit + my_offset+j,k)*(U_appl(i*this->prev_num_unit + my_offset+j,k) - tmp_mean(i,j))*tmp2;
 #else
 				nx_delta(i*this->prev_num_unit + j,k) =
-					this->W[0](i,0)/sqrt(var(i,j) + EPS)*delta(i*this->num_unit + j,k)*U_diff(i*this->prev_num_unit + j,k)
-					- this->W[0](i,0)/sqrt(var(i,j) + EPS)*U_diff(i*this->prev_num_unit + j,k)*tmp1
-					- this->W[0](i,0)/(pow(var(i,j), 1.5) + EPS)*U_diff(i*this->prev_num_unit + j,k)*(U_appl(i*this->prev_num_unit + j,k) - mean(i,j))*tmp2;
+					this->W[0](i,0)/sqrt(tmp_var(i,j) + EPS)*delta(i*this->num_unit + j,k)*U_diff(i*this->prev_num_unit + j,k)
+					- this->W[0](i,0)/sqrt(tmp_var(i,j) + EPS)*U_diff(i*this->prev_num_unit + j,k)*tmp1
+					- this->W[0](i,0)/(pow(tmp_var(i,j), 1.5) + EPS)*U_diff(i*this->prev_num_unit + j,k)*(U_appl(i*this->prev_num_unit + j,k) - tmp_mean(i,j))*tmp2;
 #endif
 			}
 			auto end = std::chrono::system_clock::now();
@@ -430,10 +431,10 @@ clMatrix<Real> BatchNormalize<Mat, Real>::calc_delta ( const clMatrix<Real>& U, 
 	cl_device_manager.set_argument( PRG::BN_DELTA, 4, &U_diff.v );
 	cl_device_manager.set_argument( PRG::BN_DELTA, 5, &delta.v );
 	cl_device_manager.set_argument( PRG::BN_DELTA, 6, &U.N );
-	cl_device_manager.set_argument( PRG::BN_DELTA, 7, &mean.v );
-	cl_device_manager.set_argument( PRG::BN_DELTA, 8, &mean.N );
-	cl_device_manager.set_argument( PRG::BN_DELTA, 9, &var.v );
-	cl_device_manager.set_argument( PRG::BN_DELTA, 10, &var.N );
+	cl_device_manager.set_argument( PRG::BN_DELTA, 7, &tmp_mean.v );
+	cl_device_manager.set_argument( PRG::BN_DELTA, 8, &tmp_mean.N );
+	cl_device_manager.set_argument( PRG::BN_DELTA, 9, &tmp_var.v );
+	cl_device_manager.set_argument( PRG::BN_DELTA, 10, &tmp_var.N );
 	cl_device_manager.set_argument( PRG::BN_DELTA, 11, &this->W[0].v );
 	cl_device_manager.set_argument( PRG::BN_DELTA, 12, &cl_EPS );
 	cl_device_manager.run_kernel( PRG::BN_DELTA, U.n, my_size, this->num_map );
@@ -480,7 +481,7 @@ Matrix<Real> BatchNormalize<Mat, Real>::apply ( const Matrix<Real>& U, bool use_
 	my_offset = 0;
 	my_size = this->num_unit;
 #endif
-	mean = var = Matrix<Real>::zeros(this->num_map, my_size);
+	tmp_mean = tmp_var = Matrix<Real>::zeros(this->num_map, my_size);
 
 	Matrix<Real> ret(this->num_map*this->num_unit, U.n);
 #ifdef USE_MPI
@@ -490,44 +491,70 @@ Matrix<Real> BatchNormalize<Mat, Real>::apply ( const Matrix<Real>& U, bool use_
 	this->t_apply_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
 	beg = std::chrono::system_clock::now();
+
+	if( !use_func ){
 #pragma omp parallel
-	{
-		for( int i = 0; i < this->num_map; ++i ){
+		{
+			for( int i = 0; i < this->num_map; ++i ){
 #pragma omp for nowait
-			for( int j = 0; j < my_size; ++j ){
-				for( int k = 0; k < U.n; ++k ){
-					mean(i,j) += U(i*this->prev_num_unit + my_offset+j, k);
+				for( int j = 0; j < my_size; ++j ){
+					for( int k = 0; k < U.n; ++k ){
+						tmp_mean(i,j) += U(i*this->prev_num_unit + my_offset+j, k);
+					}
 				}
 			}
 		}
-	}
-	mean /= U.n;
+		tmp_mean /= U.n;
 	
 #pragma omp parallel
-	{
-		for( int i = 0; i < this->num_map; ++i ){
+		{
+			for( int i = 0; i < this->num_map; ++i ){
 #pragma omp for nowait
-			for( int j = 0; j < my_size; ++j ){
-				for( int k = 0; k < U.n; ++k ){
-					Real v = (U(i*this->prev_num_unit + my_offset+j, k) - mean(i, j));
-					var(i,j) += v*v;
+				for( int j = 0; j < my_size; ++j ){
+					for( int k = 0; k < U.n; ++k ){
+						Real v = (U(i*this->prev_num_unit + my_offset+j, k) - tmp_mean(i, j));
+						tmp_var(i,j) += v*v;
+					}
+				}
+			}
+		}
+		tmp_var /= U.n;
+
+		const double decay = 0.99;
+		mean -= (1 - decay) * (mean - tmp_mean);
+		var -= (1 - decay) * (var - tmp_var);
+	}
+	
+	if( use_func ){
+#pragma omp parallel
+		{
+			for( int i = 0; i < this->num_map; ++i ){
+#pragma omp for nowait
+				for( int j = 0; j < my_size; ++j ){
+					for( int k = 0; k < U.n; ++k ){
+#ifdef USE_MPI
+						tmp_ret(i*my_size + j, k) = this->W[0](i,0)/std::sqrt(var(i,j)+EPS)*U(i*this->prev_num_unit + my_offset+j,k) + (this->b[0](i,0) - this->W[0](i,0)*mean(i,j)/std::sqrt(var(i,j)+EPS));
+#else
+						ret(i*this->num_unit + j, k) = this->W[0](i,0)/std::sqrt(var(i,j)+EPS)*U(i*this->prev_num_unit + j,k) + (this->b[0](i,0) - this->W[0](i,0)*mean(i,j)/std::sqrt(var(i,j)+EPS));
+#endif					
+					}
 				}
 			}
 		}
 	}
-	var /= U.n;
-
+	else{
 #pragma omp parallel
-	{
-		for( int i = 0; i < this->num_map; ++i ){
+		{
+			for( int i = 0; i < this->num_map; ++i ){
 #pragma omp for nowait
-			for( int j = 0; j < my_size; ++j ){
-				for( int k = 0; k < U.n; ++k ){
+				for( int j = 0; j < my_size; ++j ){
+					for( int k = 0; k < U.n; ++k ){
 #ifdef USE_MPI
-					tmp_ret(i*my_size + j, k) = this->W[0](i,0)*(U(i*this->prev_num_unit + my_offset+j,k) - mean(i,j))/std::sqrt(var(i,j)+EPS) + this->b[0](i,0);
+						tmp_ret(i*my_size + j, k) = this->W[0](i,0)*(U(i*this->prev_num_unit + my_offset+j,k) - tmp_mean(i,j))/std::sqrt(tmp_var(i,j)+EPS) + this->b[0](i,0);
 #else
-					ret(i*this->num_unit + j, k) = this->W[0](i,0)*(U(i*this->prev_num_unit + j,k) - mean(i,j))/std::sqrt(var(i,j)+EPS) + this->b[0](i,0);
+						ret(i*this->num_unit + j, k) = this->W[0](i,0)*(U(i*this->prev_num_unit + j,k) - tmp_mean(i,j))/std::sqrt(tmp_var(i,j)+EPS) + this->b[0](i,0);
 #endif					
+					}
 				}
 			}
 		}
@@ -588,29 +615,54 @@ clMatrix<Real> BatchNormalize<Mat, Real>::apply ( const clMatrix<Real>& U, bool 
 
 	beg = std::chrono::system_clock::now();
 
-	cl_device_manager.set_argument( PRG::BN_APPLY_MEAN_VAR, 0, &mean.v );
-	cl_device_manager.set_argument( PRG::BN_APPLY_MEAN_VAR, 1, &mean.N );
-	cl_device_manager.set_argument( PRG::BN_APPLY_MEAN_VAR, 2, &var.v );
-	cl_device_manager.set_argument( PRG::BN_APPLY_MEAN_VAR, 3, &var.N );
-	cl_device_manager.set_argument( PRG::BN_APPLY_MEAN_VAR, 4, &U.v );
-	cl_device_manager.set_argument( PRG::BN_APPLY_MEAN_VAR, 5, &cl_prev_num_unit );
-	cl_device_manager.set_argument( PRG::BN_APPLY_MEAN_VAR, 6, &U.N );
-	cl_device_manager.run_kernel( PRG::BN_APPLY_MEAN_VAR, my_size, this->num_map );
+	if( !use_func ){
+		cl_device_manager.set_argument( PRG::BN_APPLY_MEAN_VAR, 0, &tmp_mean.v );
+		cl_device_manager.set_argument( PRG::BN_APPLY_MEAN_VAR, 1, &tmp_mean.N );
+		cl_device_manager.set_argument( PRG::BN_APPLY_MEAN_VAR, 2, &tmp_var.v );
+		cl_device_manager.set_argument( PRG::BN_APPLY_MEAN_VAR, 3, &tmp_var.N );
+		cl_device_manager.set_argument( PRG::BN_APPLY_MEAN_VAR, 4, &U.v );
+		cl_device_manager.set_argument( PRG::BN_APPLY_MEAN_VAR, 5, &cl_prev_num_unit );
+		cl_device_manager.set_argument( PRG::BN_APPLY_MEAN_VAR, 6, &U.N );
+		cl_device_manager.run_kernel( PRG::BN_APPLY_MEAN_VAR, my_size, this->num_map );
 
-	cl_device_manager.set_argument( PRG::BN_APPLY, 0, &ret.v );
-	cl_device_manager.set_argument( PRG::BN_APPLY, 1, &cl_num_unit );
-	cl_device_manager.set_argument( PRG::BN_APPLY, 2, &ret.N );
-	cl_device_manager.set_argument( PRG::BN_APPLY, 3, &mean.v );
-	cl_device_manager.set_argument( PRG::BN_APPLY, 4, &mean.N );
-	cl_device_manager.set_argument( PRG::BN_APPLY, 5, &var.v );
-	cl_device_manager.set_argument( PRG::BN_APPLY, 6, &var.N );
-	cl_device_manager.set_argument( PRG::BN_APPLY, 7, &this->W[0].v );
-	cl_device_manager.set_argument( PRG::BN_APPLY, 8, &this->b[0].v );
-	cl_device_manager.set_argument( PRG::BN_APPLY, 9, &cl_EPS );
-	cl_device_manager.set_argument( PRG::BN_APPLY, 10, &U.v );
-	cl_device_manager.set_argument( PRG::BN_APPLY, 11, &cl_prev_num_unit );
-	cl_device_manager.set_argument( PRG::BN_APPLY, 12, &U.N );
-	cl_device_manager.run_kernel( PRG::BN_APPLY, U.n, my_size, this->num_map );
+		const double decay = 0.99;
+		mean -= (1 - decay) * (mean - tmp_mean);
+		var -= (1 - decay) * (var - tmp_var);
+	}
+
+	// insert if
+	if( use_func ){
+		cl_device_manager.set_argument( PRG::BN_APPLY_INF, 0, &ret.v );
+		cl_device_manager.set_argument( PRG::BN_APPLY_INF, 1, &cl_num_unit );
+		cl_device_manager.set_argument( PRG::BN_APPLY_INF, 2, &ret.N );
+		cl_device_manager.set_argument( PRG::BN_APPLY_INF, 3, &mean.v );
+		cl_device_manager.set_argument( PRG::BN_APPLY_INF, 4, &mean.N );
+		cl_device_manager.set_argument( PRG::BN_APPLY_INF, 5, &var.v );
+		cl_device_manager.set_argument( PRG::BN_APPLY_INF, 6, &var.N );
+		cl_device_manager.set_argument( PRG::BN_APPLY_INF, 7, &this->W[0].v );
+		cl_device_manager.set_argument( PRG::BN_APPLY_INF, 8, &this->b[0].v );
+		cl_device_manager.set_argument( PRG::BN_APPLY_INF, 9, &cl_EPS );
+		cl_device_manager.set_argument( PRG::BN_APPLY_INF, 10, &U.v );
+		cl_device_manager.set_argument( PRG::BN_APPLY_INF, 11, &cl_prev_num_unit );
+		cl_device_manager.set_argument( PRG::BN_APPLY_INF, 12, &U.N );
+		cl_device_manager.run_kernel( PRG::BN_APPLY_INF, U.n, my_size, this->num_map );
+	}
+	else{
+		cl_device_manager.set_argument( PRG::BN_APPLY, 0, &ret.v );
+		cl_device_manager.set_argument( PRG::BN_APPLY, 1, &cl_num_unit );
+		cl_device_manager.set_argument( PRG::BN_APPLY, 2, &ret.N );
+		cl_device_manager.set_argument( PRG::BN_APPLY, 3, &tmp_mean.v );
+		cl_device_manager.set_argument( PRG::BN_APPLY, 4, &tmp_mean.N );
+		cl_device_manager.set_argument( PRG::BN_APPLY, 5, &tmp_var.v );
+		cl_device_manager.set_argument( PRG::BN_APPLY, 6, &tmp_var.N );
+		cl_device_manager.set_argument( PRG::BN_APPLY, 7, &this->W[0].v );
+		cl_device_manager.set_argument( PRG::BN_APPLY, 8, &this->b[0].v );
+		cl_device_manager.set_argument( PRG::BN_APPLY, 9, &cl_EPS );
+		cl_device_manager.set_argument( PRG::BN_APPLY, 10, &U.v );
+		cl_device_manager.set_argument( PRG::BN_APPLY, 11, &cl_prev_num_unit );
+		cl_device_manager.set_argument( PRG::BN_APPLY, 12, &U.N );
+		cl_device_manager.run_kernel( PRG::BN_APPLY, U.n, my_size, this->num_map );
+	}
 	end = std::chrono::system_clock::now();
 	this->t_apply_gemm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
@@ -649,6 +701,13 @@ void BatchNormalize<Mat, Real>::set_W ( const std::string& filename )
 
 	this->W[0] = tmp_W;
 	this->b[0] = tmp_b;
+
+	Matrix<Real> tmp_mean = mean, tmp_var = var;
+	ifs.read((char*)&tmp_mean(0,0), tmp_mean.m*tmp_mean.n*sizeof(tmp_mean(0,0)));
+	ifs.read((char*)&tmp_var(0,0), tmp_var.m*tmp_var.n*sizeof(tmp_var(0,0)));
+
+	mean = tmp_mean;
+	var = tmp_var;
 }
 
 template<template<typename> class Mat, typename Real>
@@ -662,6 +721,10 @@ void BatchNormalize<Mat, Real>::output_W ( const std::string& filename )
 		Matrix<Real> tmp_W = this->W[0], tmp_b = this->b[0];
 		ofs.write((char*)&tmp_W(0,0), this->num_map*sizeof(tmp_W(0,0)));
 		ofs.write((char*)&tmp_b(0,0), this->num_map*sizeof(tmp_b(0,0)));
+
+		Matrix<Real> tmp_mean = mean, tmp_var = var;
+		ofs.write((char*)&tmp_mean(0,0), tmp_mean.m*tmp_mean.n*sizeof(tmp_mean(0,0)));
+		ofs.write((char*)&tmp_var(0,0), tmp_var.m*tmp_var.n*sizeof(tmp_var(0,0)));
 #ifdef USE_MPI
 	}
 #endif

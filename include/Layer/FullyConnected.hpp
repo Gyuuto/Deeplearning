@@ -115,7 +115,6 @@ void FullyConnected<Mat, Real>::init ( std::mt19937& m )
 	const Real r = sqrt(6.0/(this->num_unit + this->prev_num_unit));
 	std::uniform_real_distribution<Real> d_rand(-r, r);
 	for( int i = 0; i < this->num_map; ++i ){
-
 		Matrix<Real> tmp_W = this->W[i];
 		for( int k = 0; k < this->num_unit; ++k ){
 			for( int l = 0; l < this->prev_num_map*this->prev_num_unit; ++l ){
@@ -426,7 +425,7 @@ clMatrix<Real> FullyConnected<Mat, Real>::apply ( const clMatrix<Real>& U, bool 
 	auto tot_beg = std::chrono::system_clock::now();
 	auto beg = tot_beg;
 
-	std::vector<clMatrix<Real>> ret(this->num_map), tmp_ret(this->num_map);
+	clMatrix<Real> ret(this->num_map*this->num_unit, U.n);
 
 	auto end = std::chrono::system_clock::now();
 	this->t_apply_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
@@ -462,8 +461,9 @@ clMatrix<Real> FullyConnected<Mat, Real>::apply ( const clMatrix<Real>& U, bool 
 #else
 	beg = std::chrono::system_clock::now();
 	for( int i = 0; i < this->num_map; ++i ){
-		ret[i] = this->W[i]*U;
-		if( this->is_use_bias ) ret[i] += this->b[i]*clMatrix<Real>::ones(1, U.n);
+		auto tmp = this->W[i]*U;
+		if( this->is_use_bias ) tmp += this->b[i]*clMatrix<Real>::ones(1, U.n);
+		ret.sub(this->num_unit*i, 0, this->num_unit, U.n, tmp);
 	}
 	end = std::chrono::system_clock::now();
 	this->t_apply_gemm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
@@ -471,16 +471,14 @@ clMatrix<Real> FullyConnected<Mat, Real>::apply ( const clMatrix<Real>& U, bool 
 	
 	beg = std::chrono::system_clock::now();
 	if( use_func ){
-		for( int i = 0; i < this->num_map; ++i ){
-			ret[i] = (*this->func)(ret[i], false);
-		}
+		ret = (*this->func)(ret, false);
 	}
 	end = std::chrono::system_clock::now();
 	this->t_apply_repl += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
 	this->t_apply += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
 	
-	return clMatrix<Real>::to_matrix(ret);
+	return ret;
 }
 #endif
 
