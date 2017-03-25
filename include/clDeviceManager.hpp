@@ -14,6 +14,7 @@ enum struct PRG : unsigned int{
 	CLMAT_SUM,
 	CLMAT_SUB,
 	CLMAT_SUB_IN,
+	CLMAT_CLIP,
 	FUNC_RELU_DIFF, FUNC_RELU,
 	FUNC_LEAKYRELU_DIFF, FUNC_LEAKYRELU,
 	FUNC_SIGMOID_DIFF, FUNC_SIGMOID,
@@ -51,6 +52,7 @@ enum struct PRG : unsigned int{
 	BN_DELTA,
 	BN_APPLY_MEAN_VAR,
 	BN_APPLY,
+	BN_APPLY_INF,
 	ASSIGN_DATA,
 	ADD_L2_REG,
 	ADAM,
@@ -69,6 +71,7 @@ const static std::string PRG_NAME[] = {
 	"clMatrix_sum",
 	"clMatrix_sub",
 	"clMatrix_sub_in", 
+	"clMatrix_clip", 
 	"function_ReLU_diff", "function_ReLU",
 	"function_LeakyReLU_diff", "function_LeakyReLU",
 	"function_Sigmoid_diff", "function_Sigmoid",
@@ -106,6 +109,7 @@ const static std::string PRG_NAME[] = {
 	"bn_delta",
 	"bn_apply_mean_var",
 	"bn_apply",
+	"bn_apply_inf",
 	"assign_data",
 	"add_L2_regular",
 	"adam",
@@ -131,6 +135,8 @@ const static std::string PRG_SOURCE[] = {
 #include "CL/clMatrix_sub.cl"
 	,
 #include "CL/clMatrix_sub_in.cl"
+	,
+#include "CL/clMatrix_clip.cl"
 	,
 #include "CL/function_ReLU_diff.cl"
 	,
@@ -233,6 +239,8 @@ const static std::string PRG_SOURCE[] = {
 #include "CL/bn_apply_mean_var.cl"
 	,
 #include "CL/bn_apply.cl"
+	,
+#include "CL/bn_apply_inf.cl"
 	,
 #include "CL/assign_data.cl"
 	,

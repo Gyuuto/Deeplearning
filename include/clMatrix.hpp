@@ -17,35 +17,68 @@ template<class T>
 struct clMatrix
 {
 	int m, n;
-	int mem_size;
-	// std::vector<T> v;
 	cl_mem M, N, v;
 	
-	clMatrix(): m(0), n(0), v(NULL), mem_size(0)
+	clMatrix(): m(0), n(0), v(NULL)
 	{
 		cl_int err;
 		M = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
+		if( err != CL_SUCCESS ){
+			printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+			exit(-1);
+		}
 		err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->M, CL_TRUE, 0,
 									sizeof(int), &m, 0, NULL, NULL );
+		if( err != CL_SUCCESS ){
+			printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+			exit(-1);
+		}
 
 		N = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
+		if( err != CL_SUCCESS ){
+			printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+			exit(-1);
+		}
 		err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->N, CL_TRUE, 0,
 									sizeof(int), &n, 0, NULL, NULL );
+		if( err != CL_SUCCESS ){
+			printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+			exit(-1);
+		}
 	}
 	
 	clMatrix( const int& m, const int& n ) :m(m), n(n)
 	{
 		cl_int err;
 		M = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
+		if( err != CL_SUCCESS ){
+			printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+			exit(-1);
+		}
 		err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->M, CL_TRUE, 0,
 									sizeof(int), &m, 0, NULL, NULL );
+		if( err != CL_SUCCESS ){
+			printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+			exit(-1);
+		}
 
 		N = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
+		if( err != CL_SUCCESS ){
+			printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+			exit(-1);
+		}
 		err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->N, CL_TRUE, 0,
 									sizeof(int), &n, 0, NULL, NULL );
+		if( err != CL_SUCCESS ){
+			printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+			exit(-1);
+		}
 
 		v = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_WRITE, m*n*sizeof(T), NULL, &err);
-		mem_size = m*n;
+		if( err != CL_SUCCESS ){
+			printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+			exit(-1);
+		}
 	}
 
 	clMatrix( const std::vector<T>& v ):m(v.size()), n(1)
@@ -53,140 +86,240 @@ struct clMatrix
 		cl_int err;
 
 		M = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
+		if( err != CL_SUCCESS ){
+			printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+			exit(-1);
+		}
 		err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->M, CL_TRUE, 0,
 									sizeof(int), &m, 0, NULL, NULL );
+		if( err != CL_SUCCESS ){
+			printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+			exit(-1);
+		}
 
 		N = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
+		if( err != CL_SUCCESS ){
+			printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+			exit(-1);
+		}
 		err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->N, CL_TRUE, 0,
 									sizeof(int), &n, 0, NULL, NULL );
+		if( err != CL_SUCCESS ){
+			printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+			exit(-1);
+		}
 
 		this->v = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_WRITE, m*n*sizeof(T), NULL, &err);
+		if( err != CL_SUCCESS ){
+			printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+			exit(-1);
+		}
 		err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->v, CL_TRUE, 0,
 									m*sizeof(T), &v[0], 0, NULL, NULL );
-		mem_size = m*n;
+		if( err != CL_SUCCESS ){
+			printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+			exit(-1);
+		}
 	}
 
 	clMatrix( const clMatrix<T>& mat )
 	{
 		m = mat.m; n = mat.n;
-		mem_size = m*n;
 
 		cl_int err;
 		M = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
+		if( err != CL_SUCCESS ){
+			printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+			exit(-1);
+		}
 		err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->M, CL_TRUE, 0,
 									sizeof(int), &m, 0, NULL, NULL );
+		if( err != CL_SUCCESS ){
+			printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+			exit(-1);
+		}
+
 		N = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
+		if( err != CL_SUCCESS ){
+			printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+			exit(-1);
+		}
 		err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->N, CL_TRUE, 0,
 									sizeof(int), &n, 0, NULL, NULL );
+		if( err != CL_SUCCESS ){
+			printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+			exit(-1);
+		}
 
 		if( m == 0 || n == 0 ){
 			v = NULL;
 		}
 		else{
 			v = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_WRITE, m*n*sizeof(T), NULL, &err);
+			if( err != CL_SUCCESS ){
+				printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+				exit(-1);
+			}
 			err = clEnqueueCopyBuffer( cl_device_manager.get_queue(), mat.v, v, 0, 0, m*n*sizeof(T), 0, NULL, NULL );
+			if( err != CL_SUCCESS ){
+				printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+				exit(-1);
+			}
 		}
 	}
 
 	clMatrix( const Matrix<T>& mat )
 	{
 		m = mat.m; n = mat.n;
-		mem_size = m*n;
 
 		cl_int err;
 		M = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
+		if( err != CL_SUCCESS ){
+			printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+			exit(-1);
+		}
 		err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->M, CL_TRUE, 0,
 									sizeof(int), &m, 0, NULL, NULL );
+		if( err != CL_SUCCESS ){
+			printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+			exit(-1);
+		}
 
 		N = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
+		if( err != CL_SUCCESS ){
+			printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+			exit(-1);
+		}
 		err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->N, CL_TRUE, 0,
 									sizeof(int), &n, 0, NULL, NULL );
+		if( err != CL_SUCCESS ){
+			printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+			exit(-1);
+		}
 
 		if( m == 0 || n == 0 ){
 			v = NULL;
 		}
 		else{
 			v = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_WRITE, m*n*sizeof(T), NULL, &err);
+			if( err != CL_SUCCESS ){
+				printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+				exit(-1);
+			}
 			err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), v, CL_TRUE, 0,
 										m*n*sizeof(T), mat.v, 0, NULL, NULL );
+			if( err != CL_SUCCESS ){
+				printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+				exit(-1);
+			}
 		}
 	}	 
 
 	clMatrix<T>& operator = ( const clMatrix<T>& mat )
 	{
-		cl_int err;
+		cl_int err = 0;
 		if( mat.m == 0 || mat.n == 0 ){
-			if( mem_size != 0 ){
-				clReleaseMemObject(v);
-			}
+			if( v != NULL ) clReleaseMemObject(v);
 
 			m = mat.m; n = mat.n;
-			mem_size = m*n;
 			err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->M, CL_TRUE, 0,
 										sizeof(int), &m, 0, NULL, NULL );
+			if( err != CL_SUCCESS ){
+				printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+				exit(-1);
+			}
 			err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->N, CL_TRUE, 0,
 										sizeof(int), &n, 0, NULL, NULL );
+			if( err != CL_SUCCESS ){
+				printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+				exit(-1);
+			}
 			v = NULL;
 			
 			return *this;
 		}
 
-		if( mat.m*mat.n > mem_size ) {
-			clReleaseMemObject(v);
-			v = NULL;
-		}
+		if( v != NULL ) clReleaseMemObject(v);
 
 		if( m != mat.m ) err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->M, CL_TRUE, 0,
 													 sizeof(int), &mat.m, 0, NULL, NULL );
+		if( err != CL_SUCCESS ){
+			printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+			exit(-1);
+		}
 		if( n != mat.n ) err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->N, CL_TRUE, 0,
 													 sizeof(int), &mat.n, 0, NULL, NULL );
+		if( err != CL_SUCCESS ){
+			printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+			exit(-1);
+		}
 
 		m = mat.m; n = mat.n;
-		if( v == NULL ){
-			mem_size = m*n;
-			v = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_WRITE, m*n*sizeof(T), NULL, &err);
+		v = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_WRITE, m*n*sizeof(T), NULL, &err);
+		if( err != CL_SUCCESS ){
+			printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+			exit(-1);
 		}
 		err = clEnqueueCopyBuffer( cl_device_manager.get_queue(), mat.v, v, 0, 0, m*n*sizeof(T), 0, NULL, NULL );
+		if( err != CL_SUCCESS ){
+			printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+			exit(-1);
+		}
 
 		return *this;
 	}
 
 	clMatrix<T>& operator = ( const Matrix<T>& mat )
 	{
-		cl_int err;
+		cl_int err = 0;
 		if( mat.m == 0 || mat.n == 0 ){
-			if( mem_size != 0 ){
-				clReleaseMemObject(v);
-			}
+			if( v != NULL ) clReleaseMemObject(v);
 
 			m = mat.m; n = mat.n;
-			mem_size = m*n;
 			err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->M, CL_TRUE, 0,
 										sizeof(int), &m, 0, NULL, NULL );
+			if( err != CL_SUCCESS ){
+				printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+				exit(-1);
+			}
 			err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->N, CL_TRUE, 0,
 										sizeof(int), &n, 0, NULL, NULL );
+			if( err != CL_SUCCESS ){
+				printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+				exit(-1);
+			}
 			v = NULL;
 			
 			return *this;
 		}
 
-		if( mat.m*mat.n > mem_size ) {
-			clReleaseMemObject(v);
-			v = NULL;
-		}
+		if( v != NULL ) clReleaseMemObject(v);
 
 		if( m != mat.m ) err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->M, CL_TRUE, 0,
 													 sizeof(int), &mat.m, 0, NULL, NULL );
+		if( err != CL_SUCCESS ){
+			printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+			exit(-1);
+		}
 		if( n != mat.n ) err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->N, CL_TRUE, 0,
 													 sizeof(int), &mat.n, 0, NULL, NULL );
+		if( err != CL_SUCCESS ){
+			printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+			exit(-1);
+		}
 
 		m = mat.m; n = mat.n;
-		if( v == NULL ){
-			mem_size = m*n;
-			v = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_WRITE, m*n*sizeof(T), NULL, &err);
+		v = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_WRITE, m*n*sizeof(T), NULL, &err);
+		if( err != CL_SUCCESS ){
+			printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+			exit(-1);
 		}
 		err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), v, CL_TRUE, 0,
 									m*n*sizeof(T), mat.v, 0, NULL, NULL );
+		if( err != CL_SUCCESS ){
+			printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+			exit(-1);
+		}
 
 		return *this;
 	}
@@ -245,6 +378,8 @@ struct clMatrix
 	{
 		int m = m1.m, n = m1.n;
 		clMatrix<T> ret(m, n);
+
+		assert( m1.m == m2.m && m1.n == m2.n );
 
 		cl_device_manager.set_argument( PRG::CLMAT_HADAMARD, 0, &ret.v );
 		cl_device_manager.set_argument( PRG::CLMAT_HADAMARD, 1, &m1.v );
@@ -319,6 +454,9 @@ struct clMatrix
 	
 	T get_element ( int i, int j ) const
 	{
+		assert( i < this->m );
+		assert( j < this->n );
+
 		T ret;
 		clEnqueueReadBuffer( cl_device_manager.get_queue(), v, CL_TRUE, (i*n + j)*sizeof(T),
 							 sizeof(T), &ret, 0, NULL, NULL );
@@ -327,6 +465,9 @@ struct clMatrix
 
 	void set_element ( int i, int j, T val )
 	{
+		assert( i < this->m );
+		assert( j < this->n );
+
 		clEnqueueWriteBuffer( cl_device_manager.get_queue(), v, CL_TRUE, (i*n + j)*sizeof(T),
 							  sizeof(T), &val, 0, NULL, NULL );
 	}
@@ -335,6 +476,8 @@ struct clMatrix
 	{
 		int m = m1.m, n = m1.n;
 		cl_event event;
+
+		assert( this->m == m1.m && this->n == m1.n );
 
 		clblasSaxpy( m*n, 1.0f,
 					 m1.v, 0, 1, this->v, 0, 1,
@@ -351,6 +494,8 @@ struct clMatrix
 	{
 		int m = m1.m, n = m1.n;
 		cl_event event;
+
+		assert( this->m == m1.m && this->n == m1.n );
 
 		clblasSaxpy( m*n, -1.0f,
 					 m1.v, 0, 1, this->v, 0, 1,
@@ -416,6 +561,8 @@ struct clMatrix
 		cl_int err;
 		cl_event event;
 
+		assert( m1.m == m2.m && m1.n == m2.n );
+
 		clblasSaxpy( m*n, 1.0f,
 					 m2.v, 0, 1, ret.v, 0, 1,
 					 1, cl_device_manager.get_queue_ptr(), 0, NULL, &event );
@@ -432,6 +579,8 @@ struct clMatrix
 		int m = m1.m, n = m1.n;
 		clMatrix<T> ret = m1;
 		cl_event event;
+
+		assert( m1.m == m2.m && m1.n == m2.n );
 
 		clblasSaxpy( m*n, -1.0f,
 					 m2.v, 0, 1, ret.v, 0, 1,
@@ -454,6 +603,8 @@ struct clMatrix
 		int m = m1.m, n = m2.n, l = m1.n;
 		cl_event event;
 		clMatrix<float> ret(m, n);
+
+		assert( m1.n == m2.m );
 
 		cl_int err = clblasSgemm( clblasRowMajor, clblasNoTrans, clblasNoTrans,
 								  m, n, l, 1.0f,
@@ -502,6 +653,11 @@ struct clMatrix
 		cl_int err;
 		cl_mem buf_x, buf_y;
 
+		assert( y < this->m );
+		assert( x < this->n );
+		assert( y+h <= this->m );
+		assert( x+w <= this->n );
+
 		buf_x = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
 		err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), buf_x, CL_TRUE, 0,
 									sizeof(int), &x, 0, NULL, NULL );
@@ -527,6 +683,13 @@ struct clMatrix
 	{
 		cl_int err;
 		cl_mem buf_x, buf_y;
+
+		assert( h <= mat.m );
+		assert( w <= mat.n );
+		assert( y < this->m );
+		assert( x < this->n );
+		assert( y+h <= this->m );
+		assert( x+w <= this->n );
 
 		buf_x = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
 		err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), buf_x, CL_TRUE, 0,
@@ -572,6 +735,20 @@ struct clMatrix
 		err = clEnqueueReadBuffer( cl_device_manager.get_queue(), this->v, CL_TRUE, 0,
 								   this->m*this->n*sizeof(T), ret.v, 0, NULL, NULL );
 		return ret;
+	}
+
+	void clip( const T& val )
+	{
+		cl_int err;
+		cl_mem cl_val = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(T), NULL, &err);
+		err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_val, CL_TRUE, 0,
+									sizeof(T), &val, 0, NULL, NULL );
+
+		cl_device_manager.set_argument( PRG::CLMAT_CLIP, 0, &v );
+		cl_device_manager.set_argument( PRG::CLMAT_CLIP, 1, &cl_val );
+		cl_device_manager.run_kernel( PRG::CLMAT_CLIP, m*n );
+
+		clReleaseMemObject( cl_val );				
 	}
 };
 
