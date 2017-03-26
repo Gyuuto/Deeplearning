@@ -627,7 +627,7 @@ struct clMatrix
 		clMatrix<T> ret = m1;
 		
 		clblasSaxpy( m*n, c - 1.0,
-					 ret.v, 0, 1, ret.v, 0, 1,
+					 m1.v, 0, 1, ret.v, 0, 1,
 					 1, cl_device_manager.get_queue_ptr(), 0, NULL, &event );
 		clWaitForEvents( 1, &event );
 		clReleaseEvent(event);

@@ -23,7 +23,7 @@ template<template<typename> class Mat, typename Real>
 class Layer
 {
 protected:
-	bool is_use_bias;
+	bool is_use_bias, is_learning;
 #ifdef USE_GPU
 	cl_mem cl_use_bias;
 #endif
@@ -52,7 +52,10 @@ public:
 #else
 	virtual void init ( std::mt19937& m ) = 0;
 #endif
+	virtual void set_learning ();
+	virtual void unset_learning ();
 	virtual void finalize () = 0;
+
 	virtual Mat<Real> calc_delta ( const Mat<Real>& U, const Mat<Real>& delta ) = 0;
 	virtual std::pair<std::vector<Mat<Real>>, std::vector<Mat<Real>>> calc_gradient ( const Mat<Real>& U, const Mat<Real>& delta ) = 0;
 	virtual void update_W ( const std::vector<Mat<Real>>& dW, const std::vector<Mat<Real>>& db ) = 0;
@@ -81,6 +84,17 @@ public:
 	virtual void param_mix () = 0;
 #endif
 };
+
+template<template<typename> class Mat, typename Real>
+void Layer<Mat, Real>::set_learning ()
+{
+	is_learning = true;
+}
+template<template<typename> class Mat, typename Real>
+void Layer<Mat, Real>::unset_learning ()
+{
+	is_learning = false;
+}
 
 template<template<typename> class Mat, typename Real>
 std::vector<Mat<Real>> Layer<Mat, Real>::get_W ()

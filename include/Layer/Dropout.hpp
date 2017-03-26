@@ -11,7 +11,6 @@ class Dropout : public Layer<Mat, Real>
 {
 private:
 	Real dropout_p;
-	bool islearning;
 #ifdef USE_GPU
 	cl_mem cl_offset;
 #endif
@@ -59,7 +58,6 @@ Dropout<Mat, Real>::Dropout( int prev_num_map, int prev_num_unit, Real dropout_p
 	this->prev_num_map = this->num_map = prev_num_map;
 	this->prev_num_unit = this->num_unit = prev_num_unit;
 	this->dropout_p = dropout_p;
-	this->islearning = false;
 
 	this->t_apply = this->t_delta = this->t_grad = 0.0;
 	this->t_apply_init = this->t_apply_gemm = this->t_apply_repl = 0.0;
@@ -103,7 +101,6 @@ void Dropout<Mat, Real>::init ( std::mt19937& m )
 #endif
 	mt = std::mt19937(seed);
 
-	islearning = true;
 	Matrix<Real> tmp_mask(this->prev_num_unit, this->prev_num_map);
 	for( int i = 0; i < this->prev_num_unit; ++i )
 		for( int j = 0; j < this->prev_num_map; ++j )
@@ -114,7 +111,6 @@ void Dropout<Mat, Real>::init ( std::mt19937& m )
 template<template<typename> class Mat, typename Real>
 void Dropout<Mat, Real>::finalize ()
 {
-	islearning = false;
 }
 
 template<template<typename> class Mat, typename Real>
@@ -249,7 +245,7 @@ Matrix<Real> Dropout<Mat, Real>::apply ( const Matrix<Real>& U, bool use_func )
 #pragma omp for nowait
 			for( int j = 0; j < my_size; ++j )
 				for( int k = 0; k < U.n; ++k )
-					tmp_ret(i*my_size + j,k) = U(i*this->num_unit + my_offset+j,k)*(use_func ? 1.0 - dropout_p : mask(my_offset+j,i));
+					tmp_ret(i*my_size + j,k) = U(i*this->num_unit + my_offset+j,k)*(this->is_learning ? mask(my_offset+j,i) : 1.0 - dropout_p);
 		}
 	}
 	
@@ -296,13 +292,13 @@ clMatrix<Real> Dropout<Mat, Real>::apply ( const clMatrix<Real>& U, bool use_fun
 	this->t_apply_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
 	beg = std::chrono::system_clock::now();
-	if( use_func ) tmp_ret *= (1.0 - dropout_p);
-	else{
+	if( this->is_learning ){
 		cl_device_manager.set_argument( PRG::MULT_VEC_MAT, 0, &tmp_ret.v );
 		cl_device_manager.set_argument( PRG::MULT_VEC_MAT, 1, &mask.v );
 		cl_device_manager.set_argument( PRG::MULT_VEC_MAT, 2, &mask.N );
 		cl_device_manager.run_kernel( PRG::MULT_VEC_MAT, this->num_unit, tmp_ret.n, this->prev_num_map );
 	}
+	else tmp_ret *= (1.0 - dropout_p);
 	
 	if( use_func )
 		tmp_ret = (*this->func)(tmp_ret, false);

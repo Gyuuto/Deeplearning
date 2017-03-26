@@ -532,10 +532,12 @@ void Neuralnet<Mat, Real>::learning ( const Matrix<Real>& X, const Matrix<Real>&
 		U[i+1] = Matrix<Real>(layer[i]->get_num_map()*layer[i]->get_num_unit(), BATCH_SIZE);
 	}
 
+	for( int i = 0; i < num_layer; ++i ) layer[i]->unset_learning();
 	each_func(*this, 0, U[0], D);
 
 	int cnt = 0;
 	for( int n = 0; n < MAX_ITER; ++n ){
+		for( int i = 0; i < num_layer; ++i ) layer[i]->set_learning();
 #ifdef DEBUG
 		auto beg = std::chrono::system_clock::now();
 #endif
@@ -690,6 +692,7 @@ void Neuralnet<Mat, Real>::learning ( const Matrix<Real>& X, const Matrix<Real>&
 		end = std::chrono::system_clock::now();
 		if( myrank == 0 ) printf("Averaging : %3lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
 #endif
+		for( int i = 0; i < num_layer; ++i ) layer[i]->unset_learning();
 		each_func(*this, n+1, U[0], D);
 	}
 
