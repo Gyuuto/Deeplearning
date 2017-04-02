@@ -57,6 +57,8 @@ AveragePooling<Mat, Real>::AveragePooling( int prev_num_map, int prev_num_unit, 
 										   int m, int n, int stride, 
 										   const std::shared_ptr<Function<Real>>& f )
 {
+	this->layer_name = "AveragePooling";
+
 	this->prev_num_map = prev_num_map;
 	this->prev_num_unit = prev_num_unit;
 	this->prev_ldu = prev_ldu;
@@ -370,14 +372,14 @@ clMatrix<Real> AveragePooling<Mat, Real>::apply ( const clMatrix<Real>& U, bool 
 
 	int my_size = this->num_unit, my_offset = 0;
 #ifdef USE_MPI
-	std::vector<int> size(nprocs), offset(nprocs);
-	for( int i = 0; i < nprocs; ++i ){
-		size[i] = ((i+1)*my_size/nprocs - i*my_size/nprocs)*U[0].n;
-		offset[i] = i*my_size/nprocs*U[0].n;
+	std::vector<int> size(this->nprocs), offset(this->nprocs);
+	for( int i = 0; i < this->nprocs; ++i ){
+		size[i] = ((i+1)*my_size/this->nprocs - i*my_size/this->nprocs)*U[0].n;
+		offset[i] = i*my_size/this->nprocs*U[0].n;
 	}
 
-	my_size = size[rank]/U[0].n;
-	my_offset = offset[rank]/U[0].n;
+	my_size = size[this->rank]/U[0].n;
+	my_offset = offset[this->rank]/U[0].n;
 #endif
 	
 	clMatrix<Real> U_ = (*this->prev_func)(U, false);

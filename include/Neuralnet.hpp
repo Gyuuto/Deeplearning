@@ -45,7 +45,7 @@ private:
 	MPI_Comm outer_world, inner_world;
 #endif
 
-	std::pair<std::vector<std::vector<Mat<Real>>>, std::vector<std::vector<Mat<Real>>>> calc_gradient (const std::vector<Mat<Real>>& U, const Mat<Real>& d);
+	void calc_gradient (const std::vector<Mat<Real>>& U_apply, const std::vector<Mat<Real>>& U_diff, const Mat<Real>& d, std::vector<std::vector<Mat<Real>>>& nabla_W, std::vector<std::vector<Mat<Real>>>& nabla_b, std::vector<Mat<Real>>& delta );
 	void check_gradient ( int cnt, const std::vector<int>& idx, const Matrix<Real>& X, const Matrix<Real>& Y, const std::vector<std::vector<Matrix<Real>>>& nabla_w, const std::vector<std::vector<Matrix<Real>>>& nabla_b );
 #ifdef USE_GPU
 	void check_gradient ( int cnt, const std::vector<int>& idx, const clMatrix<Real>& X, const clMatrix<Real>& Y, const std::vector<std::vector<clMatrix<Real>>>& nabla_w, const std::vector<std::vector<clMatrix<Real>>>& nabla_b, cl_mem& cl_N, cl_mem& cl_idx, cl_mem& cl_offset );
@@ -94,14 +94,14 @@ public:
 
 //////////////////// PRIVATE FUNCTION ////////////////////
 template<template<typename> class Mat, typename Real>
-std::pair<std::vector<std::vector<Mat<Real>>>, std::vector<std::vector<Mat<Real>>>> Neuralnet<Mat, Real>::calc_gradient (const std::vector<Mat<Real>>& U, const Mat<Real>& d)
+void Neuralnet<Mat, Real>::calc_gradient (const std::vector<Mat<Real>>& U_apply, const std::vector<Mat<Real>>& U_diff, const Mat<Real>& d, std::vector<std::vector<Mat<Real>>>& nabla_W, std::vector<std::vector<Mat<Real>>>& nabla_b, std::vector<Mat<Real>>& delta )
 {
 	const int num_layer = layer.size();
 	
-	Mat<Real> delta;
-
 	std::shared_ptr<Function<Real>> f = layer[num_layer-1]->get_function();
-	delta = Mat<Real>::hadamard((*loss)((*f)(U[num_layer], false), d, true), (*f)(U[num_layer], true));
+	// delta[num_layer-1] = Mat<Real>::hadamard((*loss)(U_apply[num_layer], d, true), U_diff[num_layer]);
+	delta[num_layer-1].copy(U_diff[num_layer]);
+	delta[num_layer-1].hadamard((*loss)(U_apply[num_layer], d, true));
 
 #ifdef DEBUG
 	int rank = 0;
@@ -109,32 +109,29 @@ std::pair<std::vector<std::vector<Mat<Real>>>, std::vector<std::vector<Mat<Real>
 	MPI_Comm_rank(this->inner_world, &rank);
 #endif
 #endif
-	std::vector<std::vector<Mat<Real>>> nabla_W(num_layer), nabla_b(num_layer);
 	for( int i = num_layer-1; i >= 0; --i ){
 #ifdef DEBUG
 		auto beg1 = std::chrono::system_clock::now();
 #endif
-		std::tie(nabla_W[i], nabla_b[i]) = layer[i]->calc_gradient(U[i], delta);
+		layer[i]->calc_gradient(U_apply[i], U_diff[i], delta[i], nabla_W[i], nabla_b[i]);
 #ifdef DEBUG
 		auto end1 = std::chrono::system_clock::now();
 #endif
 		if( i == 0 ){
 #ifdef DEBUG
-			if( rank == 0 ) printf("  layer %d, calc grad : %3lld\n", i, std::chrono::duration_cast<std::chrono::milliseconds>(end1 - beg1).count());
+			if( rank == 0 ) printf("  layer %d, calc grad : %6.3f\n", i, std::chrono::duration_cast<std::chrono::nanoseconds>(end1 - beg1).count()/1e6);
 #endif
 			continue;
 		}
 #ifdef DEBUG
 		auto beg2 = std::chrono::system_clock::now();
 #endif
-		delta = layer[i]->calc_delta(U[i], delta);
+		layer[i]->calc_delta(U_apply[i], U_diff[i], delta[i], delta[i-1]);
 #ifdef DEBUG
 		auto end2 = std::chrono::system_clock::now();
-		if( rank == 0 ) printf("  layer %d, calc grad : %3lld, calc delta %3lld\n", i, std::chrono::duration_cast<std::chrono::milliseconds>(end1 - beg1).count(), std::chrono::duration_cast<std::chrono::milliseconds>(end2 - beg2).count());
+		if( rank == 0 ) printf("  layer %d, calc grad : %6.3f, calc delta %6.3f\n", i, std::chrono::duration_cast<std::chrono::nanoseconds>(end1 - beg1).count()/1e6, std::chrono::duration_cast<std::chrono::nanoseconds>(end2 - beg2).count()/1e6);
 #endif
 	}
-
-	return std::make_pair(nabla_W, nabla_b);
 }
 
 template<template<typename> class Mat, typename Real>
@@ -526,14 +523,28 @@ void Neuralnet<Mat, Real>::learning ( const Matrix<Real>& X, const Matrix<Real>&
 
 	// memory allocation for matrix U and D.
 	Mat<Real> D(Y.m, BATCH_SIZE);
-	std::vector<Matrix<Real>> U(num_layer+1);
-	U[0] = Matrix<Real>(X.m, BATCH_SIZE);
-	for( int i = 0; i < U.size()-1; ++i ){
-		U[i+1] = Matrix<Real>(layer[i]->get_num_map()*layer[i]->get_num_unit(), BATCH_SIZE);
+	std::vector<Matrix<Real>> U_apply(num_layer+1), U_diff(num_layer+1), delta(num_layer);
+	U_apply[0] = Matrix<Real>(X.m, BATCH_SIZE);
+
+	for( int i = 0; i < U_apply.size()-1; ++i ){
+		U_apply[i+1] = Matrix<Real>(layer[i]->get_num_map()*layer[i]->get_num_unit(), BATCH_SIZE);
+		U_diff[i+1] = Matrix<Real>(layer[i]->get_num_map()*layer[i]->get_num_unit(), BATCH_SIZE);
+		delta[i] = Matrix<Real>(layer[i]->get_num_map()*layer[i]->get_num_unit(), BATCH_SIZE);
+	}
+
+	std::vector<std::vector<Matrix<Real>>> nabla_W(num_layer), nabla_b(num_layer);
+	for( int i = 0; i < num_layer; ++i ){
+		auto W = layer[i]->get_W();
+		if( W.size() != 0 )
+			nabla_W[i] = std::vector<Matrix<Real>>(W.size(), Matrix<Real>(W[0].m, W[0].n));
+		
+		auto b = layer[i]->get_b();
+		if( b.size() != 0 )
+			nabla_b[i] = std::vector<Matrix<Real>>(b.size(), Matrix<Real>(b[0].m, b[0].n));
 	}
 
 	for( int i = 0; i < num_layer; ++i ) layer[i]->unset_learning();
-	each_func(*this, 0, U[0], D);
+	each_func(*this, 0, U_apply[0], D);
 
 	int cnt = 0;
 	for( int n = 0; n < MAX_ITER; ++n ){
@@ -547,7 +558,7 @@ void Neuralnet<Mat, Real>::learning ( const Matrix<Real>& X, const Matrix<Real>&
 #pragma omp for nowait
 			for( int i = 0; i < X.m; ++i )
 				for( int j = 0; j < BATCH_SIZE; ++j )
-					U[0](i, j) = X(i, idx[(cnt+j)%num_data]);
+					U_apply[0](i, j) = X(i, idx[(cnt+j)%num_data]);
 		
 #pragma omp for nowait
 			for( int i = 0; i < D.m; ++i )
@@ -556,7 +567,7 @@ void Neuralnet<Mat, Real>::learning ( const Matrix<Real>& X, const Matrix<Real>&
 		}
 #ifdef DEBUG
 		auto end = std::chrono::system_clock::now();
-		if( myrank == 0 ) printf("Init : %3lld %d\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count(), n);
+		if( myrank == 0 ) printf("Init : %6.3f %d\n", std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e6, n);
 #endif
 #ifdef DEBUG
 		beg = std::chrono::system_clock::now();
@@ -566,32 +577,29 @@ void Neuralnet<Mat, Real>::learning ( const Matrix<Real>& X, const Matrix<Real>&
 #ifdef DEBUG
 			auto beg = std::chrono::system_clock::now();
 #endif
-			auto V = U[i];
-			if( i != 0 ){
-				std::shared_ptr<Function<Real>> f = layer[i-1]->get_function();
-				V = (*f)(V, false);
-			}
+			layer[i]->apply(U_apply[i], U_apply[i+1], false);
+			U_diff[i+1].sub(0, 0, U_diff[i+1].m, U_diff[i+1].n, U_apply[i+1]); // clone
 
-			U[i+1] = layer[i]->apply(V, false);
+			layer[i]->get_function()->inplace(U_apply[i+1], false);
+			layer[i]->get_function()->inplace(U_diff[i+1], true);
 #ifdef DEBUG
 			auto end = std::chrono::system_clock::now();
-			if( myrank == 0 ) printf("  layer %d : %3lld\n", i, std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
+			if( myrank == 0 ) printf("  layer %d : %6.3f\n", i, std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e6);
 #endif
 		}
 #ifdef DEBUG
 		end = std::chrono::system_clock::now();
-		if( myrank == 0 ) printf("Feed : %3lld %d\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count(), n);
+		if( myrank == 0 ) printf("Feed : %6.3f %d\n", std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e6, n);
 #endif
 
 		// back propagation calculation
 #ifdef DEBUG
 		beg = std::chrono::system_clock::now();
 #endif
-		std::vector<std::vector<Matrix<Real>>> nabla_W, nabla_b;
-		tie(nabla_W, nabla_b) = calc_gradient(U, D);
+		calc_gradient(U_apply, U_diff, D, nabla_W, nabla_b, delta);
 #ifdef DEBUG
 		end = std::chrono::system_clock::now();
-		if( myrank == 0 ) printf("Back : %3lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
+		if( myrank == 0 ) printf("Back : %6.3f\n", std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e6);
 #endif
 
 #ifdef DEBUG
@@ -676,7 +684,7 @@ void Neuralnet<Mat, Real>::learning ( const Matrix<Real>& X, const Matrix<Real>&
 		}
 #ifdef DEBUG
 		end = std::chrono::system_clock::now();
-		if( myrank == 0 ) printf("Update : %3lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
+		if( myrank == 0 ) printf("Update : %6.3f\n", std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e6);
 #endif
 
 #ifdef DEBUG
@@ -690,10 +698,10 @@ void Neuralnet<Mat, Real>::learning ( const Matrix<Real>& X, const Matrix<Real>&
 		
 #ifdef DEBUG
 		end = std::chrono::system_clock::now();
-		if( myrank == 0 ) printf("Averaging : %3lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
+		if( myrank == 0 ) printf("Averaging : %6.3f\n", std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e6);
 #endif
 		for( int i = 0; i < num_layer; ++i ) layer[i]->unset_learning();
-		each_func(*this, n+1, U[0], D);
+		each_func(*this, n+1, U_apply[0], D);
 	}
 
 	for( int i = 0; i < num_layer; ++i ) layer[i]->finalize();	
@@ -727,14 +735,28 @@ void Neuralnet<Mat, Real>::learning ( const clMatrix<Real>& X, const clMatrix<Re
 
 	// memory allocation for matrix U and D.
 	clMatrix<Real> D(Y.m, BATCH_SIZE);
-	std::vector<clMatrix<Real>> U(num_layer+1);
-	U[0] = clMatrix<Real>(X.m, BATCH_SIZE);
-	for( int i = 0; i < U.size()-1; ++i ){
-		U[i+1] = clMatrix<Real>(layer[i]->get_num_map()*layer[i]->get_num_unit(), BATCH_SIZE);
+	std::vector<clMatrix<Real>> U_apply(num_layer+1), U_diff(num_layer+1), delta(num_layer);
+	U_apply[0] = clMatrix<Real>(X.m, BATCH_SIZE);
+	for( int i = 0; i < U_apply.size()-1; ++i ){
+		U_apply[i+1] = clMatrix<Real>(layer[i]->get_num_map()*layer[i]->get_num_unit(), BATCH_SIZE);
+		U_diff[i+1] = clMatrix<Real>(layer[i]->get_num_map()*layer[i]->get_num_unit(), BATCH_SIZE);
+		delta[i] = clMatrix<Real>(layer[i]->get_num_map()*layer[i]->get_num_unit(), BATCH_SIZE);
+	}
+
+	std::vector<std::vector<clMatrix<Real>>> nabla_W(num_layer), nabla_b(num_layer);
+	for( int i = 0; i < num_layer; ++i ){
+		auto W = layer[i]->get_W();
+		if( W.size() != 0 )
+			nabla_W[i] = std::vector<clMatrix<Real>>(W.size(), clMatrix<Real>(W[0].m, W[0].n));
+		
+		auto b = layer[i]->get_b();
+		if( b.size() != 0 )
+			nabla_b[i] = std::vector<clMatrix<Real>>(b.size(), clMatrix<Real>(b[0].m, b[0].n));
 	}
 	
-	each_func(*this, 0, U[0], D);
-
+	for( int i = 0; i < num_layer; ++i ) layer[i]->unset_learning();
+	each_func(*this, 0, U_apply[0], D);
+	
 	int cnt = 0;
 	cl_int err;
 	cl_mem cl_N, cl_idx, cl_offset;
@@ -766,16 +788,17 @@ void Neuralnet<Mat, Real>::learning ( const clMatrix<Real>& X, const clMatrix<Re
 	clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_adam_eps, CL_TRUE, 0, sizeof(float), &adam_eps, 0, NULL, NULL );
 
 	for( int n = 0; n < MAX_ITER; ++n ){
+		for( int i = 0; i < num_layer; ++i ) layer[i]->set_learning();
 #ifdef DEBUG
 		auto beg = std::chrono::system_clock::now();
 #endif
 		// assign data to mini-batch
-		cl_device_manager.set_argument( PRG::ASSIGN_DATA, 0, &U[0].v );
+		cl_device_manager.set_argument( PRG::ASSIGN_DATA, 0, &U_apply[0].v );
 		cl_device_manager.set_argument( PRG::ASSIGN_DATA, 1, &X.v );
 		cl_device_manager.set_argument( PRG::ASSIGN_DATA, 2, &cl_idx );
 		cl_device_manager.set_argument( PRG::ASSIGN_DATA, 3, &cl_offset );
 		cl_device_manager.set_argument( PRG::ASSIGN_DATA, 4, &cl_N );
-		cl_device_manager.run_kernel( PRG::ASSIGN_DATA, U[0].m, U[0].n );
+		cl_device_manager.run_kernel( PRG::ASSIGN_DATA, U_apply[0].m, U_apply[0].n );
 
 		cl_device_manager.set_argument( PRG::ASSIGN_DATA, 0, &D.v );
 		cl_device_manager.set_argument( PRG::ASSIGN_DATA, 1, &Y.v );
@@ -785,43 +808,41 @@ void Neuralnet<Mat, Real>::learning ( const clMatrix<Real>& X, const clMatrix<Re
 		cl_device_manager.run_kernel( PRG::ASSIGN_DATA, D.m, D.n );
 #ifdef DEBUG
 		auto end = std::chrono::system_clock::now();
-		if( myrank == 0 ) printf("Init : %3lld %d\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count(), n);
+		if( myrank == 0 ) printf("Init : %6.3f %d\n", std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e6, n);
 #endif
 #ifdef DEBUG
 		beg = std::chrono::system_clock::now();
 #endif
 		// feed forward calculation
-		clMatrix<Real> V = U[0];
 		for( int i = 0; i < num_layer; ++i ) {
 #ifdef DEBUG
 			auto beg = std::chrono::system_clock::now();
 #endif
-			V = U[i];
-			if( i != 0 ){
-				std::shared_ptr<Function<Real>> f = layer[i-1]->get_function();
-				V = (*f)(V, false);
-			}
+			layer[i]->apply(U_apply[i], U_apply[i+1], false);
+			// U_diff[i+1].sub(0, 0, U_diff[i+1].m, U_diff[i+1].n, U_apply[i+1]);
 
-			U[i+1] = layer[i]->apply(V, false);
+			U_diff[i+1].copy(U_apply[i+1]);
+
+			layer[i]->get_function()->inplace(U_apply[i+1], false);
+			layer[i]->get_function()->inplace(U_diff[i+1], true);
 #ifdef DEBUG
 			auto end = std::chrono::system_clock::now();
-			if( myrank == 0 ) printf("  layer %d : %3lld\n", i, std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
+			if( myrank == 0 ) printf("  layer %d : %6.3f\n", i, std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e6);
 #endif
 		}
 #ifdef DEBUG
 		end = std::chrono::system_clock::now();
-		if( myrank == 0 ) printf("Feed : %3lld %d\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count(), n);
+		if( myrank == 0 ) printf("Feed : %6.3f %d\n", std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e6, n);
 #endif
 
 		// back propagation calculation
 #ifdef DEBUG
 		beg = std::chrono::system_clock::now();
 #endif
-		std::vector<std::vector<clMatrix<Real>>> nabla_W, nabla_b;
-		tie(nabla_W, nabla_b) = calc_gradient(U, D);
+		calc_gradient(U_apply, U_diff, D, nabla_W, nabla_b, delta);
 #ifdef DEBUG
 		end = std::chrono::system_clock::now();
-		if( myrank == 0 ) printf("Back : %3lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
+		if( myrank == 0 ) printf("Back : %6.3f\n", std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e6);
 #endif
 
 #ifdef DEBUG
@@ -896,7 +917,7 @@ void Neuralnet<Mat, Real>::learning ( const clMatrix<Real>& X, const clMatrix<Re
 		}
 #ifdef DEBUG
 		end = std::chrono::system_clock::now();
-		if( myrank == 0 ) printf("Update : %3lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
+		if( myrank == 0 ) printf("Update : %6.3f\n", std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e6);
 #endif
 
 #ifdef DEBUG
@@ -910,9 +931,10 @@ void Neuralnet<Mat, Real>::learning ( const clMatrix<Real>& X, const clMatrix<Re
 		
 #ifdef DEBUG
 		end = std::chrono::system_clock::now();
-		if( myrank == 0 ) printf("Averaging : %3lld\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - beg).count());
+		if( myrank == 0 ) printf("Averaging : %6.3f\n", std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e6);
 #endif
-		each_func(*this, n+1, U[0], D);
+		for( int i = 0; i < num_layer; ++i ) layer[i]->unset_learning();
+		each_func(*this, n+1, U_apply[0], D);
 	}
 
 	for( int i = 0; i < num_layer; ++i ) layer[i]->finalize();

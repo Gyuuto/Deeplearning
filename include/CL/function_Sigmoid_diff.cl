@@ -3,12 +3,12 @@
 #endif
 
 OCL_EXTERNAL_INCLUDE(
-__kernel void function_Sigmoid_diff ( __global float* y, __global float* x, __global float* alpha )
+__kernel void function_Sigmoid_diff ( __global float* x, __global float* alpha )
 {
 	int gid = get_global_id(0);
 
 	float tmp = 1.0 + exp(-*alpha*x[gid]);
-	y[gid] = *alpha*exp(-*alpha*x[gid])/(tmp*tmp);
+	x[gid] = *alpha*exp(-*alpha*x[gid])/(tmp*tmp);
 }
 
 )

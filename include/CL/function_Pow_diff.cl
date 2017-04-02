@@ -3,11 +3,11 @@
 #endif
 
 OCL_EXTERNAL_INCLUDE(
-	__kernel void function_Pow_diff ( __global float* y, __global float* x, __global float* n )
+	__kernel void function_Pow_diff ( __global float* x, __global float* n )
 {
 	int gid = get_global_id(0);
 
-	y[gid] = *n * pow(x[gid], *n-1);
+	x[gid] = *n * pow(x[gid], *n-1);
 }
 
 )

@@ -3,11 +3,11 @@
 #endif
 
 OCL_EXTERNAL_INCLUDE(
-__kernel void function_LeakyReLU_diff ( __global float* y, __global float* x, __global float* alpha )
+__kernel void function_LeakyReLU_diff ( __global float* x, __global float* alpha )
 {
 	int gid = get_global_id(0);
 
-	y[gid] = (x[gid] <= 0.0 ? *alpha : 1.0f);
+	x[gid] = (x[gid] <= 0.0 ? *alpha : 1.0f);
 }
 
 )

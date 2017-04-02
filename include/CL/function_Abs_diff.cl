@@ -3,7 +3,7 @@
 #endif
 
 OCL_EXTERNAL_INCLUDE(
-__kernel void function_Abs_diff ( __global float* y, __global float* x )
+__kernel void function_Abs_diff ( __global float* x )
 {
 	int gid = get_global_id(0);
 
@@ -11,7 +11,7 @@ __kernel void function_Abs_diff ( __global float* y, __global float* x )
 	if( x[gid] > 1.0E-10 ) y_diff = 1.0;
 	else if( x[gid] < -1.0E-10 ) y_diff = -1.0;
 	
-	y[gid] = y_diff;
+	x[gid] = y_diff;
 }
 
 )

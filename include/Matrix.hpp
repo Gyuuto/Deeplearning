@@ -15,11 +15,11 @@
 #elif USE_BLAS
 extern "C"{
 	void dgemm_(char* transa, char* transb, int* m, int* n, int* k,
-				double* alpha, const double* A, int* lda, const double* B, int* ldb,
-				double* beta, double* C, int* ldc);
+				const double* alpha, const double* A, int* lda, const double* B, int* ldb,
+				const double* beta, double* C, int* ldc);
 	void sgemm_(char* transa, char* transb, int* m, int* n, int* k,
-				float* alpha, const float* A, int* lda, const float* B, int* ldb,
-				float* beta, float* C, int* ldc);
+				const float* alpha, const float* A, int* lda, const float* B, int* ldb,
+				const float* beta, float* C, int* ldc);
 };
 #endif
 
@@ -39,6 +39,7 @@ template<class T>
 struct Matrix
 {
 	int m, n;
+	long long mem_size;
 #ifdef USE_EIGEN
 	Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> v;
 #else
@@ -46,8 +47,8 @@ struct Matrix
 	T* v;
 #endif
 	
-	Matrix(): m(0), n(0), v(NULL) { }
-	Matrix( const int& m, const int& n ) :m(m), n(n)
+	Matrix(): m(0), n(0), v(NULL), mem_size(0) { }
+	Matrix( const int& m, const int& n ) :m(m), n(n), mem_size((long long)m*n)
 	{
 #ifdef USE_EIGEN
 		v = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>(m, n);
@@ -58,7 +59,7 @@ struct Matrix
 #endif
 	}
 
-	Matrix( const std::vector<T>& v ):m(v.size()), n(1)
+	Matrix( const std::vector<T>& v ):m(v.size()), n(1), mem_size((long long)m*n)
 	{
 #ifdef USE_EIGEN
 		this->v = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>(m, n);
@@ -72,12 +73,13 @@ struct Matrix
 	}
 
 #ifdef USE_EIGEN
-	Matrix( const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>& A ) :v(A), m(A.rows()), n(A.cols()) {}
+	Matrix( const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>& A ) :v(A), m(A.rows()), n(A.cols()), mem_size((long long)m*n) {}
 #endif
 
 	Matrix( const Matrix<T>& mat )
 	{
 		m = mat.m; n = mat.n;
+		mem_size = (long long)m*n;
 		if( m == 0 || n == 0 ){
 			v = NULL;
 		}
@@ -93,6 +95,7 @@ struct Matrix
 		if( v != NULL ) delete [] v;
 
 		m = mat.m; n = mat.n;
+		mem_size = (long long)m*n;
 		if( m == 0 || n == 0 ){
 			v = NULL;
 			return *this;
@@ -111,6 +114,7 @@ struct Matrix
 		auto tmp = mat.get_matrix();
 
 		this->m = mat.m; this->n = mat.n;
+		mem_size = (long long)m*n;
 		if( m == 0 || n == 0 ){
 			v = NULL;
 		}
@@ -441,7 +445,277 @@ struct Matrix
 			else if( v[i] < -val ) v[i] = -val;
 		}
 	}
+
+	void mult ( const T& alpha, const Matrix<T>& B, const T& beta, Matrix<T>& C ) const;
+	void mult ( const T& alpha, const tMatrix<T>& B, const T& beta, Matrix<T>& C ) const;
+
+	void hadamard ( const Matrix<T>& A )
+	{
+		int m = this->m, n = this->n;
+
+		assert( this->m == A.m && this->n == A.n );
+
+#pragma omp parallel for
+		for( int i = 0; i < m*n; ++i ) this->v[i] *= A.v[i];
+	}
+
+	void reshape ( int m, int n )
+	{
+		assert( (long long)m*n <= mem_size );
+
+		this->m = m; this->n = n;
+	}
+
+	void copy ( const Matrix<T>& A )
+	{
+#pragma omp parallel for
+		for( int i = 0; i < m*n; ++i ) this->v[i] = A.v[i];
+	}
 };
+
+template<>
+void Matrix<float>::mult ( const float& alpha, const Matrix<float>& B, const float& beta, Matrix<float>& C ) const
+{
+	int m = this->m, n = B.n, l = this->n;
+
+	assert( this->n == B.m );
+	assert( m == C.m );
+	assert( n == C.n );
+
+#ifdef USE_BLAS
+	char transA = 'N', transB = 'N';
+	
+	if( m != 0 && n != 0 && l != 0 ){
+		sgemm_( &transA, &transB, &n, &m, &l, &alpha,
+				&B(0,0), &n, &(*this)(0,0), &l,
+				&beta, &C(0,0), &n );
+	}
+#else
+#pragma omp parallel for
+	for( int i = 0; i < m; ++i )
+		for( int j = 0; j < n; ++j ){
+			double sum = 0.0;
+			for( int k = 0; k < l; ++k ) sum += (*this)(i,k)*B(k,j);
+			C(i,j) = sum;
+		}
+#endif
+	
+	cnt_flop += (long long)m*n*(2*l-1);
+}
+
+template<>
+void Matrix<double>::mult ( const double& alpha, const Matrix<double>& B, const double& beta, Matrix<double>& C ) const
+{
+	int m = this->m, n = B.n, l = this->n;
+
+	assert( this->n == B.m );
+	assert( m == C.m );
+	assert( n == C.n );
+
+#ifdef USE_BLAS
+	char transA = 'N', transB = 'N';
+	
+	if( m != 0 && n != 0 && l != 0 ){
+		dgemm_( &transA, &transB, &n, &m, &l, &alpha,
+				&B(0,0), &n, &(*this)(0,0), &l,
+				&beta, &C(0,0), &n );
+	}
+#else
+#pragma omp parallel for
+	for( int i = 0; i < m; ++i )
+		for( int j = 0; j < n; ++j ){
+			double sum = 0.0;
+			for( int k = 0; k < l; ++k ) sum += (*this)(0i,k)*B(k,j);
+			C(i,j) = sum;
+		}
+#endif
+	
+	cnt_flop += (long long)m*n*(2*l-1);
+}
+
+template<>
+void Matrix<float>::mult ( const float& alpha, const tMatrix<float>& B, const float& beta, Matrix<float>& C ) const
+{
+	int m = this->m, n = B.n, l = this->n;
+
+	assert( this->n == B.m );
+	assert( m == C.m );
+	assert( n == C.n );
+
+#ifdef USE_BLAS
+	int k = B.m;
+	char transA = 'T', transB = 'N';
+	
+	if( m != 0 && n != 0 && l != 0 ){
+		sgemm_( &transA, &transB, &n, &m, &l, &alpha,
+				&B(0,0), &k, &(*this)(0,0), &l,
+				&beta, &C(0,0), &n );
+	}
+#else
+#pragma omp parallel for
+	for( int i = 0; i < m; ++i )
+		for( int j = 0; j < n; ++j ){
+			double sum = 0.0;
+			for( int k = 0; k < l; ++k ) sum += (*this)(i,k)*B(k,j);
+			C(i,j) = sum;
+		}
+#endif
+	
+	cnt_flop += (long long)m*n*(2*l-1);
+}
+
+template<>
+void Matrix<double>::mult ( const double& alpha, const tMatrix<double>& B, const double& beta, Matrix<double>& C ) const
+{
+	int m = this->m, n = B.n, l = this->n;
+
+	assert( this->n == B.m );
+	assert( m == C.m );
+	assert( n == C.n );
+
+#ifdef USE_BLAS
+	int k = B.m;
+	char transA = 'T', transB = 'N';
+	
+	if( m != 0 && n != 0 && l != 0 ){
+		dgemm_( &transA, &transB, &n, &m, &l, &alpha,
+				&B(0,0), &k, &(*this)(0,0), &l,
+				&beta, &C(0,0), &n );
+	}
+#else
+#pragma omp parallel for
+	for( int i = 0; i < m; ++i )
+		for( int j = 0; j < n; ++j ){
+			double sum = 0.0;
+			for( int k = 0; k < l; ++k ) sum += (*this)(i,k)*B(k,j);
+			C(i,j) = sum;
+		}
+#endif
+	
+	cnt_flop += (long long)m*n*(2*l-1);
+}
+
+template<>
+void tMatrix<float>::mult ( const float& alpha, const Matrix<float>& B, const float& beta, Matrix<float>& C ) const
+{
+	int m = this->m, n = B.n, l = this->n;
+
+	assert( this->n == B.m );
+	assert( m == C.m );
+	assert( n == C.n );
+
+#ifdef USE_BLAS
+	char transA = 'N', transB = 'T';
+	
+	if( m != 0 && n != 0 && l != 0 ){
+		sgemm_( &transA, &transB, &n, &m, &l, &alpha,
+				&B(0,0), &n, &(*this)(0,0), &m,
+				&beta, &C(0,0), &n );
+	}
+#else
+#pragma omp parallel for
+	for( int i = 0; i < m; ++i )
+		for( int j = 0; j < n; ++j ){
+			double sum = 0.0;
+			for( int k = 0; k < l; ++k ) sum += (*this)(i,k)*B(k,j);
+			C(i,j) = sum;
+		}
+#endif
+	
+	cnt_flop += (long long)m*n*(2*l-1);
+}
+
+template<>
+void tMatrix<double>::mult ( const double& alpha, const Matrix<double>& B, const double& beta, Matrix<double>& C ) const
+{
+	int m = this->m, n = B.n, l = this->n;
+
+	assert( this->n == B.m );
+	assert( m == C.m );
+	assert( n == C.n );
+
+#ifdef USE_BLAS
+	char transA = 'N', transB = 'T';
+	
+	if( m != 0 && n != 0 && l != 0 ){
+		dgemm_( &transA, &transB, &n, &m, &l, &alpha,
+				&B(0,0), &n, &(*this)(0,0), &m,
+				&beta, &C(0,0), &n );
+	}
+#else
+#pragma omp parallel for
+	for( int i = 0; i < m; ++i )
+		for( int j = 0; j < n; ++j ){
+			double sum = 0.0;
+			for( int k = 0; k < l; ++k ) sum += (*this)(i,k)*B(k,j);
+			C(i,j) = sum;
+		}
+#endif
+	
+	cnt_flop += (long long)m*n*(2*l-1);
+}
+
+template<>
+void tMatrix<float>::mult ( const float& alpha, const tMatrix<float>& B, const float& beta, Matrix<float>& C ) const
+{
+	int m = this->m, n = B.n, l = this->n;
+
+	assert( this->n == B.m );
+	assert( m == C.m );
+	assert( n == C.n );
+
+#ifdef USE_BLAS
+	int k = B.m;
+	char transA = 'T', transB = 'T';
+	
+	if( m != 0 && n != 0 && l != 0 ){
+		sgemm_( &transA, &transB, &n, &m, &l, &alpha,
+				&B(0,0), &k, &(*this)(0,0), &m,
+				&beta, &C(0,0), &n );
+	}
+#else
+#pragma omp parallel for
+	for( int i = 0; i < m; ++i )
+		for( int j = 0; j < n; ++j ){
+			double sum = 0.0;
+			for( int k = 0; k < l; ++k ) sum += (*this)(i,k)*B(k,j);
+			C(i,j) = sum;
+		}
+#endif
+	
+	cnt_flop += (long long)m*n*(2*l-1);
+}
+
+template<>
+void tMatrix<double>::mult ( const double& alpha, const tMatrix<double>& B, const double& beta, Matrix<double>& C ) const
+{
+	int m = this->m, n = B.n, l = this->n;
+
+	assert( this->n == B.m );
+	assert( m == C.m );
+	assert( n == C.n );
+
+#ifdef USE_BLAS
+	int k = B.m;
+	char transA = 'T', transB = 'T';
+	
+	if( m != 0 && n != 0 && l != 0 ){
+		dgemm_( &transA, &transB, &n, &m, &l, &alpha,
+				&B(0,0), &k, &(*this)(0,0), &m,
+				&beta, &C(0,0), &n );
+	}
+#else
+#pragma omp parallel for
+	for( int i = 0; i < m; ++i )
+		for( int j = 0; j < n; ++j ){
+			double sum = 0.0;
+			for( int k = 0; k < l; ++k ) sum += (*this)(i,k)*B(k,j);
+			C(i,j) = sum;
+		}
+#endif
+	
+	cnt_flop += (long long)m*n*(2*l-1);
+}
 
 Matrix<double> operator * ( const Matrix<double>& m1, const Matrix<double>& m2 )
 {

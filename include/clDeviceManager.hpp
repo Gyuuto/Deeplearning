@@ -11,10 +11,13 @@ enum struct PRG : unsigned int{
 	CLMAT_ONES,
 	CLMAT_ZEROS,
 	CLMAT_HADAMARD,
+	CLMAT_HADAMARD_INPLACE,
 	CLMAT_SUM,
+	CLMAT_ADD,
 	CLMAT_SUB,
 	CLMAT_SUB_IN,
 	CLMAT_CLIP,
+	CLMAT_COPY,
 	FUNC_RELU_DIFF, FUNC_RELU,
 	FUNC_LEAKYRELU_DIFF, FUNC_LEAKYRELU,
 	FUNC_SIGMOID_DIFF, FUNC_SIGMOID,
@@ -31,7 +34,9 @@ enum struct PRG : unsigned int{
 	FUNC_SQUARE_DIFF, FUNC_SQUARE,
 	FUNC_CROSSENTROPY,
 	FULL_APPLY_INIT,
+	FULL_APPLY_BIAS,
 	FULL_DELTA_INIT,
+	FULL_GRAD_BIAS,
 	CONV_APPLY_IMG_SET,
 	CONV_APPLY_RET_SET,
 	CONV_APPLY_ADD_BIAS,
@@ -68,10 +73,13 @@ const static std::string PRG_NAME[] = {
 	"clMatrix_ones",
 	"clMatrix_zeros",
 	"clMatrix_hadamard",
+	"clMatrix_hadamard_inplace",
 	"clMatrix_sum",
+	"clMatrix_add",
 	"clMatrix_sub",
 	"clMatrix_sub_in", 
 	"clMatrix_clip", 
+	"clMatrix_copy", 
 	"function_ReLU_diff", "function_ReLU",
 	"function_LeakyReLU_diff", "function_LeakyReLU",
 	"function_Sigmoid_diff", "function_Sigmoid",
@@ -88,7 +96,9 @@ const static std::string PRG_NAME[] = {
 	"function_Square_diff", "function_Square",
 	"function_CrossEntropy",
 	"full_apply_init",
+	"full_apply_bias",
 	"full_delta_init",
+	"full_grad_bias",
 	"conv_apply_img_set",
 	"conv_apply_ret_set",
 	"conv_apply_add_bias",
@@ -130,13 +140,19 @@ const static std::string PRG_SOURCE[] = {
 	,
 #include "CL/clMatrix_hadamard.cl"
 	,
+#include "CL/clMatrix_hadamard_inplace.cl"
+	,
 #include "CL/clMatrix_sum.cl"
+	,
+#include "CL/clMatrix_add.cl"
 	,
 #include "CL/clMatrix_sub.cl"
 	,
 #include "CL/clMatrix_sub_in.cl"
 	,
 #include "CL/clMatrix_clip.cl"
+	,
+#include "CL/clMatrix_copy.cl"
 	,
 #include "CL/function_ReLU_diff.cl"
 	,
@@ -198,7 +214,11 @@ const static std::string PRG_SOURCE[] = {
 	,
 #include "CL/full_apply_init.cl"
 	,
+#include "CL/full_apply_bias.cl"
+	,
 #include "CL/full_delta_init.cl"
+	,
+#include "CL/full_grad_bias.cl"
 	,
 #include "CL/conv_apply_img_set.cl"
 	,
@@ -403,10 +423,10 @@ void clDeviceManager::run_kernel ( PRG kernel_idx, size_t gl_work_size1, size_t 
 
 	size_t global_work_size[3] = { gl_work_size1, gl_work_size2, gl_work_size3 };
 		
-	cl_int err = clEnqueueNDRangeKernel(queue, kernel[idx], 3, NULL, global_work_size, NULL, 0, NULL, &event);
+	cl_int err = clEnqueueNDRangeKernel(queue, kernel[idx], 3, NULL, global_work_size, NULL, 0, NULL, NULL);
 	if( err != 0 ) printf("Kernel runnning failed : %s, error_code = %d\n", PRG_NAME[idx].c_str(), err);
-	clWaitForEvents(1, &event);
-	clReleaseEvent(event);
+	// clWaitForEvents(1, &event);
+	// clReleaseEvent(event);
 }
 
 void clDeviceManager::run_kernel ( PRG kernel_idx, std::vector<size_t> gl_work_size, std::vector<size_t> lc_work_size )
@@ -418,10 +438,10 @@ void clDeviceManager::run_kernel ( PRG kernel_idx, std::vector<size_t> gl_work_s
 
 	cl_event event;
 
-	cl_int err = clEnqueueNDRangeKernel(queue, kernel[idx], 3, NULL, &gl_work_size[0], &lc_work_size[0], 0, NULL, &event);
+	cl_int err = clEnqueueNDRangeKernel(queue, kernel[idx], 3, NULL, &gl_work_size[0], &lc_work_size[0], 0, NULL, NULL);
 	if( err != 0 ) printf("Kernel runnning failed : %s, error_code = %d\n", PRG_NAME[idx].c_str(), err);
-	clWaitForEvents(1, &event);
-	clReleaseEvent(event);
+	// clWaitForEvents(1, &event);
+	// clReleaseEvent(event);
 }
 
 void clDeviceManager::set_argument ( PRG kernel_idx, int arg_idx, const void* val )

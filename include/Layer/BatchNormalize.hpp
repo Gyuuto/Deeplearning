@@ -59,6 +59,8 @@ template<template<typename> class Mat, typename Real>
 BatchNormalize<Mat, Real>::BatchNormalize( int prev_num_map, int prev_num_unit,
 										   const std::shared_ptr<Function<Real>>& f, const Real decay, const Real EPS ) :decay(decay), EPS(EPS)
 {
+	this->layer_name = "BatchNormalize";
+
 	this->prev_num_map = this->num_map = prev_num_map;
 	this->prev_num_unit = this->num_unit = prev_num_unit;
 	this->func = f;
@@ -174,7 +176,7 @@ std::pair<std::vector<Matrix<Real>>, std::vector<Matrix<Real>>> BatchNormalize<M
 #pragma omp parallel for reduction(+:tmp_nabla1)
 		for( int j = 0; j < my_size; ++j ){
 			for( int k = 0; k < U.n; ++k ){
-				tmp_nabla1 += delta(i*this->num_unit + my_offset+j,k)*(U_apply(i*this->prev_num_unit + my_offset+j,k) - mean(i,j))/std::sqrt(var(i,j) + EPS);
+				tmp_nabla1 += delta(i*this->num_unit + my_offset+j,k)*(U_apply(i*this->prev_num_unit + my_offset+j,k) - tmp_mean(i,j))/std::sqrt(tmp_var(i,j) + EPS);
 			}
 		}
 
@@ -236,10 +238,18 @@ std::pair<std::vector<clMatrix<Real>>, std::vector<clMatrix<Real>>> BatchNormali
 	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 5, &U_apply.v );
 	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 6, &cl_num_unit );
 	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 7, &U.N );
-	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 8, &mean.v );
-	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 9, &mean.N );
-	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 10, &var.v );
-	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 11, &var.N );
+	if( this->is_learning ){
+		cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 8, &tmp_mean.v );
+		cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 9, &tmp_mean.N );
+		cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 10, &tmp_var.v );
+		cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 11, &tmp_var.N );
+	}
+	else{
+		cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 8, &mean.v );
+		cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 9, &mean.N );
+		cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 10, &var.v );
+		cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 11, &var.N );
+	}
 	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 12, &cl_EPS );
 	cl_device_manager.run_kernel( PRG::BN_GRAD_HELPER, U.n, my_size, this->num_map );
 
@@ -354,7 +364,7 @@ Matrix<Real> BatchNormalize<Mat, Real>::calc_delta ( const Matrix<Real>& U, cons
 			Real tmp1 = 0.0, tmp2 = 0.0;
 			for( int l = 0; l < U.n; ++l ){
 				tmp1 += delta(i*this->num_unit + my_offset+j,l);
-				tmp2 += delta(i*this->num_unit + my_offset+j,l)*(U_appl(i*this->prev_num_unit + my_offset+j,l) - mean(i,j));
+				tmp2 += delta(i*this->num_unit + my_offset+j,l)*(U_appl(i*this->prev_num_unit + my_offset+j,l) - tmp_mean(i,j));
 			}
 			tmp1 /= U.n; tmp2 /= U.n;
 			
@@ -362,14 +372,14 @@ Matrix<Real> BatchNormalize<Mat, Real>::calc_delta ( const Matrix<Real>& U, cons
 
 #ifdef USE_MPI
 				tmp_nx_delta(i*my_size + j,k) =
-					this->W[0](i,0)/sqrt(var(i,j) + EPS)*delta(i*this->num_unit + my_offset+j,k)*U_diff(i*this->prev_num_unit + my_offset+j,k)
-					- this->W[0](i,0)/sqrt(var(i,j) + EPS)*U_diff(i*this->prev_num_unit + my_offset+j,k)*tmp1
-					- this->W[0](i,0)/(pow(var(i,j), 1.5) + EPS)*U_diff(i*this->prev_num_unit + my_offset+j,k)*(U_appl(i*this->prev_num_unit + my_offset+j,k) - mean(i,j))*tmp2;
+					this->W[0](i,0)/sqrt(tmp_var(i,j) + EPS)*delta(i*this->num_unit + my_offset+j,k)*U_diff(i*this->prev_num_unit + my_offset+j,k)
+					- this->W[0](i,0)/sqrt(tmp_var(i,j) + EPS)*U_diff(i*this->prev_num_unit + my_offset+j,k)*tmp1
+					- this->W[0](i,0)/(pow(tmp_var(i,j), 1.5) + EPS)*U_diff(i*this->prev_num_unit + my_offset+j,k)*(U_appl(i*this->prev_num_unit + my_offset+j,k) - tmp_mean(i,j))*tmp2;
 #else
 				nx_delta(i*this->prev_num_unit + j,k) =
-					this->W[0](i,0)/sqrt(var(i,j) + EPS)*delta(i*this->num_unit + j,k)*U_diff(i*this->prev_num_unit + j,k)
-					- this->W[0](i,0)/sqrt(var(i,j) + EPS)*U_diff(i*this->prev_num_unit + j,k)*tmp1
-					- this->W[0](i,0)/(pow(var(i,j), 1.5) + EPS)*U_diff(i*this->prev_num_unit + j,k)*(U_appl(i*this->prev_num_unit + j,k) - mean(i,j))*tmp2;
+					this->W[0](i,0)/sqrt(tmp_var(i,j) + EPS)*delta(i*this->num_unit + j,k)*U_diff(i*this->prev_num_unit + j,k)
+					- this->W[0](i,0)/sqrt(tmp_var(i,j) + EPS)*U_diff(i*this->prev_num_unit + j,k)*tmp1
+					- this->W[0](i,0)/(pow(tmp_var(i,j), 1.5) + EPS)*U_diff(i*this->prev_num_unit + j,k)*(U_appl(i*this->prev_num_unit + j,k) - tmp_mean(i,j))*tmp2;
 #endif
 			}
 			auto end = std::chrono::system_clock::now();
@@ -431,10 +441,18 @@ clMatrix<Real> BatchNormalize<Mat, Real>::calc_delta ( const clMatrix<Real>& U, 
 	cl_device_manager.set_argument( PRG::BN_DELTA, 4, &U_diff.v );
 	cl_device_manager.set_argument( PRG::BN_DELTA, 5, &delta.v );
 	cl_device_manager.set_argument( PRG::BN_DELTA, 6, &U.N );
-	cl_device_manager.set_argument( PRG::BN_DELTA, 7, &mean.v );
-	cl_device_manager.set_argument( PRG::BN_DELTA, 8, &mean.N );
-	cl_device_manager.set_argument( PRG::BN_DELTA, 9, &var.v );
-	cl_device_manager.set_argument( PRG::BN_DELTA, 10, &var.N );
+	if( this->is_learning ){
+		cl_device_manager.set_argument( PRG::BN_DELTA, 7, &tmp_mean.v );
+		cl_device_manager.set_argument( PRG::BN_DELTA, 8, &tmp_mean.N );
+		cl_device_manager.set_argument( PRG::BN_DELTA, 9, &tmp_var.v );
+		cl_device_manager.set_argument( PRG::BN_DELTA, 10, &tmp_var.N );
+	}
+	else{
+		cl_device_manager.set_argument( PRG::BN_DELTA, 7, &mean.v );
+		cl_device_manager.set_argument( PRG::BN_DELTA, 8, &mean.N );
+		cl_device_manager.set_argument( PRG::BN_DELTA, 9, &var.v );
+		cl_device_manager.set_argument( PRG::BN_DELTA, 10, &var.N );
+	}
 	cl_device_manager.set_argument( PRG::BN_DELTA, 11, &this->W[0].v );
 	cl_device_manager.set_argument( PRG::BN_DELTA, 12, &cl_EPS );
 	cl_device_manager.run_kernel( PRG::BN_DELTA, U.n, my_size, this->num_map );
@@ -524,21 +542,40 @@ Matrix<Real> BatchNormalize<Mat, Real>::apply ( const Matrix<Real>& U, bool use_
 		var -= (1 - decay) * (var - tmp_var);
 	}
 	
+	if( this->is_learning ){
 #pragma omp parallel
-	{
-		for( int i = 0; i < this->num_map; ++i ){
+		{
+			for( int i = 0; i < this->num_map; ++i ){
 #pragma omp for nowait
-			for( int j = 0; j < my_size; ++j ){
-				for( int k = 0; k < U.n; ++k ){
+				for( int j = 0; j < my_size; ++j ){
+					for( int k = 0; k < U.n; ++k ){
 #ifdef USE_MPI
-					tmp_ret(i*my_size + j, k) = this->W[0](i,0)*(U(i*this->prev_num_unit + my_offset+j,k) - mean(i,j))/std::sqrt(var(i,j)+EPS) + this->b[0](i,0);
+						tmp_ret(i*my_size + j, k) = this->W[0](i,0)*(U(i*this->prev_num_unit + my_offset+j,k) - tmp_mean(i,j))/std::sqrt(tmp_var(i,j)+EPS) + this->b[0](i,0);
 #else
-					ret(i*this->num_unit + j, k) = this->W[0](i,0)*(U(i*this->prev_num_unit + j,k) - mean(i,j))/std::sqrt(var(i,j)+EPS) + this->b[0](i,0);
+						ret(i*this->num_unit + j, k) = this->W[0](i,0)*(U(i*this->prev_num_unit + j,k) - tmp_mean(i,j))/std::sqrt(tmp_var(i,j)+EPS) + this->b[0](i,0);
 #endif					
+					}
 				}
 			}
 		}
 	}
+	else{
+#pragma omp parallel
+		{
+			for( int i = 0; i < this->num_map; ++i ){
+#pragma omp for nowait
+				for( int j = 0; j < my_size; ++j ){
+					for( int k = 0; k < U.n; ++k ){
+#ifdef USE_MPI
+						tmp_ret(i*my_size + j, k) = this->W[0](i,0)*(U(i*this->prev_num_unit + my_offset+j,k) - mean(i,j))/std::sqrt(var(i,j)+EPS) + this->b[0](i,0);
+#else
+						ret(i*this->num_unit + j, k) = this->W[0](i,0)*(U(i*this->prev_num_unit + j,k) - mean(i,j))/std::sqrt(var(i,j)+EPS) + this->b[0](i,0);
+#endif					
+					}
+				}
+			}
+		}
+	}		
 	end = std::chrono::system_clock::now();
 	this->t_apply_gemm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
@@ -609,60 +646,46 @@ clMatrix<Real> BatchNormalize<Mat, Real>::apply ( const clMatrix<Real>& U, bool 
 		var -= (1 - decay) * (var - tmp_var);
 	}
 
-	// if( this->is_learning ){
-	// 	cl_device_manager.set_argument( PRG::BN_APPLY, 0, &ret.v );
-	// 	cl_device_manager.set_argument( PRG::BN_APPLY, 1, &cl_num_unit );
-	// 	cl_device_manager.set_argument( PRG::BN_APPLY, 2, &ret.N );
-	// 	cl_device_manager.set_argument( PRG::BN_APPLY, 3, &tmp_mean.v );
-	// 	cl_device_manager.set_argument( PRG::BN_APPLY, 4, &tmp_mean.N );
-	// 	cl_device_manager.set_argument( PRG::BN_APPLY, 5, &tmp_var.v );
-	// 	cl_device_manager.set_argument( PRG::BN_APPLY, 6, &tmp_var.N );
-	// 	cl_device_manager.set_argument( PRG::BN_APPLY, 7, &this->W[0].v );
-	// 	cl_device_manager.set_argument( PRG::BN_APPLY, 8, &this->b[0].v );
-	// 	cl_device_manager.set_argument( PRG::BN_APPLY, 9, &cl_EPS );
-	// 	cl_device_manager.set_argument( PRG::BN_APPLY, 10, &U.v );
-	// 	cl_device_manager.set_argument( PRG::BN_APPLY, 11, &cl_prev_num_unit );
-	// 	cl_device_manager.set_argument( PRG::BN_APPLY, 12, &U.N );
-	// 	cl_device_manager.run_kernel( PRG::BN_APPLY, U.n, my_size, this->num_map );
-	// }
-	// else{
-	// 	cl_device_manager.set_argument( PRG::BN_APPLY, 0, &ret.v );
-	// 	cl_device_manager.set_argument( PRG::BN_APPLY, 1, &cl_num_unit );
-	// 	cl_device_manager.set_argument( PRG::BN_APPLY, 2, &ret.N );
-	// 	cl_device_manager.set_argument( PRG::BN_APPLY, 3, &mean.v );
-	// 	cl_device_manager.set_argument( PRG::BN_APPLY, 4, &mean.N );
-	// 	cl_device_manager.set_argument( PRG::BN_APPLY, 5, &var.v );
-	// 	cl_device_manager.set_argument( PRG::BN_APPLY, 6, &var.N );
-	// 	cl_device_manager.set_argument( PRG::BN_APPLY, 7, &this->W[0].v );
-	// 	cl_device_manager.set_argument( PRG::BN_APPLY, 8, &this->b[0].v );
-	// 	cl_device_manager.set_argument( PRG::BN_APPLY, 9, &cl_EPS );
-	// 	cl_device_manager.set_argument( PRG::BN_APPLY, 10, &U.v );
-	// 	cl_device_manager.set_argument( PRG::BN_APPLY, 11, &cl_prev_num_unit );
-	// 	cl_device_manager.set_argument( PRG::BN_APPLY, 12, &U.N );
-	// 	cl_device_manager.run_kernel( PRG::BN_APPLY, U.n, my_size, this->num_map );
-	// }
-	cl_device_manager.set_argument( PRG::BN_APPLY, 0, &ret.v );
-	cl_device_manager.set_argument( PRG::BN_APPLY, 1, &cl_num_unit );
-	cl_device_manager.set_argument( PRG::BN_APPLY, 2, &ret.N );
-	cl_device_manager.set_argument( PRG::BN_APPLY, 3, &mean.v );
-	cl_device_manager.set_argument( PRG::BN_APPLY, 4, &mean.N );
-	cl_device_manager.set_argument( PRG::BN_APPLY, 5, &var.v );
-	cl_device_manager.set_argument( PRG::BN_APPLY, 6, &var.N );
-	cl_device_manager.set_argument( PRG::BN_APPLY, 7, &this->W[0].v );
-	cl_device_manager.set_argument( PRG::BN_APPLY, 8, &this->b[0].v );
-	cl_device_manager.set_argument( PRG::BN_APPLY, 9, &cl_EPS );
-	cl_device_manager.set_argument( PRG::BN_APPLY, 10, &U.v );
-	cl_device_manager.set_argument( PRG::BN_APPLY, 11, &cl_prev_num_unit );
-	cl_device_manager.set_argument( PRG::BN_APPLY, 12, &U.N );
-	cl_device_manager.run_kernel( PRG::BN_APPLY, U.n, my_size, this->num_map );
+	if( this->is_learning ){
+		cl_device_manager.set_argument( PRG::BN_APPLY, 0, &ret.v );
+		cl_device_manager.set_argument( PRG::BN_APPLY, 1, &cl_num_unit );
+		cl_device_manager.set_argument( PRG::BN_APPLY, 2, &ret.N );
+		cl_device_manager.set_argument( PRG::BN_APPLY, 3, &tmp_mean.v );
+		cl_device_manager.set_argument( PRG::BN_APPLY, 4, &tmp_mean.N );
+		cl_device_manager.set_argument( PRG::BN_APPLY, 5, &tmp_var.v );
+		cl_device_manager.set_argument( PRG::BN_APPLY, 6, &tmp_var.N );
+		cl_device_manager.set_argument( PRG::BN_APPLY, 7, &this->W[0].v );
+		cl_device_manager.set_argument( PRG::BN_APPLY, 8, &this->b[0].v );
+		cl_device_manager.set_argument( PRG::BN_APPLY, 9, &cl_EPS );
+		cl_device_manager.set_argument( PRG::BN_APPLY, 10, &U.v );
+		cl_device_manager.set_argument( PRG::BN_APPLY, 11, &cl_prev_num_unit );
+		cl_device_manager.set_argument( PRG::BN_APPLY, 12, &U.N );
+		cl_device_manager.run_kernel( PRG::BN_APPLY, U.n, my_size, this->num_map );
+	}
+	else{
+		cl_device_manager.set_argument( PRG::BN_APPLY, 0, &ret.v );
+		cl_device_manager.set_argument( PRG::BN_APPLY, 1, &cl_num_unit );
+		cl_device_manager.set_argument( PRG::BN_APPLY, 2, &ret.N );
+		cl_device_manager.set_argument( PRG::BN_APPLY, 3, &mean.v );
+		cl_device_manager.set_argument( PRG::BN_APPLY, 4, &mean.N );
+		cl_device_manager.set_argument( PRG::BN_APPLY, 5, &var.v );
+		cl_device_manager.set_argument( PRG::BN_APPLY, 6, &var.N );
+		cl_device_manager.set_argument( PRG::BN_APPLY, 7, &this->W[0].v );
+		cl_device_manager.set_argument( PRG::BN_APPLY, 8, &this->b[0].v );
+		cl_device_manager.set_argument( PRG::BN_APPLY, 9, &cl_EPS );
+		cl_device_manager.set_argument( PRG::BN_APPLY, 10, &U.v );
+		cl_device_manager.set_argument( PRG::BN_APPLY, 11, &cl_prev_num_unit );
+		cl_device_manager.set_argument( PRG::BN_APPLY, 12, &U.N );
+		cl_device_manager.run_kernel( PRG::BN_APPLY, U.n, my_size, this->num_map );
+	}
 	end = std::chrono::system_clock::now();
 	this->t_apply_gemm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
 	beg = std::chrono::system_clock::now();
 #ifdef USE_MPI
-	for( int i = 0; i < num_map; ++i ){
-		MPI_Allgatherv(&tmp_ret(i*my_size,0), size[rank], get_typecount(tmp_ret(i*my_size,0)).mpi_type,
-					   &ret(i*this->num_unit,0), &size[0], &offset[0], get_typecount(ret(i*this->num_unit,0)).mpi_type, inner_world);
+	for( int i = 0; i < this->num_map; ++i ){
+		MPI_Allgatherv(&tmp_ret(i*my_size,0), size[this->rank], get_typecount(tmp_ret(i*my_size,0)).mpi_type,
+					   &ret(i*this->num_unit,0), &size[0], &offset[0], get_typecount(ret(i*this->num_unit,0)).mpi_type, this->inner_world);
 	}
 #endif
 	end = std::chrono::system_clock::now();

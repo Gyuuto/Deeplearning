@@ -3,11 +3,11 @@
 #endif
 
 OCL_EXTERNAL_INCLUDE(
-__kernel void function_Polynomial_diff ( __global float* y, __global float* x, __global int* n )
+__kernel void function_Polynomial_diff ( __global float* x, __global int* n )
 {
 	int gid = get_global_id(0);
 
-	y[gid] = *n*pown(x[gid], *n-1);
+	x[gid] = *n*pown(x[gid], *n-1);
 }
 
 )

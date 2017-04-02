@@ -31,17 +31,21 @@ public:
 #endif
 	void finalize();
 
-	std::pair<std::vector<Mat<Real>>, std::vector<Mat<Real>>> calc_gradient ( const Mat<Real>& U, const Mat<Real>& delta );
-	Matrix<Real> calc_delta ( const Matrix<Real>& U, const Matrix<Real>& delta );
+	void calc_gradient ( const Mat<Real>& U_apply, const Mat<Real>& U_diff, const Mat<Real>& delta, std::vector<Mat<Real>>& nabla_W, std::vector<Mat<Real>>& nabla_b );
+
+	void calc_delta ( const Matrix<Real>& U_apply, const Matrix<Real>& U_diff, const Matrix<Real>& delta, Matrix<Real>& nx_delta );
 #ifdef USE_GPU
-	clMatrix<Real> calc_delta ( const clMatrix<Real>& U, const clMatrix<Real>& delta );
+	void calc_delta ( const clMatrix<Real>& U_apply, const clMatrix<Real>& U_diff, const clMatrix<Real>& delta, clMatrix<Real>& nx_delta );
 #endif
-	void update_W ( const std::vector<Mat<Real>>& dW, const std::vector<Mat<Real>>& db );
 
 	Matrix<Real> apply ( const Matrix<Real>& U, bool use_func = true );
+	void apply ( const Matrix<Real>& U, Matrix<Real>& ret, bool use_func = true );
 #ifdef USE_GPU
 	clMatrix<Real> apply ( const clMatrix<Real>& U, bool use_func = true );
+	void apply ( const clMatrix<Real>& U, clMatrix<Real>& ret, bool use_func = true );
 #endif
+
+	void update_W ( const std::vector<Mat<Real>>& dW, const std::vector<Mat<Real>>& db );
 	// Mat unpooling ( const Mat& U );
 
 	void set_W ( const std::string& filename );
@@ -58,6 +62,8 @@ MaxPooling<Mat, Real>::MaxPooling( int prev_num_map, int prev_num_unit, int prev
 							 int m, int n, int stride, 
 							 const std::shared_ptr<Function<Real>>& f )
 {
+	this->layer_name = "MaxPooling";
+
 	this->prev_num_map = prev_num_map;
 	this->prev_num_unit = prev_num_unit;
 	this->prev_ldu = prev_ldu;
@@ -174,13 +180,12 @@ void MaxPooling<Mat, Real>::finalize ()
 }
 
 template<template<typename> class Mat, typename Real>
-std::pair<std::vector<Mat<Real>>, std::vector<Mat<Real>>> MaxPooling<Mat, Real>::calc_gradient ( const Mat<Real>& U, const Mat<Real>& delta )
+void MaxPooling<Mat, Real>::calc_gradient ( const Mat<Real>& U_apply, const Mat<Real>& U_diff, const Mat<Real>& delta, std::vector<Mat<Real>>& nabla_W, std::vector<Mat<Real>>& nabla_b )
 {
-	return std::make_pair(std::vector<Mat<Real>>(), std::vector<Mat<Real>>());
 }
 
 template<template<typename> class Mat, typename Real>
-Matrix<Real> MaxPooling<Mat, Real>::calc_delta ( const Matrix<Real>& U, const Matrix<Real>& delta )
+void MaxPooling<Mat, Real>::calc_delta ( const Matrix<Real>& U_apply, const Matrix<Real>& U_diff, const Matrix<Real>& delta, Matrix<Real>& nx_delta )
 {
 	auto tot_beg = std::chrono::system_clock::now();
 	auto beg = tot_beg;
@@ -191,15 +196,14 @@ Matrix<Real> MaxPooling<Mat, Real>::calc_delta ( const Matrix<Real>& U, const Ma
 	my_offset = this->rank*this->num_unit/this->nprocs;
 #endif
 
-	Matrix<Real> nx_delta = Matrix<Real>::zeros(U.m, U.n);
 	auto end = std::chrono::system_clock::now();
 	this->t_delta_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
 	const int gap = prev_ldu + 2*pad;
 	const int Y = this->prev_num_unit/prev_ldu, X = prev_ldu;
 
-	auto U_apply = (*this->prev_func)(U, false);
-	auto U_diff = (*this->prev_func)(U, true);
+#pragma omp parallel for
+	for( int i = 0; i < nx_delta.m*nx_delta.n; ++i ) nx_delta.v[i] = 0.0;
 	for( int i = 0; i < this->prev_num_map; ++i ){
 		beg = std::chrono::system_clock::now();
 
@@ -235,17 +239,15 @@ Matrix<Real> MaxPooling<Mat, Real>::calc_delta ( const Matrix<Real>& U, const Ma
 	
 	beg = std::chrono::system_clock::now();
 #ifdef USE_MPI
-	MPI_Allreduce(MPI_IN_PLACE, &nx_delta(0,0), U.m*U.n, get_typecount(nx_delta(0,0)).mpi_type, MPI_SUM, this->inner_world);
+	MPI_Allreduce(MPI_IN_PLACE, &nx_delta(0,0), U_apply.m*U_apply.n, get_typecount(nx_delta(0,0)).mpi_type, MPI_SUM, this->inner_world);
 #endif
 	end = std::chrono::system_clock::now();
 	this->t_delta_comm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
-
-	return nx_delta;
 }
 
 #ifdef USE_GPU
 template<template<typename> class Mat, typename Real>
-clMatrix<Real> MaxPooling<Mat, Real>::calc_delta ( const clMatrix<Real>& U, const clMatrix<Real>& delta )
+void MaxPooling<Mat, Real>::calc_delta ( const clMatrix<Real>& U_apply, const clMatrix<Real>& U_diff, const clMatrix<Real>& delta, clMatrix<Real>& nx_delta )
 {
 	auto tot_beg = std::chrono::system_clock::now();
 	auto beg = tot_beg;
@@ -256,12 +258,11 @@ clMatrix<Real> MaxPooling<Mat, Real>::calc_delta ( const clMatrix<Real>& U, cons
 	my_offset = this->rank*this->num_unit/this->nprocs;
 #endif
 
-	clMatrix<Real> nx_delta = clMatrix<Real>::zeros(U.m, U.n);
 	auto end = std::chrono::system_clock::now();
 	this->t_delta_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
-	auto U_apply = (*this->prev_func)(U, false);
-	auto U_diff = (*this->prev_func)(U, true);
+	cl_device_manager.set_argument( PRG::CLMAT_ZEROS, 0, &nx_delta.v );
+	cl_device_manager.run_kernel( PRG::CLMAT_ZEROS, nx_delta.m*nx_delta.n, 1 );
 
 	cl_device_manager.set_argument( PRG::MAXPOOL_DELTA, 0, &nx_delta.v );
 	cl_device_manager.set_argument( PRG::MAXPOOL_DELTA, 1, &cl_prev_num_unit );
@@ -277,30 +278,32 @@ clMatrix<Real> MaxPooling<Mat, Real>::calc_delta ( const clMatrix<Real>& U, cons
 	cl_device_manager.set_argument( PRG::MAXPOOL_DELTA, 11, &cl_pad );
 	cl_device_manager.set_argument( PRG::MAXPOOL_DELTA, 12, &cl_m );
 	cl_device_manager.set_argument( PRG::MAXPOOL_DELTA, 13, &cl_n );
-	cl_device_manager.run_kernel( PRG::MAXPOOL_DELTA, my_size, U.n, this->prev_num_map );
+	cl_device_manager.run_kernel( PRG::MAXPOOL_DELTA, my_size, U_apply.n, this->prev_num_map );
 
 	beg = std::chrono::system_clock::now();
 #ifdef USE_MPI
-	MPI_Allreduce(MPI_IN_PLACE, &nx_delta(0,0), U.m*U.n, get_typecount(nx_delta(0,0)).mpi_type, MPI_SUM, this->inner_world);
+	MPI_Allreduce(MPI_IN_PLACE, &nx_delta(0,0), U_apply.m*U_apply.n, get_typecount(nx_delta(0,0)).mpi_type, MPI_SUM, this->inner_world);
 #endif
 	end = std::chrono::system_clock::now();
 	this->t_delta_comm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
 	end = std::chrono::system_clock::now();
 	this->t_delta += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
-	
-	return nx_delta;
 }
 #endif
 
 template<template<typename> class Mat, typename Real>
-void MaxPooling<Mat, Real>::update_W ( const std::vector<Mat<Real>>& dW, const std::vector<Mat<Real>>& db )
+Matrix<Real> MaxPooling<Mat, Real>::apply ( const Matrix<Real>& U, bool use_func )
 {
-	
+	Matrix<Real> ret(this->num_map*this->num_unit, U.n);
+
+	apply( U, ret, use_func );
+
+	return ret;
 }
 
 template<template<typename> class Mat, typename Real>
-Matrix<Real> MaxPooling<Mat, Real>::apply ( const Matrix<Real>& U, bool use_func )
+void MaxPooling<Mat, Real>::apply ( const Matrix<Real>& U, Matrix<Real>& ret, bool use_func )
 {
 	auto tot_beg = std::chrono::system_clock::now();
 	auto beg = tot_beg;
@@ -317,12 +320,10 @@ Matrix<Real> MaxPooling<Mat, Real>::apply ( const Matrix<Real>& U, bool use_func
 	my_offset = offset[this->rank]/U.n;
 #endif
 	
-	Matrix<Real> U_ = (*this->prev_func)(U, false);
 	S = Matrix<Real>(this->num_map*this->num_unit, U.n);
 	
 	const int gap = prev_ldu + 2*pad;
 	const int Y = this->prev_num_unit/prev_ldu, X = prev_ldu;
-	Matrix<Real> ret(this->num_map*this->num_unit, U.n);
 
 	auto end = std::chrono::system_clock::now();
 	this->t_apply_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
@@ -335,7 +336,7 @@ Matrix<Real> MaxPooling<Mat, Real>::apply ( const Matrix<Real>& U, bool use_func
 		for( int j = 0; j < my_size; ++j ){
 			int x = (j + my_offset)%ldu, y = (j + my_offset)/ldu;
 
-			for( int k = 0; k < U_.n; ++k ){
+			for( int k = 0; k < U.n; ++k ){
 				int s_idx = -1;
 				Real val;
 
@@ -346,8 +347,8 @@ Matrix<Real> MaxPooling<Mat, Real>::apply ( const Matrix<Real>& U, bool use_func
 						
 						if( nx < 0 || nx >= X || ny < 0 || ny >= Y ) continue;
 
-						if( s_idx == -1 || val < U_(i*this->prev_num_unit + ny*prev_ldu + nx, k) ){
-							val = U_(i*this->prev_num_unit + ny*prev_ldu + nx, k);
+						if( s_idx == -1 || val < U(i*this->prev_num_unit + ny*prev_ldu + nx, k) ){
+							val = U(i*this->prev_num_unit + ny*prev_ldu + nx, k);
 							s_idx = ny*prev_ldu + nx;
 						}
 					}
@@ -357,7 +358,7 @@ Matrix<Real> MaxPooling<Mat, Real>::apply ( const Matrix<Real>& U, bool use_func
 			}
 		}
 
-		if( use_func ) tmp = (*this->func)(tmp, false);
+		if( use_func ) this->func->inplace(tmp, false);
 		end = std::chrono::system_clock::now();
 		this->t_apply_repl += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
@@ -376,34 +377,39 @@ Matrix<Real> MaxPooling<Mat, Real>::apply ( const Matrix<Real>& U, bool use_func
 
 	end = std::chrono::system_clock::now();
 	this->t_apply += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
-
-	return ret;
 }
 
 #ifdef USE_GPU
 template<template<typename> class Mat, typename Real>
 clMatrix<Real> MaxPooling<Mat, Real>::apply ( const clMatrix<Real>& U, bool use_func )
 {
+	clMatrix<Real> ret(this->num_map*this->num_unit, U.n);
+
+	apply( U, ret, use_func );
+
+	return ret;
+}
+
+template<template<typename> class Mat, typename Real>
+void MaxPooling<Mat, Real>::apply ( const clMatrix<Real>& U, clMatrix<Real>& ret, bool use_func )
+{
 	auto tot_beg = std::chrono::system_clock::now();
 	auto beg = tot_beg;
 
 	int my_size = this->num_unit, my_offset = 0;
 #ifdef USE_MPI
-	std::vector<int> size(nprocs), offset(nprocs);
-	for( int i = 0; i < nprocs; ++i ){
-		size[i] = ((i+1)*my_size/nprocs - i*my_size/nprocs)*U[0].n;
-		offset[i] = i*my_size/nprocs*U[0].n;
+	std::vector<int> size(this->nprocs), offset(this->nprocs);
+	for( int i = 0; i < this->nprocs; ++i ){
+		size[i] = ((i+1)*my_size/this->nprocs - i*my_size/this->nprocs)*U.n;
+		offset[i] = i*my_size/this->nprocs*U.n;
 	}
 
-	my_size = size[rank]/U[0].n;
-	my_offset = offset[rank]/U[0].n;
+	my_size = size[this->rank]/U.n;
+	my_offset = offset[this->rank]/U.n;
 #endif
 	
-	clMatrix<Real> U_ = (*this->prev_func)(U, false);
 	S = clMatrix<Real>(this->num_map*this->num_unit, U.n);
 	
-	clMatrix<Real> ret(this->num_map*this->num_unit, U.n);
-
 	auto end = std::chrono::system_clock::now();
 	this->t_apply_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 	
@@ -424,8 +430,6 @@ clMatrix<Real> MaxPooling<Mat, Real>::apply ( const clMatrix<Real>& U, bool use_
 
 	end = std::chrono::system_clock::now();
 	this->t_apply += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
-
-	return ret;
 }
 #endif
 
@@ -452,6 +456,12 @@ clMatrix<Real> MaxPooling<Mat, Real>::apply ( const clMatrix<Real>& U, bool use_
 
 // 	return ret;
 // }
+
+template<template<typename> class Mat, typename Real>
+void MaxPooling<Mat, Real>::update_W ( const std::vector<Mat<Real>>& dW, const std::vector<Mat<Real>>& db )
+{
+	
+}
 
 template<template<typename> class Mat, typename Real>
 void MaxPooling<Mat, Real>::set_W ( const std::string& filename )

@@ -3,10 +3,16 @@
 
 #include <vector>
 #include <functional>
+
+#ifdef USE_VIENNACL
+#include <viennacl/forwards.h>
+#endif
 #include <clBLAS.h>
 
 #include "clDeviceManager.hpp"
 #include "Matrix.hpp"
+
+#include <chrono>
 
 template<class T>
 struct clMatrix;
@@ -17,9 +23,10 @@ template<class T>
 struct clMatrix
 {
 	int m, n;
+	long long mem_size;
 	cl_mem M, N, v;
 	
-	clMatrix(): m(0), n(0), v(NULL)
+	clMatrix(): m(0), n(0), v(NULL), mem_size(0)
 	{
 		cl_int err;
 		M = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
@@ -47,7 +54,7 @@ struct clMatrix
 		}
 	}
 	
-	clMatrix( const int& m, const int& n ) :m(m), n(n)
+	clMatrix( const int& m, const int& n ) :m(m), n(n), mem_size((long long)m*n)
 	{
 		cl_int err;
 		M = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
@@ -81,7 +88,7 @@ struct clMatrix
 		}
 	}
 
-	clMatrix( const std::vector<T>& v ):m(v.size()), n(1)
+	clMatrix( const std::vector<T>& v ):m(v.size()), n(1), mem_size((long long)m*n)
 	{
 		cl_int err;
 
@@ -125,6 +132,7 @@ struct clMatrix
 	clMatrix( const clMatrix<T>& mat )
 	{
 		m = mat.m; n = mat.n;
+		mem_size = m*n;
 
 		cl_int err;
 		M = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
@@ -171,6 +179,7 @@ struct clMatrix
 	clMatrix( const Matrix<T>& mat )
 	{
 		m = mat.m; n = mat.n;
+		mem_size = (long long)m*n;
 
 		cl_int err;
 		M = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
@@ -213,7 +222,7 @@ struct clMatrix
 				exit(-1);
 			}
 		}
-	}	 
+	}
 
 	clMatrix<T>& operator = ( const clMatrix<T>& mat )
 	{
@@ -222,6 +231,7 @@ struct clMatrix
 			if( v != NULL ) clReleaseMemObject(v);
 
 			m = mat.m; n = mat.n;
+			mem_size = (long long)m*n;
 			err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->M, CL_TRUE, 0,
 										sizeof(int), &m, 0, NULL, NULL );
 			if( err != CL_SUCCESS ){
@@ -255,6 +265,7 @@ struct clMatrix
 		}
 
 		m = mat.m; n = mat.n;
+		mem_size = (long long)m*n;
 		v = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_WRITE, m*n*sizeof(T), NULL, &err);
 		if( err != CL_SUCCESS ){
 			printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
@@ -276,6 +287,8 @@ struct clMatrix
 			if( v != NULL ) clReleaseMemObject(v);
 
 			m = mat.m; n = mat.n;
+			mem_size = (long long)m*n;
+
 			err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->M, CL_TRUE, 0,
 										sizeof(int), &m, 0, NULL, NULL );
 			if( err != CL_SUCCESS ){
@@ -309,6 +322,7 @@ struct clMatrix
 		}
 
 		m = mat.m; n = mat.n;
+		mem_size = (long long)m*n;
 		v = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_WRITE, m*n*sizeof(T), NULL, &err);
 		if( err != CL_SUCCESS ){
 			printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
@@ -368,6 +382,11 @@ struct clMatrix
 
 		return ret;
 	}
+	static clMatrix<T> zeros ( clMatrix<T>& x )
+	{
+		cl_device_manager.set_argument( PRG::CLMAT_ZEROS, 0, &x.v );
+		cl_device_manager.run_kernel( PRG::CLMAT_ZEROS, x.m*x.n, 1 );
+	}
 
 	static cltMatrix<T> transpose( const clMatrix<T>& mat )
 	{
@@ -394,9 +413,6 @@ struct clMatrix
 		int m = mat.m, n = mat.n;
 		clMatrix<T> buf = mat;
 		
-		cl_int err;
-		cl_event event;
-
 		for( int i = m*n; i > 0; i /= cl_device_manager.get_max_work_item(0) ){
 			cl_device_manager.set_argument( PRG::CLMAT_SUM, 0, &buf.v );
 			cl_device_manager.set_argument( PRG::CLMAT_SUM, 1, cl_device_manager.get_max_work_item(0)*sizeof(T) );
@@ -416,9 +432,9 @@ struct clMatrix
 		cl_mem scratch_buf = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_WRITE, m*n*sizeof(float), NULL, &err );
 				
 		clblasSdot( m*n, buf, 0, mat.v, 0, 1, mat.v, 0, 1, scratch_buf,
-					1, cl_device_manager.get_queue_ptr(), 0, NULL, &event );
-		clWaitForEvents( 1, &event );
-		clReleaseEvent(event);
+					1, cl_device_manager.get_queue_ptr(), 0, NULL, NULL );
+		// clWaitForEvents( 1, &event );
+		// clReleaseEvent(event);
 
 		T ret;
 		clEnqueueReadBuffer( cl_device_manager.get_queue(), buf, CL_TRUE, 0, sizeof(T), &ret, 0, NULL, NULL );
@@ -476,17 +492,17 @@ struct clMatrix
 	{
 		int m = m1.m, n = m1.n;
 		cl_event event;
-
+		
 		assert( this->m == m1.m && this->n == m1.n );
 
 		clblasSaxpy( m*n, 1.0f,
 					 m1.v, 0, 1, this->v, 0, 1,
-					 1, cl_device_manager.get_queue_ptr(), 0, NULL, &event );
-		clWaitForEvents( 1, &event );
-		clReleaseEvent(event);
+					 1, cl_device_manager.get_queue_ptr(), 0, NULL, NULL );
+		// clWaitForEvents( 1, &event );
+		// clReleaseEvent(event);
 		
 		cnt_flop += (long long)m*n;
-
+		
 		return *this;
 	}
 
@@ -499,9 +515,9 @@ struct clMatrix
 
 		clblasSaxpy( m*n, -1.0f,
 					 m1.v, 0, 1, this->v, 0, 1,
-					 1, cl_device_manager.get_queue_ptr(), 0, NULL, &event );
-		clWaitForEvents( 1, &event );
-		clReleaseEvent(event);
+					 1, cl_device_manager.get_queue_ptr(), 0, NULL, NULL );
+		// clWaitForEvents( 1, &event );
+		// clReleaseEvent(event);
 
 		cnt_flop += (long long)m*n;
 
@@ -529,9 +545,9 @@ struct clMatrix
 
 		clblasSaxpy( m*n, c - 1.0,
 					 this->v, 0, 1, this->v, 0, 1,
-					 1, cl_device_manager.get_queue_ptr(), 0, NULL, &event );
-		clWaitForEvents( 1, &event );
-		clReleaseEvent(event);
+					 1, cl_device_manager.get_queue_ptr(), 0, NULL, NULL );
+		// clWaitForEvents( 1, &event );
+		// clReleaseEvent(event);
 
 		cnt_flop += (long long)m*n;
 
@@ -545,9 +561,9 @@ struct clMatrix
 
 		clblasSaxpy( m*n, 1.0/c - 1.0,
 					 this->v, 0, 1, this->v, 0, 1,
-					 1, cl_device_manager.get_queue_ptr(), 0, NULL, &event );
-		clWaitForEvents( 1, &event );
-		clReleaseEvent(event);
+					 1, cl_device_manager.get_queue_ptr(), 0, NULL, NULL );
+		// clWaitForEvents( 1, &event );
+		// clReleaseEvent(event);
 	
 		cnt_flop += (long long)m*n;
 
@@ -565,9 +581,9 @@ struct clMatrix
 
 		clblasSaxpy( m*n, 1.0f,
 					 m2.v, 0, 1, ret.v, 0, 1,
-					 1, cl_device_manager.get_queue_ptr(), 0, NULL, &event );
-		clWaitForEvents( 1, &event );
-		clReleaseEvent(event);
+					 1, cl_device_manager.get_queue_ptr(), 0, NULL, NULL );
+		// clWaitForEvents( 1, &event );
+		// clReleaseEvent(event);
 
 		cnt_flop += (long long)m*n;
 
@@ -584,9 +600,9 @@ struct clMatrix
 
 		clblasSaxpy( m*n, -1.0f,
 					 m2.v, 0, 1, ret.v, 0, 1,
-					 1, cl_device_manager.get_queue_ptr(), 0, NULL, &event );
-		clWaitForEvents( 1, &event );
-		clReleaseEvent(event);
+					 1, cl_device_manager.get_queue_ptr(), 0, NULL, NULL );
+		// clWaitForEvents( 1, &event );
+		// clReleaseEvent(event);
 
 		cnt_flop += (long long)m*n;
 
@@ -609,11 +625,11 @@ struct clMatrix
 		cl_int err = clblasSgemm( clblasRowMajor, clblasNoTrans, clblasNoTrans,
 								  m, n, l, 1.0f,
 								  m1.v, 0, m1.n, m2.v, 0, m2.n,
-								  0.0, ret.v, 0, ret.n,
-								  1, cl_device_manager.get_queue_ptr(), 0, NULL, &event );
-		clWaitForEvents( 1, &event );
-		clReleaseEvent(event);
-
+								  0.0f, ret.v, 0, ret.n,
+								  1, cl_device_manager.get_queue_ptr(), 0, NULL, NULL );
+		// clWaitForEvents( 1, &event );
+		// clReleaseEvent(event);
+		
 		cnt_flop += (long long)m*n*(2*l-1);
 
 		return ret;
@@ -628,9 +644,9 @@ struct clMatrix
 		
 		clblasSaxpy( m*n, c - 1.0,
 					 m1.v, 0, 1, ret.v, 0, 1,
-					 1, cl_device_manager.get_queue_ptr(), 0, NULL, &event );
-		clWaitForEvents( 1, &event );
-		clReleaseEvent(event);
+					 1, cl_device_manager.get_queue_ptr(), 0, NULL, NULL );
+		// clWaitForEvents( 1, &event );
+		// clReleaseEvent(event);
 	
 		cnt_flop += (long long)m*n;
 
@@ -716,7 +732,6 @@ struct clMatrix
 		clMatrix<T> buf = A;
 		
 		cl_int err;
-		cl_event event;
 
 		for( int i = m*n; i > 0; i /= cl_device_manager.get_max_work_item(0) ){
 			cl_device_manager.set_argument( PRG::CLMAT_SUM, 0, &buf.v );
@@ -749,6 +764,87 @@ struct clMatrix
 		cl_device_manager.run_kernel( PRG::CLMAT_CLIP, m*n );
 
 		clReleaseMemObject( cl_val );				
+	}
+
+	void mult ( const T& alpha, const clMatrix<T>& B, const T& beta, clMatrix<T>& C ) const
+	{
+		int m = this->m, n = B.n, l = this->n;
+
+		assert( this->n == B.m );
+		assert( m == C.m );
+		assert( n == C.n );
+
+		cl_event event;
+		cl_int err = clblasSgemm( clblasRowMajor, clblasNoTrans, clblasNoTrans,
+								  m, n, l,
+								  alpha, this->v, 0, this->n, B.v, 0, B.n,
+								  beta, C.v, 0, C.n,
+								  1, cl_device_manager.get_queue_ptr(), 0, NULL, NULL );
+		// clWaitForEvents(1, &event);
+		// clReleaseEvent(event);
+		
+		cnt_flop += (long long)m*n*(2*l-1);
+	}
+
+	void mult ( const T& alpha, const cltMatrix<T>& B, const T& beta, clMatrix<T>& C ) const
+	{
+		int m = this->m, n = B.n, l = this->n;
+
+		assert( this->n == B.m );
+		assert( m == C.m );
+		assert( n == C.n );
+
+		cl_event event;
+		cl_int err = clblasSgemm( clblasRowMajor, clblasNoTrans, clblasTrans,
+								  m, n, l,
+								  alpha, this->v, 0, this->n, B.mat->v, 0, B.m,
+								  beta, C.v, 0, C.n,
+								  1, cl_device_manager.get_queue_ptr(), 0, NULL, NULL );
+		// clWaitForEvents(1, &event);
+		// clReleaseEvent(event);
+		
+		cnt_flop += (long long)m*n*(2*l-1);
+	}
+
+	void hadamard ( const clMatrix<T>& A )
+	{
+		int m = this->m, n = this->n;
+
+		assert( this->m == A.m && this->n == A.n );
+
+		cl_device_manager.set_argument( PRG::CLMAT_HADAMARD_INPLACE, 0, &this->v );
+		cl_device_manager.set_argument( PRG::CLMAT_HADAMARD_INPLACE, 1, &A.v );
+		cl_device_manager.run_kernel( PRG::CLMAT_HADAMARD_INPLACE, m*n, 1 );
+	}
+
+	void reshape ( int m, int n )
+	{
+		assert( (long long)m*n <= mem_size );
+
+		if( this->m == m && this->n == n ) return;
+		
+		this->m = m; this->n = n;
+
+		cl_int err;
+		err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->M, CL_TRUE, 0,
+									sizeof(int), &this->m, 0, NULL, NULL );
+		if( err != CL_SUCCESS ){
+			printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+			exit(-1);
+		}
+		err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->N, CL_TRUE, 0,
+									sizeof(int), &this->n, 0, NULL, NULL );
+		if( err != CL_SUCCESS ){
+			printf("file : %s, line : %d\n  error code %d\n", __FILE__, __LINE__, err);
+			exit(-1);
+		}
+	}
+
+	void copy ( const clMatrix<T>& A )
+	{
+		cl_device_manager.set_argument( PRG::CLMAT_COPY, 0, &this->v );
+		cl_device_manager.set_argument( PRG::CLMAT_COPY, 1, &A.v );
+		cl_device_manager.run_kernel( PRG::CLMAT_COPY, m*n, 1 );
 	}
 };
 

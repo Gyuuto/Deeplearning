@@ -3,11 +3,11 @@
 #endif
 
 OCL_EXTERNAL_INCLUDE(
-__kernel void function_Log ( __global float* y, __global float* x )
+__kernel void function_Log ( __global float* x )
 {
 	int gid = get_global_id(0);
 
-	y[gid] = log(x[gid]);
+	x[gid] = log(x[gid]);
 }
 
 )

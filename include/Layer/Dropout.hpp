@@ -55,6 +55,8 @@ template<template<typename> class Mat, typename Real>
 Dropout<Mat, Real>::Dropout( int prev_num_map, int prev_num_unit, Real dropout_p,
 							 const std::shared_ptr<Function<Real>>& f )
 {
+	this->layer_name = "Dropout";
+
 	this->prev_num_map = this->num_map = prev_num_map;
 	this->prev_num_unit = this->num_unit = prev_num_unit;
 	this->dropout_p = dropout_p;
