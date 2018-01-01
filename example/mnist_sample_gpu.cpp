@@ -43,11 +43,11 @@ int main( int argc, char* argv[] )
 	// define layers.
 	layers.emplace_back(new Convolutional<clMatrix, float>(1, 28*28, 28,
 														   32, 28*28, 28,
-														   3, 3, 1, shared_ptr<Function<float>>(new ReLU<float>)));
+														   3, 3, 1, 1, shared_ptr<Function<float>>(new ReLU<float>)));
 	((Convolutional<clMatrix, float>*)(layers.rbegin()->get()))->set_once_num(BATCH_SIZE);
 	layers.emplace_back(new Convolutional<clMatrix, float>(32, 28*28, 28,
 														   64, 14*14, 14,
-														   3, 3, 2, shared_ptr<Function<float>>(new ReLU<float>)));
+														   3, 3, 2, 1, shared_ptr<Function<float>>(new ReLU<float>)));
 	((Convolutional<clMatrix, float>*)(layers.rbegin()->get()))->set_once_num(BATCH_SIZE);
 
 	layers.emplace_back(new FullyConnected<clMatrix, float>(64, 14*14, 1, 1000, shared_ptr<Function<float>>(new ReLU<float>)));

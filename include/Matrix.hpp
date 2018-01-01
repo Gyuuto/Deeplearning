@@ -525,7 +525,7 @@ void Matrix<double>::mult ( const double& alpha, const Matrix<double>& B, const 
 	for( int i = 0; i < m; ++i )
 		for( int j = 0; j < n; ++j ){
 			double sum = 0.0;
-			for( int k = 0; k < l; ++k ) sum += (*this)(0i,k)*B(k,j);
+			for( int k = 0; k < l; ++k ) sum += (*this)(i,k)*B(k,j);
 			C(i,j) = sum;
 		}
 #endif

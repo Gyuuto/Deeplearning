@@ -12,7 +12,6 @@ enum struct PRG : unsigned int{
 	CLMAT_ZEROS,
 	CLMAT_HADAMARD,
 	CLMAT_HADAMARD_INPLACE,
-	CLMAT_SUM,
 	CLMAT_ADD,
 	CLMAT_SUB,
 	CLMAT_SUB_IN,
@@ -74,7 +73,6 @@ const static std::string PRG_NAME[] = {
 	"clMatrix_zeros",
 	"clMatrix_hadamard",
 	"clMatrix_hadamard_inplace",
-	"clMatrix_sum",
 	"clMatrix_add",
 	"clMatrix_sub",
 	"clMatrix_sub_in", 
@@ -141,8 +139,6 @@ const static std::string PRG_SOURCE[] = {
 #include "CL/clMatrix_hadamard.cl"
 	,
 #include "CL/clMatrix_hadamard_inplace.cl"
-	,
-#include "CL/clMatrix_sum.cl"
 	,
 #include "CL/clMatrix_add.cl"
 	,

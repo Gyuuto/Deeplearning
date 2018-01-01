@@ -408,19 +408,19 @@ struct clMatrix
 		return ret;
 	}
 
-	static T sum ( const clMatrix<T>& mat )
-	{
-		int m = mat.m, n = mat.n;
-		clMatrix<T> buf = mat;
+	// static T sum ( const clMatrix<T>& mat )
+	// {
+	// 	int m = mat.m, n = mat.n;
+	// 	clMatrix<T> buf = mat;
 		
-		for( int i = m*n; i > 0; i /= cl_device_manager.get_max_work_item(0) ){
-			cl_device_manager.set_argument( PRG::CLMAT_SUM, 0, &buf.v );
-			cl_device_manager.set_argument( PRG::CLMAT_SUM, 1, cl_device_manager.get_max_work_item(0)*sizeof(T) );
-			cl_device_manager.run_kernel( PRG::CLMAT_SUM, i );
-		}
+	// 	for( int i = m*n; i > 0; i /= cl_device_manager.get_max_work_item(0) ){
+	// 		cl_device_manager.set_argument( PRG::CLMAT_SUM, 0, &buf.v );
+	// 		cl_device_manager.set_argument( PRG::CLMAT_SUM, 1, cl_device_manager.get_max_work_item(0)*sizeof(T) );
+	// 		cl_device_manager.run_kernel( PRG::CLMAT_SUM, i );
+	// 	}
 		
-		return buf.get_element(0,0);
-	}
+	// 	return buf.get_element(0,0);
+	// }
 
 	static T norm_fro ( const clMatrix<T>& mat )
 	{
@@ -726,21 +726,21 @@ struct clMatrix
 		clReleaseMemObject( buf_y );
 	}
 
-	void sum_in ( const int x, const int y, const clMatrix<T>& A )
-	{
-		int m = A.m, n = A.n;
-		clMatrix<T> buf = A;
+	// void sum_in ( const int x, const int y, const clMatrix<T>& A )
+	// {
+	// 	int m = A.m, n = A.n;
+	// 	clMatrix<T> buf = A;
 		
-		cl_int err;
+	// 	cl_int err;
 
-		for( int i = m*n; i > 0; i /= cl_device_manager.get_max_work_item(0) ){
-			cl_device_manager.set_argument( PRG::CLMAT_SUM, 0, &buf.v );
-			cl_device_manager.set_argument( PRG::CLMAT_SUM, 1, cl_device_manager.get_max_work_item(0)*sizeof(T) );
-			cl_device_manager.run_kernel( PRG::CLMAT_SUM, i );
-		}
+	// 	for( int i = m*n; i > 0; i /= cl_device_manager.get_max_work_item(0) ){
+	// 		cl_device_manager.set_argument( PRG::CLMAT_SUM, 0, &buf.v );
+	// 		cl_device_manager.set_argument( PRG::CLMAT_SUM, 1, cl_device_manager.get_max_work_item(0)*sizeof(T) );
+	// 		cl_device_manager.run_kernel( PRG::CLMAT_SUM, i );
+	// 	}
 
-		this->sub(x, y, 1, 1, buf);
-	}
+	// 	this->sub(x, y, 1, 1, buf);
+	// }
 	
 	Matrix<T> get_matrix ( ) const
 	{
