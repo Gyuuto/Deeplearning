@@ -156,8 +156,8 @@ void Neuralnet<Mat, Real>::check_gradient ( int cnt, const std::vector<int>& idx
 	// Calculate gradient numerically for confirmation of computing
 	for( int i = 0; i < num_layer; ++i ){
 		if( rank == target_rank ) printf("\tlayer %d\n", i);
-		const auto &W = layer[i]->get_W();
-		const auto &b = layer[i]->get_b();
+		auto W = layer[i]->get_W();
+		auto b = layer[i]->get_b();
 		if( W.size() == 0 ) continue;
 
 		int J = W.size(), K = W[0].m, L = W[0].n;
@@ -279,13 +279,13 @@ void Neuralnet<Mat, Real>::check_gradient ( int cnt, const std::vector<int>& idx
 	cl_device_manager.set_argument( PRG::ASSIGN_DATA, 4, &cl_N );
 	cl_device_manager.run_kernel( PRG::ASSIGN_DATA, tmp_Y.m, tmp_Y.n );
 
-	const double delta_x = 1.0E-4;
+	const double delta_x = 1.0E-3;
 	
 	// Calculate gradient numerically for confirmation of computing
 	for( int i = 0; i < num_layer; ++i ){
 		if( rank == target_rank ) printf("\tlayer %d\n", i);
-		const auto &W = layer[i]->get_W();
-		const auto &b = layer[i]->get_b();
+		auto W = layer[i]->get_W();
+		auto b = layer[i]->get_b();
 		if( W.size() == 0 ) continue;
 
 		int J = W.size(), K = W[0].m, L = W[0].n;
@@ -501,8 +501,12 @@ void Neuralnet<Mat, Real>::learning ( const Matrix<Real>& X, const Matrix<Real>&
 									  const int MAX_ITER,
 									  const std::function<void(Neuralnet<Matrix, Real>&, const int, const Matrix<Real>&, const Matrix<Real>&)>& each_func )
 {
+#if defined(USE_MPI) || defined(DEBUG)
+	int myrank = 0;
+#endif
+
 #ifdef USE_MPI
-	int nprocs = 1, myrank = 0;
+    int nprocs = 1;
 	MPI_Comm_rank(inner_world, &myrank);
 	MPI_Comm_size(inner_world, &nprocs);
 #endif
@@ -713,8 +717,12 @@ void Neuralnet<Mat, Real>::learning ( const clMatrix<Real>& X, const clMatrix<Re
 									  const int MAX_ITER,
 									  const std::function<void(Neuralnet<clMatrix, Real>&, const int, const clMatrix<Real>&, const clMatrix<Real>&)>& each_func )
 {
+#if defined(USE_MPI) || defined(DEBUG)
+	int myrank = 0;
+#endif
+    
 #ifdef USE_MPI
-	int nprocs = 1, myrank = 0;
+    int nprocs = 1;
 	MPI_Comm_rank(inner_world, &myrank);
 	MPI_Comm_size(inner_world, &nprocs);
 #endif

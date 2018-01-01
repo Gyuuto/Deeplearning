@@ -509,7 +509,7 @@ struct clMatrix
 	clMatrix<T>& operator -= ( const clMatrix<T>& m1 )
 	{
 		int m = m1.m, n = m1.n;
-		cl_event event;
+		// cl_event event;
 
 		assert( this->m == m1.m && this->n == m1.n );
 
@@ -594,7 +594,7 @@ struct clMatrix
 	{
 		int m = m1.m, n = m1.n;
 		clMatrix<T> ret = m1;
-		cl_event event;
+		// cl_event event;
 
 		assert( m1.m == m2.m && m1.n == m2.n );
 
