@@ -65,8 +65,8 @@ public:
 
 	virtual void update_W ( const std::vector<Mat<Real>>& dW, const std::vector<Mat<Real>>& db ) = 0;
 
-	virtual std::vector<Mat<Real>> get_W ();
-	virtual std::vector<Mat<Real>> get_b ();
+	virtual const std::vector<Mat<Real>>& get_W ();
+	virtual const std::vector<Mat<Real>>& get_b ();
 	virtual std::shared_ptr<Function<Real>> get_function ();
 	virtual std::shared_ptr<Function<Real>> get_prev_function ();
 
@@ -102,13 +102,13 @@ void Layer<Mat, Real>::unset_learning ()
 }
 
 template<template<typename> class Mat, typename Real>
-std::vector<Mat<Real>> Layer<Mat, Real>::get_W ()
+const std::vector<Mat<Real>>& Layer<Mat, Real>::get_W ()
 {
 	return this->W;
 }
 
 template<template<typename> class Mat, typename Real>
-std::vector<Mat<Real>> Layer<Mat, Real>::get_b ()
+const std::vector<Mat<Real>>& Layer<Mat, Real>::get_b ()
 {
 	return this->b;
 }

@@ -323,8 +323,9 @@ void Convolutional<Mat, Real>::calc_gradient ( const clMatrix<Real>& U_apply, co
 	auto tot_beg = std::chrono::system_clock::now();
 	auto beg = tot_beg;
 
-	int offset = 0, my_size = this->num_unit;
+	int my_size = this->num_unit;
 #ifdef USE_MPI
+    int offset;
 	offset = this->rank*my_size/this->nprocs;
 	my_size = (this->rank+1)*my_size/this->nprocs - this->rank*my_size/this->nprocs;
 #endif
@@ -335,9 +336,6 @@ void Convolutional<Mat, Real>::calc_gradient ( const clMatrix<Real>& U_apply, co
 #ifdef USE_MPI
 	const int tmp_size = (this->rank+1)*this->num_unit/this->nprocs - this->rank*this->num_unit/this->nprocs; 
 	const int tmp_offset = this->rank*this->num_unit/this->nprocs;
-#else
-	const int tmp_size = this->prev_num_unit;
-	const int tmp_offset = 0;
 #endif
 	// clMatrix<Real> U_mat(m*n*this->prev_num_map, once_num*my_size), delta_mat(once_num*my_size, this->num_map);
 
@@ -350,6 +348,7 @@ void Convolutional<Mat, Real>::calc_gradient ( const clMatrix<Real>& U_apply, co
 
 		err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_i, CL_TRUE, 0,
 									sizeof(int), &i, 0, NULL, NULL );
+        if( err != 0 ) printf("WARNING : clEnqueueWriteBuffer failed in Convolutional::calc_gradient\n");
 
 		cl_device_manager.set_argument( PRG::CONV_GRAD_IMG_SET, 0, &input_img.v );
 		cl_device_manager.set_argument( PRG::CONV_GRAD_IMG_SET, 1, &input_img.N );
@@ -400,7 +399,7 @@ void Convolutional<Mat, Real>::calc_gradient ( const clMatrix<Real>& U_apply, co
 			size_t lc1 = 1, lc2 = 1;
 
 			for ( int i = 2; i*i < size; ++i ){
-				if( i > cl_device_manager.get_max_work_group()/minimum_once_num ) break;
+				if( static_cast<unsigned int>(i) > cl_device_manager.get_max_work_group()/minimum_once_num ) break;
 				if( size%i == 0 ){
 					size_t x = i, y = size/i;
 					if( y > cl_device_manager.get_max_work_group()/minimum_once_num ) y = 0;
@@ -409,7 +408,7 @@ void Convolutional<Mat, Real>::calc_gradient ( const clMatrix<Real>& U_apply, co
 				}
 			}
 			for ( int i = 2; i*i < delta.n*this->num_unit; ++i ){
-				if( i > cl_device_manager.get_max_work_group()/lc2 ) break;
+				if( static_cast<unsigned int>(i) > cl_device_manager.get_max_work_group()/lc2 ) break;
 				if( delta.n*this->num_unit%i == 0 ){
 					size_t x = i, y = delta.n*this->num_unit/i;
 					if( y > cl_device_manager.get_max_work_group()/lc2 ) y = 0;
@@ -614,8 +613,9 @@ void Convolutional<Mat, Real>::calc_delta ( const clMatrix<Real>& U_apply, const
 	auto tot_beg = std::chrono::system_clock::now();
 	auto beg = tot_beg;
 
-	int my_size = this->prev_num_unit, my_offset = 0;
+	int my_size = this->prev_num_unit;
 #ifdef USE_MPI
+    int my_offset = 0;
 	std::vector<int> size(this->nprocs), offset(this->nprocs);
 	for( int i = 0; i < this->nprocs; ++i ){
 		size[i] = ((i+1)*this->prev_num_unit/this->nprocs - i*this->prev_num_unit/this->nprocs)*this->prev_num_map;
@@ -629,17 +629,11 @@ void Convolutional<Mat, Real>::calc_delta ( const clMatrix<Real>& U_apply, const
 	auto end = std::chrono::system_clock::now();
 	this->t_delta_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
-	const int gap = prev_ldu + 2*pad;
+	// const int gap = prev_ldu + 2*pad;
 #ifdef USE_MPI
 	const int tmp_size = (this->rank+1)*this->num_unit/this->nprocs - this->rank*this->num_unit/this->nprocs; 
 	const int tmp_offset = this->rank*this->num_unit/this->nprocs;
-#else
-	const int tmp_size = this->num_unit;
-	const int tmp_offset = 0;
 #endif
-	int l_idx = std::max(0, tmp_offset - m*prev_ldu/2);
-	int r_idx = std::min(this->num_unit, tmp_offset + tmp_size + m*prev_ldu/2);
-
 	cl_int err;
 	cl_device_manager.set_argument( PRG::CONV_DELTA_KERNEL_SET, 0, &kernel.v );
 	cl_device_manager.set_argument( PRG::CONV_DELTA_KERNEL_SET, 1, &this->W[0].v );
@@ -647,6 +641,7 @@ void Convolutional<Mat, Real>::calc_delta ( const clMatrix<Real>& U_apply, const
 
 	err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_k, CL_TRUE, 0,
 								sizeof(int), &my_size, 0, NULL, NULL );
+    if( err != 0 ) printf("WARNING : clEnqueueWriteBuffer failed in Convolutional::calc_delta\n");
 
 	input_img.reshape(my_size*once_num, m*n*this->num_map);
 	tmp.reshape(input_img.m, kernel.n);
@@ -921,8 +916,9 @@ void Convolutional<Mat, Real>::apply ( const clMatrix<Real>& U, clMatrix<Real>& 
 	auto tot_beg = std::chrono::system_clock::now();
 	auto beg = tot_beg;
 
-	int my_size = this->num_unit, my_offset = 0;
+	int my_size = this->num_unit;
 #ifdef USE_MPI
+    int my_offset = 0;
 	std::vector<int> size(this->nprocs), offset(this->nprocs);
 	for( int i = 0; i < this->nprocs; ++i ){		
 		size[i] = ((i+1)*this->num_unit/this->nprocs - i*this->num_unit/this->nprocs)*this->num_map;
@@ -939,7 +935,8 @@ void Convolutional<Mat, Real>::apply ( const clMatrix<Real>& U, clMatrix<Real>& 
 
 	err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_k, CL_TRUE, 0,
 								sizeof(int), &my_size, 0, NULL, NULL );
-
+    if( err != 0 ) printf("WARNING : clEnqueueWriteBuffer failed in Convolutional::apply\n");
+        
 	input_img.reshape(my_size*once_num, m*n*this->prev_num_map);
 	tmp.reshape(input_img.m, this->W[0].n);
 	for( int i = 0; i < U.n; i += once_num ){

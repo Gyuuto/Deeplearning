@@ -47,7 +47,7 @@ struct Matrix
 	T* v;
 #endif
 	
-	Matrix(): m(0), n(0), v(NULL), mem_size(0) { }
+	Matrix(): m(0), n(0), mem_size(0), v(nullptr) { }
 	Matrix( const int& m, const int& n ) :m(m), n(n), mem_size((long long)m*n)
 	{
 #ifdef USE_EIGEN
@@ -853,7 +853,6 @@ Matrix<double> operator * ( const tMatrix<double>& m1, const Matrix<double>& m2 
 #ifdef USE_EIGEN
 	ret.v = m1.v*m2.v;
 #elif USE_BLAS
-	int k = m2.m;
 	double ONE = 1.0, ZERO = 0.0;
 	char transA = 'N', transB = 'T';
 
@@ -886,7 +885,6 @@ Matrix<float> operator * ( const tMatrix<float>& m1, const Matrix<float>& m2 )
 #ifdef USE_EIGEN
 	ret.v = m1.v*m2.v;
 #elif USE_BLAS
-	int k = m2.m;
 	float ONE = 1.0, ZERO = 0.0;
 	char transA = 'N', transB = 'T';
 

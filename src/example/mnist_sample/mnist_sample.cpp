@@ -4,10 +4,10 @@
 #include <memory>
 #include <cmath>
 
-#include "../include/Neuralnet.hpp"
-#include "../include/Layer/Layer.hpp"
-#include "../include/Layer/FullyConnected.hpp"
-#include "../include/Layer/Convolutional.hpp"
+#include <Neuralnet.hpp>
+#include <Layer/Layer.hpp>
+#include <Layer/FullyConnected.hpp>
+#include <Layer/Convolutional.hpp>
 
 using namespace std;
 
@@ -43,20 +43,20 @@ int main( int argc, char* argv[] )
 	// define layers.
 	layers.emplace_back(new Convolutional<Matrix, Real>(1, 28*28, 28,
 														32, 28*28, 28,
-														3, 3, 1, shared_ptr<Function<Real>>(new ReLU<Real>)));
+														3, 3, 1, 1, shared_ptr<Function<Real>>(new ReLU<Real>)));
 	layers.emplace_back(new Convolutional<Matrix, Real>(32, 28*28, 28,
 														64, 14*14, 14,
-														3, 3, 2, shared_ptr<Function<Real>>(new ReLU<Real>)));
+														3, 3, 2, 1, shared_ptr<Function<Real>>(new ReLU<Real>)));
 	layers.emplace_back(new FullyConnected<Matrix, Real>(64, 14*14, 1, 1000, shared_ptr<Function<Real>>(new ReLU<Real>)));
 	layers.emplace_back(new FullyConnected<Matrix, Real>(1, 1000, 1, 500, shared_ptr<Function<Real>>(new ReLU<Real>)));
 	layers.emplace_back(new FullyConnected<Matrix, Real>(1, 500, 1, 10, shared_ptr<Function<Real>>(new Softmax<Real>)));
 
 	// this neuralnet has 4 layers, input, convolutional, pooling and FullyConnected.
-	for( int i = 0; i < layers.size(); ++i ){
+	for( unsigned int i = 0; i < layers.size(); ++i ){
 		net.add_layer(layers[i]);
 	}
 	
-	// read a test data of MNIST(http://yann.lecun.com/exdb/mnist/).
+	// read a train data of MNIST(http://yann.lecun.com/exdb/mnist/).
 	const int N = 10000;
 	ifstream train_image("train-images-idx3-ubyte", ios_base::binary);
 	if( !train_image.is_open() ){
@@ -89,7 +89,7 @@ int main( int argc, char* argv[] )
 	// normalize train image.
 	normalize(1, train_x, ave);
 
-	// read a train data of MNIST.
+	// read a test data of MNIST.
 	const int M = 5000;
 	ifstream test_image("t10k-images-idx3-ubyte", ios_base::binary);
 	if( !test_image.is_open() ){

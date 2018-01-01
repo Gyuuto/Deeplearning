@@ -53,6 +53,7 @@ struct cltMatrix
 								  m1.mat->v, 0, m1.m, m2.v, 0, m2.n,
 								  0.0, ret.v, 0, ret.n,
 								  1, cl_device_manager.get_queue_ptr(), 0, NULL, NULL );
+        if( err != 0 ) printf("WARNING : clblasSgemm failed in cltMatrix::operator*\n");
 
 		cnt_flop += (long long)m*n*(2*l-1);
 
@@ -64,11 +65,12 @@ struct cltMatrix
 		int m = m1.m, n = m2.n, l = m1.n;
 		clMatrix<T> ret(m, n);
 
-		clblasSgemm( clblasRowMajor, clblasTrans, clblasTrans,
-					 m, n, l, 1.0f,
-					 m1.mat->v, 0, m1.m, m2.mat->v, 0, m2.m,
-					 0.0, ret.v, 0, ret.n,
-					 1, cl_device_manager.get_queue_ptr(), 0, NULL, NULL );
+		cl_int err = clblasSgemm( clblasRowMajor, clblasTrans, clblasTrans,
+                                  m, n, l, 1.0f,
+                                  m1.mat->v, 0, m1.m, m2.mat->v, 0, m2.m,
+                                  0.0, ret.v, 0, ret.n,
+                                  1, cl_device_manager.get_queue_ptr(), 0, NULL, NULL );
+        if( err != 0 ) printf("WARNING : clblasSgemm failed in cltMatrix::operator*\n");
 
 		cnt_flop += (long long)m*n*(2*l-1);
 
@@ -88,7 +90,7 @@ struct cltMatrix
 								  alpha, this->mat->v, 0, this->m, B.v, 0, B.n,
 								  beta, C.v, 0, C.n,
 								  1, cl_device_manager.get_queue_ptr(), 0, NULL, NULL );
-		
+        if( err != 0 ) printf("WARNING : clblasSgemm failed in cltMatrix::mult\n");
 		cnt_flop += (long long)m*n*(2*l-1);
 	}
 
@@ -105,6 +107,7 @@ struct cltMatrix
 								  alpha, this->mat->v, 0, this->m, B.mat->v, 0, B.m,
 								  beta, C.v, 0, C.n,
 								  1, cl_device_manager.get_queue_ptr(), 0, NULL, NULL );
+        if( err != 0 ) printf("WARNING : clblasSgemm failed in cltMatrix::mult\n");
 		
 		cnt_flop += (long long)m*n*(2*l-1);
 	}

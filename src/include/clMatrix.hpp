@@ -26,7 +26,7 @@ struct clMatrix
 	long long mem_size;
 	cl_mem M, N, v;
 	
-	clMatrix(): m(0), n(0), v(NULL), mem_size(0)
+	clMatrix(): m(0), n(0), mem_size(0), v(NULL)
 	{
 		cl_int err;
 		M = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
@@ -491,7 +491,7 @@ struct clMatrix
 	clMatrix<T>& operator += ( const clMatrix<T>& m1 )
 	{
 		int m = m1.m, n = m1.n;
-		cl_event event;
+		// cl_event event;
 		
 		assert( this->m == m1.m && this->n == m1.n );
 
@@ -541,7 +541,7 @@ struct clMatrix
 	clMatrix<T>& operator *= ( const T& c )
 	{
 		int m = this->m, n = this->n;
-		cl_event event;
+		// cl_event event;
 
 		clblasSaxpy( m*n, c - 1.0,
 					 this->v, 0, 1, this->v, 0, 1,
@@ -557,7 +557,7 @@ struct clMatrix
 	clMatrix<T>& operator /= ( const T& c )
 	{
 		int m = this->m, n = this->n;
-		cl_event event;
+		// cl_event event;
 
 		clblasSaxpy( m*n, 1.0/c - 1.0,
 					 this->v, 0, 1, this->v, 0, 1,
@@ -627,6 +627,8 @@ struct clMatrix
 								  m1.v, 0, m1.n, m2.v, 0, m2.n,
 								  0.0f, ret.v, 0, ret.n,
 								  1, cl_device_manager.get_queue_ptr(), 0, NULL, NULL );
+        if( err != 0 ) printf("WARNING : clblasSgemm failed in clMatrix::operator*\n");
+
 		// clWaitForEvents( 1, &event );
 		// clReleaseEvent(event);
 		
@@ -638,7 +640,7 @@ struct clMatrix
 	friend clMatrix<T> operator * ( const T& c, const clMatrix<T>& m1 )
 	{
 		int m = m1.m, n = m1.n;
-		cl_event event;
+		// cl_event event;
 
 		clMatrix<T> ret = m1;
 		
@@ -749,6 +751,8 @@ struct clMatrix
 
 		err = clEnqueueReadBuffer( cl_device_manager.get_queue(), this->v, CL_TRUE, 0,
 								   this->m*this->n*sizeof(T), ret.v, 0, NULL, NULL );
+        if( err != 0 ) printf("WARNING : clEnqueueReadBuffer failed in clMatrix::get_matrix\n");
+        
 		return ret;
 	}
 
@@ -758,6 +762,7 @@ struct clMatrix
 		cl_mem cl_val = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(T), NULL, &err);
 		err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_val, CL_TRUE, 0,
 									sizeof(T), &val, 0, NULL, NULL );
+        if( err != 0 ) printf("WARNING : clEnqueueReadBuffer failed in clMatrix::clip\n");
 
 		cl_device_manager.set_argument( PRG::CLMAT_CLIP, 0, &v );
 		cl_device_manager.set_argument( PRG::CLMAT_CLIP, 1, &cl_val );
@@ -774,12 +779,14 @@ struct clMatrix
 		assert( m == C.m );
 		assert( n == C.n );
 
-		cl_event event;
+		// cl_event event;
 		cl_int err = clblasSgemm( clblasRowMajor, clblasNoTrans, clblasNoTrans,
 								  m, n, l,
 								  alpha, this->v, 0, this->n, B.v, 0, B.n,
 								  beta, C.v, 0, C.n,
 								  1, cl_device_manager.get_queue_ptr(), 0, NULL, NULL );
+        if( err != 0 ) printf("WARNING : clblasSgemm failed in clMatrix::mult\n");
+
 		// clWaitForEvents(1, &event);
 		// clReleaseEvent(event);
 		
@@ -794,12 +801,13 @@ struct clMatrix
 		assert( m == C.m );
 		assert( n == C.n );
 
-		cl_event event;
+		// cl_event event;
 		cl_int err = clblasSgemm( clblasRowMajor, clblasNoTrans, clblasTrans,
 								  m, n, l,
 								  alpha, this->v, 0, this->n, B.mat->v, 0, B.m,
 								  beta, C.v, 0, C.n,
 								  1, cl_device_manager.get_queue_ptr(), 0, NULL, NULL );
+        if( err != 0 ) printf("WARNING : clblasSgemm failed in clMatrix::operator*\n");
 		// clWaitForEvents(1, &event);
 		// clReleaseEvent(event);
 		

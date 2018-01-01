@@ -5,10 +5,10 @@
 #include <cmath>
 #include <chrono>
 
-#include "../include/Neuralnet.hpp"
-#include "../include/Layer/Layer.hpp"
-#include "../include/Layer/FullyConnected.hpp"
-#include "../include/Layer/Convolutional.hpp"
+#include <Neuralnet.hpp>
+#include <Layer/Layer.hpp>
+#include <Layer/FullyConnected.hpp>
+#include <Layer/Convolutional.hpp>
 // #include "../include/Pooling.hpp"
 
 using namespace std;
@@ -66,11 +66,11 @@ int main( int argc, char* argv[] )
 	// layers.emplace_back(new FullyConnected<clMatrix, float>(1, 2000, 1, 10, shared_ptr<Function<float>>(new Softmax<float>)));
 
 	// this neuralnet has 4 layers, input, convolutional, pooling and FullyConnected.
-	for( int i = 0; i < layers.size(); ++i ){
+	for( unsigned int i = 0; i < layers.size(); ++i ){
 		net.add_layer(layers[i]);
 	}
 	
-	// read a test data of MNIST(http://yann.lecun.com/exdb/mnist/).
+	// read a train data of MNIST(http://yann.lecun.com/exdb/mnist/).
 	const int N = 10000;
 	Matrix<float> train_x(28*28, N), train_d(10, N);
 	ifstream train_image("train-images-idx3-ubyte", ios_base::binary);
@@ -103,7 +103,7 @@ int main( int argc, char* argv[] )
 	// normalize train image.
 	normalize(1, train_x, ave);
 
-	// read a train data of MNIST.
+	// read a test data of MNIST.
 	const int M = 5000;
 	Matrix<float> test_x(28*28, M), test_d(10, M);
 	ifstream test_image("t10k-images-idx3-ubyte", ios_base::binary);
@@ -153,7 +153,7 @@ int main( int argc, char* argv[] )
 
 			auto tmp_Y = nn.apply(tmp_X).get_matrix();
 			for( int j = 0; j < tmp_Y.n; ++j ){
-				int idx = 0, lab;
+				int idx = 0, lab = -1;
 				double max_num = tmp_Y(0,j);
 				for( int k = 0; k < 10; ++k ){
 					if( max_num < tmp_Y(k,j) ){
@@ -174,7 +174,7 @@ int main( int argc, char* argv[] )
 
 			auto tmp_Y = nn.apply(tmp_X).get_matrix();
 			for( int j = 0; j < tmp_Y.n; ++j ){
-				int idx = 0, lab;
+				int idx = 0, lab = -1;
 				double max_num = tmp_Y(0,j);
 				for( int k = 0; k < 10; ++k ){
 					if( max_num < tmp_Y(k,j) ){

@@ -7,10 +7,10 @@
 
 #include <chrono>
 
-#include "../include/Neuralnet.hpp"
-#include "../include/Layer/Layer.hpp"
-#include "../include/Layer/FullyConnected.hpp"
-#include "../include/Layer/Convolutional.hpp"
+#include <Neuralnet.hpp>
+#include <Layer/Layer.hpp>
+#include <Layer/FullyConnected.hpp>
+#include <Layer/Convolutional.hpp>
 
 using namespace std;
 
@@ -102,16 +102,16 @@ int main( int argc, char* argv[] )
 	// define layers.
 	layers.emplace_back(new Convolutional<Matrix, double>(1, 28*28, 28,
 														  32, 28*28, 28,
-														  3, 3, 1, shared_ptr<Function<double>>(new ReLU<double>)));
+														  3, 3, 1, 1, shared_ptr<Function<double>>(new ReLU<double>)));
 	layers.emplace_back(new Convolutional<Matrix, double>(32, 28*28, 28,
 														  64, 14*14, 14,
-														  3, 3, 2, shared_ptr<Function<double>>(new ReLU<double>)));
+														  3, 3, 2, 1, shared_ptr<Function<double>>(new ReLU<double>)));
 	layers.emplace_back(new FullyConnected<Matrix, double>(64, 14*14, 1, 1000, shared_ptr<Function<double>>(new ReLU<double>)));
 	layers.emplace_back(new FullyConnected<Matrix, double>(1, 1000, 1, 500, shared_ptr<Function<double>>(new ReLU<double>)));
 	layers.emplace_back(new FullyConnected<Matrix, double>(1, 500, 1, 10, shared_ptr<Function<double>>(new Softmax<double>)));
 
 	// this neuralnet has 6 layers, Conv1, MaxPool, Conv2, MaxPool, Fc1 and Fc2;
-	for( int i = 0; i < layers.size(); ++i ){
+	for( unsigned int i = 0; i < layers.size(); ++i ){
 		net.add_layer(layers[i]);
 	}
 	
@@ -149,9 +149,9 @@ int main( int argc, char* argv[] )
 	// normalize train image.
 	normalize(1, train_x, ave);
 
-	for( int i = 0; i < ave[0].size(); ++i ) ave[0][i] *= N;
+	for( unsigned int i = 0; i < ave[0].size(); ++i ) ave[0][i] *= N;
 	MPI_Allreduce(MPI_IN_PLACE, &ave[0][0], ave[0].size(), MPI_DOUBLE_PRECISION, MPI_SUM, outer_world);
-	for( int i = 0; i < ave[0].size(); ++i ) ave[0][i] /= org_N;
+	for( unsigned int i = 0; i < ave[0].size(); ++i ) ave[0][i] /= org_N;
 
 	// read a train data of MNIST.
 	ifstream test_image("t10k-images-idx3-ubyte", ios_base::binary);
@@ -268,7 +268,7 @@ int main( int argc, char* argv[] )
 	net.learning(train_x, train_d, N/BATCH_SIZE*NUM_EPOCH, check_error);
 
 	if( world_rank == 0 ){
-		for( int i = 0; i < layers.size(); ++i ){
+		for( unsigned int i = 0; i < layers.size(); ++i ){
 			printf("Layer : %d\n", i);
 			printf("    Apply %8.3f[s], init %8.3f[s], gemm %8.3f[s], replacement %8.3f[s]\n",
 				   layers[i]->t_apply, layers[i]->t_apply_init, layers[i]->t_apply_gemm, layers[i]->t_apply_repl);

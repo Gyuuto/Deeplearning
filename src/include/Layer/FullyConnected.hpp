@@ -165,8 +165,8 @@ void FullyConnected<Mat, Real>::calc_gradient ( const clMatrix<Real>& U_apply, c
 	auto tot_beg = std::chrono::system_clock::now();
 	auto beg = tot_beg;
 
-	int offset = 0;
 #ifdef USE_MPI
+	int offset = 0;
 	offset = this->rank*this->num_unit/this->nprocs;
 #endif
 	
@@ -231,8 +231,8 @@ void FullyConnected<Mat, Real>::calc_delta ( const clMatrix<Real>& U_apply, cons
 	auto tot_beg = std::chrono::system_clock::now();
 	auto beg = tot_beg;
 
-	int offset = 0;
 #ifdef USE_MPI
+	int offset = 0;
 	offset = this->rank*this->num_unit/this->nprocs;
 #endif
 	// clMatrix<Real> tmp_delta(this->W[0].m, delta.n), tmp, nx_delta;
@@ -463,11 +463,10 @@ void FullyConnected<Mat, Real>::set_W ( const std::string& filename )
 // 		ifs.seekg((this->num_unit - (offset + my_size))*sizeof(tmp_b(0,0)), std::ios::cur);
 // #endif
 // 	}
-	int my_size = this->W[0].m*this->W[0].n, offset = 0;
 
 	Matrix<Real> tmp_W = this->W[0];
 #ifdef USE_MPI
-	my_size = ((this->rank+1)*this->num_map*this->num_unit/this->nprocs - this->rank*this->num_map*this->num_unit/this->nprocs) * this->W[0].n;
+	int offset;
 	offset = this->rank*this->num_map*this->num_unit/this->nprocs * this->W[0].n;
 			
 	ifs.seekg(offset*sizeof(tmp_W(0,0)), std::ios::cur);
@@ -478,9 +477,7 @@ void FullyConnected<Mat, Real>::set_W ( const std::string& filename )
 	this->W[0] = tmp_W;
 		
 	Matrix<Real> tmp_b = this->b[0];
-	my_size = this->b[0].m; offset = 0;
 #ifdef USE_MPI
-	my_size = ((this->rank+1)*this->num_map*this->num_unit/this->nprocs - this->rank*this->num_map*this->num_unit/this->nprocs);
 	offset = this->rank*this->num_map*this->num_unit/this->nprocs;
 			
 	ifs.seekg(offset*sizeof(tmp_b(0,0)), std::ios::cur);
@@ -571,7 +568,7 @@ void FullyConnected<Mat, Real>::param_mix ()
 	int tmp = this->W.size()*this->W[0].m*this->W[0].n;
 	std::vector<Real> w(cnt);
 
-	for( int i = 0; i < this->W.size(); ++i ){
+	for( unsigned int i = 0; i < this->W.size(); ++i ){
 		Matrix<Real> tmp_W = this->W[i];
 #pragma omp parallel for
 		for( int j = 0; j < tmp_W.m; ++j )
@@ -581,7 +578,7 @@ void FullyConnected<Mat, Real>::param_mix ()
 			}
 	}
 
-	for( int i = 0; i < this->b.size(); ++i ){
+	for( unsigned int i = 0; i < this->b.size(); ++i ){
 		Matrix<Real> tmp_b = this->b[i];
 #pragma omp parallel for
 		for( int j = 0; j < tmp_b.m; ++j ){
@@ -592,7 +589,7 @@ void FullyConnected<Mat, Real>::param_mix ()
 
 	MPI_Allreduce(MPI_IN_PLACE, &w[0], cnt, get_typecount(w[0]).mpi_type, MPI_SUM, this->outer_world);
 
-	for( int i = 0; i < this->W.size(); ++i ){
+	for( unsigned int i = 0; i < this->W.size(); ++i ){
 		Matrix<Real> tmp_W = this->W[i];
 #pragma omp parallel for
 		for( int j = 0; j < tmp_W.m; ++j )
@@ -603,7 +600,7 @@ void FullyConnected<Mat, Real>::param_mix ()
 		this->W[i] = tmp_W;
 	}
 
-	for( int i = 0; i < this->b.size(); ++i ){
+	for( unsigned int i = 0; i < this->b.size(); ++i ){
 		Matrix<Real> tmp_b = this->b[i];
 #pragma omp parallel for
 		for( int j = 0; j < tmp_b.m; ++j ){

@@ -323,9 +323,16 @@ int clDeviceManager::build_program ( const PRG idx )
 		char buf[32768];
 		clGetProgramBuildInfo(program[idx_], device, CL_PROGRAM_BUILD_LOG, 32768, buf, NULL);
 		printf("  %s\n", buf);
+
+        return err;
 	}
 	kernel[idx_] = clCreateKernel(program[idx_], PRG_NAME[idx_].c_str(), &err);
-	if( err != 0 ) printf("Failed CreateKernel : %s, error code %d\n", PRG_NAME[idx_].c_str(), err);
+	if( err != 0 ) {
+        printf("Failed CreateKernel : %s, error code %d\n", PRG_NAME[idx_].c_str(), err);
+        return err;
+    }
+
+    return 0;
 }
 
 std::string clDeviceManager::read_program ( const std::string& filename )
@@ -415,7 +422,7 @@ void clDeviceManager::run_kernel ( PRG kernel_idx, size_t gl_work_size1, size_t 
 		build_program( kernel_idx );
 	}
 
-	cl_event event;
+	// cl_event event;
 
 	size_t global_work_size[3] = { gl_work_size1, gl_work_size2, gl_work_size3 };
 		
@@ -432,7 +439,7 @@ void clDeviceManager::run_kernel ( PRG kernel_idx, std::vector<size_t> gl_work_s
 		build_program( kernel_idx );
 	}
 
-	cl_event event;
+	// cl_event event;
 
 	cl_int err = clEnqueueNDRangeKernel(queue, kernel[idx], 3, NULL, &gl_work_size[0], &lc_work_size[0], 0, NULL, NULL);
 	if( err != 0 ) printf("Kernel runnning failed : %s, error_code = %d\n", PRG_NAME[idx].c_str(), err);
@@ -442,12 +449,18 @@ void clDeviceManager::run_kernel ( PRG kernel_idx, std::vector<size_t> gl_work_s
 
 void clDeviceManager::set_argument ( PRG kernel_idx, int arg_idx, const void* val )
 {
-	cl_int err = clSetKernelArg(kernel[static_cast<int>(kernel_idx)], arg_idx, sizeof(cl_mem), const_cast<void*>(val));
+    int idx = static_cast<int>(kernel_idx);
+    
+	cl_int err = clSetKernelArg(kernel[idx], arg_idx, sizeof(cl_mem), const_cast<void*>(val));
+    if( err != 0 ) printf("Kernel set argument failed : %s, arg_idx = %d\n", PRG_NAME[idx].c_str(), arg_idx);
 }
 
 void clDeviceManager::set_argument ( PRG kernel_idx, int arg_idx, const size_t size )
 {
-	cl_int err = clSetKernelArg(kernel[static_cast<int>(kernel_idx)], arg_idx, size, NULL);
+    int idx = static_cast<int>(kernel_idx);
+
+	cl_int err = clSetKernelArg(kernel[idx], arg_idx, size, NULL);
+    if( err != 0 ) printf("Kernel set argument failed : %s, arg_idx = %d, size = %zu\n", PRG_NAME[idx].c_str(), arg_idx, size);
 }
 
 #endif

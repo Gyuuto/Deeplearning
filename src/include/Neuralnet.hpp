@@ -32,8 +32,8 @@ private:
 	std::vector<std::vector<Mat<Real>>> adam_v_W, adam_r_W, adam_v_b, adam_r_b;
 	Real adam_beta_ = 1.0, adam_gamma_ = 1.0;
 
-	int BATCH_SIZE, UPDATE_ITER;
 	Real EPS, LAMBDA;
+	int BATCH_SIZE, UPDATE_ITER;
 
 	std::shared_ptr<LossFunction<Real>> loss;
 	std::vector<std::shared_ptr<Layer<Mat, Real>>> layer;
@@ -156,8 +156,8 @@ void Neuralnet<Mat, Real>::check_gradient ( int cnt, const std::vector<int>& idx
 	// Calculate gradient numerically for confirmation of computing
 	for( int i = 0; i < num_layer; ++i ){
 		if( rank == target_rank ) printf("\tlayer %d\n", i);
-		auto W = layer[i]->get_W();
-		auto b = layer[i]->get_b();
+		const auto &W = layer[i]->get_W();
+		const auto &b = layer[i]->get_b();
 		if( W.size() == 0 ) continue;
 
 		int J = W.size(), K = W[0].m, L = W[0].n;
@@ -284,8 +284,8 @@ void Neuralnet<Mat, Real>::check_gradient ( int cnt, const std::vector<int>& idx
 	// Calculate gradient numerically for confirmation of computing
 	for( int i = 0; i < num_layer; ++i ){
 		if( rank == target_rank ) printf("\tlayer %d\n", i);
-		auto W = layer[i]->get_W();
-		auto b = layer[i]->get_b();
+		const auto &W = layer[i]->get_W();
+		const auto &b = layer[i]->get_b();
 		if( W.size() == 0 ) continue;
 
 		int J = W.size(), K = W[0].m, L = W[0].n;
@@ -469,18 +469,18 @@ void Neuralnet<Mat, Real>::add_layer( const std::shared_ptr<Layer<Mat, Real>>& l
 	this->layer[idx]->init(mt);
 #endif
 
-	auto W = layer->get_W();
+	const auto &W = layer->get_W();
 	adam_v_W.push_back(std::vector<Mat<Real>>(W.size()));
 	adam_r_W.push_back(std::vector<Mat<Real>>(W.size()));
-	for( int j = 0; j < W.size(); ++j ){
+	for( unsigned int j = 0; j < W.size(); ++j ){
 		adam_v_W[idx][j] = Mat<Real>::zeros(W[j].m, W[j].n);
 		adam_r_W[idx][j] = Mat<Real>::zeros(W[j].m, W[j].n);
 	}
 
-	auto b = layer->get_b();
+	const auto &b = layer->get_b();
 	adam_v_b.push_back(std::vector<Mat<Real>>(b.size()));
 	adam_r_b.push_back(std::vector<Mat<Real>>(b.size()));
-	for( int j = 0; j < b.size(); ++j ){
+	for( unsigned int j = 0; j < b.size(); ++j ){
 		adam_v_b[idx][j] = Mat<Real>::zeros(b[j].m, b[j].n);
 		adam_r_b[idx][j] = Mat<Real>::zeros(b[j].m, b[j].n);
 	}
@@ -490,7 +490,7 @@ void Neuralnet<Mat, Real>::add_layer( const std::shared_ptr<Layer<Mat, Real>>& l
 template<template<typename> class Mat, typename Real>
 void Neuralnet<Mat, Real>::averaging ()
 {
-	for( int i = 0; i < layer.size(); ++i ){
+	for( unsigned int i = 0; i < layer.size(); ++i ){
 		layer[i]->param_mix();
 	}
 }
@@ -501,8 +501,8 @@ void Neuralnet<Mat, Real>::learning ( const Matrix<Real>& X, const Matrix<Real>&
 									  const int MAX_ITER,
 									  const std::function<void(Neuralnet<Matrix, Real>&, const int, const Matrix<Real>&, const Matrix<Real>&)>& each_func )
 {
-	int nprocs = 1, myrank = 0;
 #ifdef USE_MPI
+	int nprocs = 1, myrank = 0;
 	MPI_Comm_rank(inner_world, &myrank);
 	MPI_Comm_size(inner_world, &nprocs);
 #endif
@@ -526,7 +526,7 @@ void Neuralnet<Mat, Real>::learning ( const Matrix<Real>& X, const Matrix<Real>&
 	std::vector<Matrix<Real>> U_apply(num_layer+1), U_diff(num_layer+1), delta(num_layer);
 	U_apply[0] = Matrix<Real>(X.m, BATCH_SIZE);
 
-	for( int i = 0; i < U_apply.size()-1; ++i ){
+	for( unsigned int i = 0; i < U_apply.size()-1; ++i ){
 		U_apply[i+1] = Matrix<Real>(layer[i]->get_num_map()*layer[i]->get_num_unit(), BATCH_SIZE);
 		U_diff[i+1] = Matrix<Real>(layer[i]->get_num_map()*layer[i]->get_num_unit(), BATCH_SIZE);
 		delta[i] = Matrix<Real>(layer[i]->get_num_map()*layer[i]->get_num_unit(), BATCH_SIZE);
@@ -534,11 +534,11 @@ void Neuralnet<Mat, Real>::learning ( const Matrix<Real>& X, const Matrix<Real>&
 
 	std::vector<std::vector<Matrix<Real>>> nabla_W(num_layer), nabla_b(num_layer);
 	for( int i = 0; i < num_layer; ++i ){
-		auto W = layer[i]->get_W();
+		const auto &W = layer[i]->get_W();
 		if( W.size() != 0 )
 			nabla_W[i] = std::vector<Matrix<Real>>(W.size(), Matrix<Real>(W[0].m, W[0].n));
 		
-		auto b = layer[i]->get_b();
+		const auto &b = layer[i]->get_b();
 		if( b.size() != 0 )
 			nabla_b[i] = std::vector<Matrix<Real>>(b.size(), Matrix<Real>(b[0].m, b[0].n));
 	}
@@ -606,11 +606,11 @@ void Neuralnet<Mat, Real>::learning ( const Matrix<Real>& X, const Matrix<Real>&
 		beg = std::chrono::system_clock::now();
 #endif
 		// averaging all gradients of weights of mini-batches
-		for( int i = 0; i < nabla_W.size(); ++i )
-			for( int j = 0; j < nabla_W[i].size(); ++j )
+		for( unsigned int i = 0; i < nabla_W.size(); ++i )
+			for( unsigned int j = 0; j < nabla_W[i].size(); ++j )
 				nabla_W[i][j] *= 1.0/BATCH_SIZE;	
-		for( int i = 0; i < nabla_b.size(); ++i )
-			for( int j = 0; j < nabla_b[i].size(); ++j )
+		for( unsigned int i = 0; i < nabla_b.size(); ++i )
+			for( unsigned int j = 0; j < nabla_b[i].size(); ++j )
 				nabla_b[i][j] *= 1.0/BATCH_SIZE;
 	
 #ifdef CHECK_GRAD
@@ -626,8 +626,8 @@ void Neuralnet<Mat, Real>::learning ( const Matrix<Real>& X, const Matrix<Real>&
 		adam_beta_ *= adam_beta;
 		adam_gamma_ *= adam_gamma;
 		for( int i = 0; i < num_layer; ++i ){
-			auto W = layer[i]->get_W();
-			auto b = layer[i]->get_b();
+			const auto &W = layer[i]->get_W();
+			const auto &b = layer[i]->get_b();
 
 			if( W.size() == 0 ) continue;
 
@@ -635,14 +635,14 @@ void Neuralnet<Mat, Real>::learning ( const Matrix<Real>& X, const Matrix<Real>&
 				update_b(b.size(), Matrix<Real>(b[0].m, b[0].n));
 			if( std::abs(LAMBDA) > 1.0E-15 ){
 				// L2 norm regularization
-				for( int j = 0; j < W.size(); ++j )
+				for( unsigned int j = 0; j < W.size(); ++j )
 					nabla_W[i][j] += LAMBDA*W[j];
 			}
 
 #pragma omp parallel
 			{
 				// ADAM
-				for( int j = 0; j < nabla_W[i].size(); ++j )
+				for( unsigned int j = 0; j < nabla_W[i].size(); ++j )
 #pragma omp for nowait
 					for( int k = 0; k < nabla_W[i][j].m; ++k )
 						for( int l = 0; l < nabla_W[i][j].n; ++l ){
@@ -652,7 +652,7 @@ void Neuralnet<Mat, Real>::learning ( const Matrix<Real>& X, const Matrix<Real>&
 
 #pragma omp barrier
 				
-				for( int j = 0; j < W.size(); ++j )
+				for( unsigned int j = 0; j < W.size(); ++j )
 #pragma omp for nowait
 					for( int k = 0; k < update_W[j].m; ++k )
 						for( int l = 0; l < update_W[j].n; ++l ){
@@ -661,7 +661,7 @@ void Neuralnet<Mat, Real>::learning ( const Matrix<Real>& X, const Matrix<Real>&
 							update_W[j](k,l) = -EPS*v_hat/(sqrt(r_hat)+adam_eps);
 						}
 				
-				for( int j = 0; j < nabla_b[i].size(); ++j )
+				for( unsigned int j = 0; j < nabla_b[i].size(); ++j )
 #pragma omp for nowait
 					for( int k = 0; k < nabla_b[i][j].m; ++k )
 						for( int l = 0; l < nabla_b[i][j].n; ++l ){
@@ -671,7 +671,7 @@ void Neuralnet<Mat, Real>::learning ( const Matrix<Real>& X, const Matrix<Real>&
 
 #pragma omp barrier
 				
-				for( int j = 0; j < W.size(); ++j )
+				for( unsigned int j = 0; j < W.size(); ++j )
 #pragma omp for nowait
 					for( int k = 0; k < update_b[j].m; ++k )
 						for( int l = 0; l < update_b[j].n; ++l ){
@@ -713,8 +713,8 @@ void Neuralnet<Mat, Real>::learning ( const clMatrix<Real>& X, const clMatrix<Re
 									  const int MAX_ITER,
 									  const std::function<void(Neuralnet<clMatrix, Real>&, const int, const clMatrix<Real>&, const clMatrix<Real>&)>& each_func )
 {
-	int nprocs = 1, myrank = 0;
 #ifdef USE_MPI
+	int nprocs = 1, myrank = 0;
 	MPI_Comm_rank(inner_world, &myrank);
 	MPI_Comm_size(inner_world, &nprocs);
 #endif
@@ -737,7 +737,7 @@ void Neuralnet<Mat, Real>::learning ( const clMatrix<Real>& X, const clMatrix<Re
 	clMatrix<Real> D(Y.m, BATCH_SIZE);
 	std::vector<clMatrix<Real>> U_apply(num_layer+1), U_diff(num_layer+1), delta(num_layer);
 	U_apply[0] = clMatrix<Real>(X.m, BATCH_SIZE);
-	for( int i = 0; i < U_apply.size()-1; ++i ){
+	for( unsigned int i = 0; i < U_apply.size()-1; ++i ){
 		U_apply[i+1] = clMatrix<Real>(layer[i]->get_num_map()*layer[i]->get_num_unit(), BATCH_SIZE);
 		U_diff[i+1] = clMatrix<Real>(layer[i]->get_num_map()*layer[i]->get_num_unit(), BATCH_SIZE);
 		delta[i] = clMatrix<Real>(layer[i]->get_num_map()*layer[i]->get_num_unit(), BATCH_SIZE);
@@ -745,11 +745,11 @@ void Neuralnet<Mat, Real>::learning ( const clMatrix<Real>& X, const clMatrix<Re
 
 	std::vector<std::vector<clMatrix<Real>>> nabla_W(num_layer), nabla_b(num_layer);
 	for( int i = 0; i < num_layer; ++i ){
-		auto W = layer[i]->get_W();
+		const auto &W = layer[i]->get_W();
 		if( W.size() != 0 )
 			nabla_W[i] = std::vector<clMatrix<Real>>(W.size(), clMatrix<Real>(W[0].m, W[0].n));
 		
-		auto b = layer[i]->get_b();
+		const auto &b = layer[i]->get_b();
 		if( b.size() != 0 )
 			nabla_b[i] = std::vector<clMatrix<Real>>(b.size(), clMatrix<Real>(b[0].m, b[0].n));
 	}
@@ -849,11 +849,11 @@ void Neuralnet<Mat, Real>::learning ( const clMatrix<Real>& X, const clMatrix<Re
 		beg = std::chrono::system_clock::now();
 #endif
 		// averaging all gradients of weights of mini-batches
-		for( int i = 0; i < nabla_W.size(); ++i )
-			for( int j = 0; j < nabla_W[i].size(); ++j )
+		for( unsigned int i = 0; i < nabla_W.size(); ++i )
+			for( unsigned int j = 0; j < nabla_W[i].size(); ++j )
 				nabla_W[i][j] *= 1.0/BATCH_SIZE;
-		for( int i = 0; i < nabla_b.size(); ++i )
-			for( int j = 0; j < nabla_b[i].size(); ++j )
+		for( unsigned int i = 0; i < nabla_b.size(); ++i )
+			for( unsigned int j = 0; j < nabla_b[i].size(); ++j )
 				nabla_b[i][j] *= 1.0/BATCH_SIZE;
 		
 #ifdef CHECK_GRAD
@@ -874,19 +874,19 @@ void Neuralnet<Mat, Real>::learning ( const clMatrix<Real>& X, const clMatrix<Re
 		clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_adam_beta_, CL_TRUE, 0, sizeof(float), &adam_beta_, 0, NULL, NULL );
 		clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_adam_gamma_, CL_TRUE, 0, sizeof(float), &adam_gamma_, 0, NULL, NULL );
 		for( int i = 0; i < num_layer; ++i ){
-			auto W = layer[i]->get_W();
-			auto b = layer[i]->get_b();
+			const auto &W = layer[i]->get_W();
+			const auto &b = layer[i]->get_b();
 
 			if( W.size() == 0 ) continue;
 
 			std::vector<clMatrix<Real>> update_W(W.size(), Mat<Real>(W[0].m, W[0].n)),
 				update_b(b.size(), Mat<Real>(b[0].m, b[0].n));
 			if( std::abs(LAMBDA) > 1.0E-15 ){
-				for( int j = 0; j < W.size(); ++j )
+				for( unsigned int j = 0; j < W.size(); ++j )
 					nabla_W[i][j] += LAMBDA*W[j];
 			}
 
-			for( int j = 0; j < nabla_W[i].size(); ++j ){
+			for( unsigned int j = 0; j < nabla_W[i].size(); ++j ){
 				cl_device_manager.set_argument( PRG::ADAM, 0, &adam_v_W[i][j].v );
 				cl_device_manager.set_argument( PRG::ADAM, 1, &adam_r_W[i][j].v );
 				cl_device_manager.set_argument( PRG::ADAM, 2, &update_W[j].v );
@@ -900,7 +900,7 @@ void Neuralnet<Mat, Real>::learning ( const clMatrix<Real>& X, const clMatrix<Re
 				cl_device_manager.run_kernel( PRG::ADAM, W[j].m*W[j].n, 1 );
 			}
 
-			for( int j = 0; j < nabla_b[i].size(); ++j ){
+			for( unsigned int j = 0; j < nabla_b[i].size(); ++j ){
 				cl_device_manager.set_argument( PRG::ADAM, 0, &adam_v_b[i][j].v );
 				cl_device_manager.set_argument( PRG::ADAM, 1, &adam_r_b[i][j].v );
 				cl_device_manager.set_argument( PRG::ADAM, 2, &update_b[j].v );
@@ -992,7 +992,7 @@ void Neuralnet<Mat, Real>::print_cost ( const std::vector<Mat<Real>>& x, const s
 	error[0] = (*loss)(x, y, false);
 	
 	for( int i = 0; i < layer.size(); ++i ){
-		auto W = layer[i]->get_W();
+		const auto &W = layer[i]->get_W();
 		for( int j = 0; j < W.size(); ++j )
 			for( int k = 0; k < W[j].size(); ++k ){
 				Real tmp = Mat<Real>::norm_fro(W[j][k]);

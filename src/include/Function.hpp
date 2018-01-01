@@ -756,8 +756,6 @@ public:
 		else{
 			clMatrix<T> sum(1, x.n), max_val(1, x.n);
 
-			cl_int err;
-			
 			cl_device_manager.set_argument( PRG::FUNC_SOFTMAX_HELPER, 0, &x.v );
 			cl_device_manager.set_argument( PRG::FUNC_SOFTMAX_HELPER, 1, &max_val.v );
 			cl_device_manager.set_argument( PRG::FUNC_SOFTMAX_HELPER, 2, &sum.v );
