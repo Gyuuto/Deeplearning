@@ -12,10 +12,19 @@ __kernel void bn_delta ( __global float* nx_delta, __global int* prev_num_unit, 
 	int N = get_global_size(0);
 	int k = get_global_id(0), j = get_global_id(1), i = get_global_id(2);
 
+    float c1 = 0.0, c2 = 0.0;
 	float tmp1 = 0.0f, tmp2 = 0.0f;
 	for( int l = 0; l < N; ++l ){
-		tmp1 += delta[(i* *prev_num_unit + j)* *ld_U + l];
-		tmp2 += delta[(i* *prev_num_unit + j)* *ld_U + l] * (U_apply[(i* *prev_num_unit + j)* *ld_U + l] - mean[i* *ld_mean + j]);
+        float y = delta[(i* *prev_num_unit + j)* *ld_U + l] - c1;
+        float t = tmp1 + y;
+        c1 = (t - tmp1) - y;
+
+		tmp1 = t;
+
+        y = delta[(i* *prev_num_unit + j)* *ld_U + l] * (U_apply[(i* *prev_num_unit + j)* *ld_U + l] - mean[i* *ld_mean + j]) - c2;
+        t = tmp2 + y;
+        c2 = (t - tmp2) - y;
+		tmp2 = t;
 	}
 	tmp1 /= N;
 	tmp2 /= N;

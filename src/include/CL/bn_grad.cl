@@ -34,9 +34,14 @@ __kernel void bn_grad ( __global float* tmp_nabla1, __global int* ld_na1,
 	barrier(CLK_LOCAL_MEM_FENCE);
 
 	offset1 = 1; offset2 = 2;
+    c = 0.0;
 	for( int l = lid1_size; l > 0; l >>= 1 ){
 		if( lid1%offset2 == 0 && lid1+offset1 < lid1_size ){
-			partial_sum[lid2*lid1_size+lid1] += partial_sum[lid2*lid1_size+lid1+offset1];
+            float y = partial_sum[lid2*lid1_size+lid1+offset1] - c;
+            float t = partial_sum[lid2*lid1_size+lid1] + y;
+            c = (t - partial_sum[lid2*lid1_size+lid1]) - y;
+
+            partial_sum[lid2*lid1_size+lid1] = t;
 		}
 		barrier(CLK_LOCAL_MEM_FENCE);
 		offset1 <<= 1; offset2 <<= 1;
