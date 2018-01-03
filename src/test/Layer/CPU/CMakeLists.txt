@@ -1,0 +1,13 @@
+cmake_minimum_required(VERSION 2.8)
+
+add_executable(FullyConnectedTest_CPU_float FullyConnectedTest_CPU_float.cpp)
+target_link_libraries(FullyConnectedTest_CPU_float ${BLAS_LIBRARIES})
+target_link_libraries(FullyConnectedTest_CPU_float ${GTEST_LIBRARIES})
+
+add_executable(FullyConnectedTest_CPU_double FullyConnectedTest_CPU_double.cpp)
+target_link_libraries(FullyConnectedTest_CPU_double ${BLAS_LIBRARIES})
+target_link_libraries(FullyConnectedTest_CPU_double ${GTEST_LIBRARIES})
+
+add_executable(BatchNormalize_CPU_double BatchNormalize_CPU_double.cpp)
+target_link_libraries(BatchNormalize_CPU_double ${BLAS_LIBRARIES})
+target_link_libraries(BatchNormalize_CPU_double ${GTEST_LIBRARIES})
