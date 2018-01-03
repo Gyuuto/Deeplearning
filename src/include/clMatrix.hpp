@@ -751,7 +751,7 @@ struct clMatrix
 
 		err = clEnqueueReadBuffer( cl_device_manager.get_queue(), this->v, CL_TRUE, 0,
 								   this->m*this->n*sizeof(T), ret.v, 0, NULL, NULL );
-        if( err != 0 ) printf("WARNING : clEnqueueReadBuffer failed in clMatrix::get_matrix\n");
+        if( err != 0 ) printf("WARNING : clEnqueueReadBuffer failed in clMatrix::get_matrix, err = %d\n", err);
         
 		return ret;
 	}
