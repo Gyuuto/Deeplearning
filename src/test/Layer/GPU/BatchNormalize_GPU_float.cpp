@@ -19,7 +19,7 @@ namespace {
 
         virtual void SetUp () {
             f = std::shared_ptr<Function<Real>>(new Identity<Real>());
-            layer = std::shared_ptr<Layer<clMatrix, Real>>(new BatchNormalize<clMatrix, Real>(1, 2, f, EPS));
+            layer = std::shared_ptr<Layer<clMatrix, Real>>(new BatchNormalize<clMatrix, Real>(1, 2, f, 0.999, EPS));
             layer->init(mt);
             layer->set_learning();
             
