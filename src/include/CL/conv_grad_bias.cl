@@ -19,7 +19,7 @@ __kernel void conv_grad_bias ( __global float* v, __global int* v_N, __local flo
         if( lc1%offset2 == 0 && lc1+offset1 < lc1_size ) {
             float y = partial_sum[lc2*lc1_size + lc1 + offset1] - c;
             float t = partial_sum[lc2*lc1_size + lc1] + y;
-            c = (t - partial_sum[lc2*lc1 + lc1]) - y;
+            c = (t - partial_sum[lc2*lc1_size + lc1]) - y;
 
             partial_sum[lc2*lc1_size + lc1] = t;
         }
