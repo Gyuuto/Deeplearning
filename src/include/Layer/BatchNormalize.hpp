@@ -30,20 +30,22 @@ public:
 #endif
 	void finalize();
 	
-	std::pair<std::vector<Matrix<Real>>, std::vector<Matrix<Real>>> calc_gradient ( const Matrix<Real>& U, const Matrix<Real>& delta );
+	void calc_gradient ( const Matrix<Real>& U_apply, const Matrix<Real>& U_diff, const Matrix<Real>& delta, std::vector<Matrix<Real>>& nabla_W, std::vector<Matrix<Real>>& nabla_b );
 #ifdef USE_GPU
-	std::pair<std::vector<clMatrix<Real>>, std::vector<clMatrix<Real>>> calc_gradient ( const clMatrix<Real>& U, const clMatrix<Real>& delta );
+	void calc_gradient ( const clMatrix<Real>& U_apply, const clMatrix<Real>& U_diff, const clMatrix<Real>& delta, std::vector<clMatrix<Real>>& nabla_W, std::vector<clMatrix<Real>>& nabla_b );
 #endif
 
-	Matrix<Real> calc_delta ( const Matrix<Real>& U, const Matrix<Real>& delta );
+	void calc_delta ( const Matrix<Real>& U_apply, const Matrix<Real>& U_diff, const Matrix<Real>& delta, Matrix<Real>& nx_delta );
 #ifdef USE_GPU	
-	clMatrix<Real> calc_delta ( const clMatrix<Real>& U, const clMatrix<Real>& delta );
+	void calc_delta ( const clMatrix<Real>& U_apply, const clMatrix<Real>& U_diff, const clMatrix<Real>& delta, clMatrix<Real>& nx_delta );
 #endif
 	
 	void update_W ( const std::vector<Mat<Real>>& dW, const std::vector<Mat<Real>>& db );
 
+    void apply ( const Matrix<Real>& U, Matrix<Real>& ret, bool use_func = true );
 	Matrix<Real> apply ( const Matrix<Real>& U, bool use_func = true );
 #ifdef USE_GPU
+	void apply ( const clMatrix<Real>& U, clMatrix<Real>& ret, bool use_func = true );
 	clMatrix<Real> apply ( const clMatrix<Real>& U, bool use_func = true );
 #endif
 
@@ -57,7 +59,7 @@ public:
 
 template<template<typename> class Mat, typename Real>
 BatchNormalize<Mat, Real>::BatchNormalize( int prev_num_map, int prev_num_unit,
-										   const std::shared_ptr<Function<Real>>& f, const Real decay, const Real EPS ) :decay(decay), EPS(EPS)
+										   const std::shared_ptr<Function<Real>>& f, const Real decay, const Real EPS ) :EPS(EPS), decay(decay)
 {
 	this->layer_name = "BatchNormalize";
 
@@ -101,17 +103,17 @@ void BatchNormalize<Mat, Real>::init( std::mt19937& m )
 	MPI_Comm_rank(this->inner_world, &this->rank);
 #endif
 
-	int seed = time(NULL);
 #ifdef USE_MPI
+	int seed = time(NULL);
 	MPI_Bcast(&seed, 1, MPI_INTEGER, 0, this->inner_world);
 #endif
 	
-	int offset, my_size;
+    int my_size;
 #ifdef USE_MPI
+	int offset;
 	my_size = (this->rank+1)*this->num_unit/this->nprocs - this->rank*this->num_unit/this->nprocs;
 	offset = this->rank*this->num_unit/this->nprocs;
 #else
-	offset = 0;
 	my_size = this->num_unit;
 #endif
 	mean = Mat<Real>::zeros(this->num_map, my_size); var = Mat<Real>::ones(this->num_map, my_size);
@@ -151,7 +153,7 @@ void BatchNormalize<Mat, Real>::finalize ()
 }
 
 template<template<typename> class Mat, typename Real>
-std::pair<std::vector<Matrix<Real>>, std::vector<Matrix<Real>>> BatchNormalize<Mat, Real>::calc_gradient ( const Matrix<Real>& U, const Matrix<Real>& delta )
+void BatchNormalize<Mat, Real>::calc_gradient ( const Matrix<Real>& U_apply, const Matrix<Real>& U_diff, const Matrix<Real>& delta, std::vector<Matrix<Real>>& nabla_W, std::vector<Matrix<Real>>& nabla_b )
 {
 	auto tot_beg = std::chrono::system_clock::now();
 	auto beg = tot_beg;
@@ -163,26 +165,23 @@ std::pair<std::vector<Matrix<Real>>, std::vector<Matrix<Real>>> BatchNormalize<M
 	my_offset = 0;
 	my_size = this->prev_num_unit;
 #endif
-	std::vector<Matrix<Real>> nabla_W(1, Matrix<Real>(this->num_map, 1));
-	std::vector<Matrix<Real>> nabla_b(1, Matrix<Real>(this->num_map, 1));
 	auto end = std::chrono::system_clock::now();
 	this->t_grad_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
-	auto U_apply = (*this->prev_func)(U, false);
 	for( int i = 0; i < this->num_map; ++i ){
 		Real tmp_nabla1 = 0.0, tmp_nabla2 = 0.0;
 		auto beg = std::chrono::system_clock::now();
 
 #pragma omp parallel for reduction(+:tmp_nabla1)
 		for( int j = 0; j < my_size; ++j ){
-			for( int k = 0; k < U.n; ++k ){
+			for( int k = 0; k < U_apply.n; ++k ){
 				tmp_nabla1 += delta(i*this->num_unit + my_offset+j,k)*(U_apply(i*this->prev_num_unit + my_offset+j,k) - tmp_mean(i,j))/std::sqrt(tmp_var(i,j) + EPS);
 			}
 		}
 
 #pragma omp parallel for reduction(+:tmp_nabla2)
 		for( int j = 0; j < my_size; ++j ){
-			for( int k = 0; k < U.n; ++k ){
+			for( int k = 0; k < U_apply.n; ++k ){
 				tmp_nabla2 += delta(i*this->num_unit + my_offset+j,k);
 			}
 		}
@@ -202,33 +201,28 @@ std::pair<std::vector<Matrix<Real>>, std::vector<Matrix<Real>>> BatchNormalize<M
 	end = std::chrono::system_clock::now();
 	this->t_grad += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
 
-	cnt_flop += this->num_map*(my_size*U.n*5 + my_size*U.n*1);
-	
-	return std::make_pair(nabla_W, nabla_b);
+	cnt_flop += this->num_map*(my_size*U_apply.n*5 + my_size*U_apply.n*1);
 }
 
 #ifdef USE_GPU
 template<template<typename> class Mat, typename Real>
-std::pair<std::vector<clMatrix<Real>>, std::vector<clMatrix<Real>>> BatchNormalize<Mat, Real>::calc_gradient ( const clMatrix<Real>& U, const clMatrix<Real>& delta )
+void BatchNormalize<Mat, Real>::calc_gradient ( const clMatrix<Real>& U_apply, const clMatrix<Real>& U_diff, const clMatrix<Real>& delta, std::vector<clMatrix<Real>>& nabla_W, std::vector<clMatrix<Real>>& nabla_b )
 {
 	auto tot_beg = std::chrono::system_clock::now();
 	auto beg = tot_beg;
-	int my_offset, my_size;
+
+    int my_size;
 #ifdef USE_MPI
+	int my_offset;
 	my_size = (this->rank+1)*this->prev_num_unit/this->nprocs - this->rank*this->prev_num_unit/this->nprocs;
 	my_offset = this->rank*this->prev_num_unit/this->nprocs;
 #else
-	my_offset = 0;
 	my_size = this->prev_num_unit;
 #endif
-	std::vector<clMatrix<Real>> nabla_W(1, clMatrix<Real>(this->num_map, 1));
-	std::vector<clMatrix<Real>> nabla_b(1, clMatrix<Real>(this->num_map, 1));
-	clMatrix<Real> tmp_nabla1 = clMatrix<Real>::zeros(this->num_map, U.n*my_size);
-	clMatrix<Real> tmp_nabla2 = clMatrix<Real>::zeros(this->num_map, U.n*my_size);
+	clMatrix<Real> tmp_nabla1 = clMatrix<Real>::zeros(this->num_map, U_apply.n*my_size);
+	clMatrix<Real> tmp_nabla2 = clMatrix<Real>::zeros(this->num_map, U_apply.n*my_size);
 	auto end = std::chrono::system_clock::now();
 	this->t_grad_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
-
-	auto U_apply = (*this->prev_func)(U, false);
 
 	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 0, &tmp_nabla1.v );
 	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 1, &tmp_nabla1.N );
@@ -237,7 +231,7 @@ std::pair<std::vector<clMatrix<Real>>, std::vector<clMatrix<Real>>> BatchNormali
 	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 4, &delta.v );
 	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 5, &U_apply.v );
 	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 6, &cl_num_unit );
-	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 7, &U.N );
+	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 7, &U_apply.N );
 	if( this->is_learning ){
 		cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 8, &tmp_mean.v );
 		cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 9, &tmp_mean.N );
@@ -251,13 +245,13 @@ std::pair<std::vector<clMatrix<Real>>, std::vector<clMatrix<Real>>> BatchNormali
 		cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 11, &var.N );
 	}
 	cl_device_manager.set_argument( PRG::BN_GRAD_HELPER, 12, &cl_EPS );
-	cl_device_manager.run_kernel( PRG::BN_GRAD_HELPER, U.n, my_size, this->num_map );
+	cl_device_manager.run_kernel( PRG::BN_GRAD_HELPER, U_apply.n, my_size, this->num_map );
 
 	const int minimum_once_num = 16;
 	size_t lc1 = 1, lc2 = 1;
 
 	for ( int i = 2; i*i < this->num_map; ++i ){
-		if( i > cl_device_manager.get_max_work_group()/minimum_once_num ) break;
+		if( static_cast<unsigned int>(i) > cl_device_manager.get_max_work_group()/minimum_once_num ) break;
 		if( this->num_map%i == 0 ){
 			size_t x = i, y = this->num_map/i;
 			if( y > cl_device_manager.get_max_work_group()/minimum_once_num ) y = 0;
@@ -265,10 +259,10 @@ std::pair<std::vector<clMatrix<Real>>, std::vector<clMatrix<Real>>> BatchNormali
 			lc2 = std::max(lc2, (size_t)std::max(x, y));
 		}
 	}
-	for ( int i = 2; i*i < U.n*my_size; ++i ){
-		if( i > cl_device_manager.get_max_work_group()/lc2 ) break;
-		if( U.n*my_size%i == 0 ){
-			size_t x = i, y = U.n*my_size/i;
+	for ( int i = 2; i*i < U_apply.n*my_size; ++i ){
+		if( static_cast<unsigned int>(i) > cl_device_manager.get_max_work_group()/lc2 ) break;
+		if( U_apply.n*my_size%i == 0 ){
+			size_t x = i, y = U_apply.n*my_size/i;
 			if( y > cl_device_manager.get_max_work_group()/lc2 ) y = 0;
 			
 			lc1 = std::max(lc1, (size_t)std::max(x, y));
@@ -281,13 +275,14 @@ std::pair<std::vector<clMatrix<Real>>, std::vector<clMatrix<Real>>> BatchNormali
 	cl_device_manager.set_argument( PRG::BN_GRAD, 3, &tmp_nabla2.N );
 	cl_device_manager.set_argument( PRG::BN_GRAD, 4, lc1*lc2*sizeof(Real) );
 	cl_device_manager.run_kernel( PRG::BN_GRAD,
-								  {(size_t)U.n*my_size, (size_t)this->num_map, 1},
+								  {(size_t)U_apply.n*my_size, (size_t)this->num_map, 1},
 								  {lc1, lc2, 1} );
 
 	cl_int err;
-	int n = U.n*my_size / lc1;
+	int n = U_apply.n*my_size / lc1;
 	err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_n, CL_TRUE, 0,
 								sizeof(int), &n, 0, NULL, NULL );
+    if( err != 0 ) printf("WARNING : clEnqueueWriteBuffer failed in BatchNormalize::calc_gradient\n");
 
 	cl_device_manager.set_argument( PRG::BN_GRAD_FINAL_REDUCE, 0, &tmp_nabla1.v );
 	cl_device_manager.set_argument( PRG::BN_GRAD_FINAL_REDUCE, 1, &tmp_nabla1.N );
@@ -321,14 +316,12 @@ std::pair<std::vector<clMatrix<Real>>, std::vector<clMatrix<Real>>> BatchNormali
 	end = std::chrono::system_clock::now();
 	this->t_grad += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
 
-	cnt_flop += this->num_map*(my_size*U.n*5 + my_size*U.n*1);
-	
-	return std::make_pair(nabla_W, nabla_b);
+	cnt_flop += this->num_map*(my_size*U_apply.n*5 + my_size*U_apply.n*1);
 }
 #endif
 
 template<template<typename> class Mat, typename Real>
-Matrix<Real> BatchNormalize<Mat, Real>::calc_delta ( const Matrix<Real>& U, const Matrix<Real>& delta )
+void BatchNormalize<Mat, Real>::calc_delta ( const Matrix<Real>& U_apply, const Matrix<Real>& U_diff, const Matrix<Real>& delta, Matrix<Real>& nx_delta )
 {
 	auto tot_beg = std::chrono::system_clock::now();
 	auto beg = tot_beg;
@@ -337,49 +330,45 @@ Matrix<Real> BatchNormalize<Mat, Real>::calc_delta ( const Matrix<Real>& U, cons
 #ifdef USE_MPI
 	std::vector<int> size(this->nprocs), offset(this->nprocs);
 	for( int i = 0; i < this->nprocs; ++i ){
-		size[i] = ((i+1)*this->prev_num_unit/this->nprocs - i*this->prev_num_unit/this->nprocs)*U.n;
-		offset[i] = i*this->prev_num_unit/this->nprocs*U.n;
+		size[i] = ((i+1)*this->prev_num_unit/this->nprocs - i*this->prev_num_unit/this->nprocs)*U_apply.n;
+		offset[i] = i*this->prev_num_unit/this->nprocs*U_apply.n;
 	}
-	my_size = size[this->rank]/U.n;
-	my_offset = offset[this->rank]/U.n;
+	my_size = size[this->rank]/U_apply.n;
+	my_offset = offset[this->rank]/U_apply.n;
 #else
 	my_offset = 0;
 	my_size = this->prev_num_unit;
 #endif
 
-	Matrix<Real> nx_delta(this->prev_num_map*this->prev_num_unit, delta.n);
 #ifdef USE_MPI
 	Matrix<Real> tmp_nx_delta(this->prev_num_map*my_size, delta.n);
 #endif
 	auto end = std::chrono::system_clock::now();
 	this->t_delta_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
-	auto U_appl = (*this->prev_func)(U, false);
-	auto U_diff = (*this->prev_func)(U, true);
 	for( int i = 0; i < this->num_map; ++i ){
 		auto beg = std::chrono::system_clock::now();
 		
 #pragma omp parallel for 
 		for( int j = 0; j < my_size; ++j ){
 			Real tmp1 = 0.0, tmp2 = 0.0;
-			for( int l = 0; l < U.n; ++l ){
+			for( int l = 0; l < U_apply.n; ++l ){
 				tmp1 += delta(i*this->num_unit + my_offset+j,l);
-				tmp2 += delta(i*this->num_unit + my_offset+j,l)*(U_appl(i*this->prev_num_unit + my_offset+j,l) - tmp_mean(i,j));
+				tmp2 += delta(i*this->num_unit + my_offset+j,l)*(U_apply(i*this->prev_num_unit + my_offset+j,l) - tmp_mean(i,j));
 			}
-			tmp1 /= U.n; tmp2 /= U.n;
-			
-			for( int k = 0; k < U.n; ++k ){
-
+			tmp1 /= U_apply.n; tmp2 /= U_apply.n;
+  
+			for( int k = 0; k < U_apply.n; ++k ){
 #ifdef USE_MPI
 				tmp_nx_delta(i*my_size + j,k) =
 					this->W[0](i,0)/sqrt(tmp_var(i,j) + EPS)*delta(i*this->num_unit + my_offset+j,k)*U_diff(i*this->prev_num_unit + my_offset+j,k)
 					- this->W[0](i,0)/sqrt(tmp_var(i,j) + EPS)*U_diff(i*this->prev_num_unit + my_offset+j,k)*tmp1
-					- this->W[0](i,0)/(pow(tmp_var(i,j), 1.5) + EPS)*U_diff(i*this->prev_num_unit + my_offset+j,k)*(U_appl(i*this->prev_num_unit + my_offset+j,k) - tmp_mean(i,j))*tmp2;
+					- this->W[0](i,0)*pow(tmp_var(i,j) + EPS, -1.5)*U_diff(i*this->prev_num_unit + my_offset+j,k)*(U_apply(i*this->prev_num_unit + my_offset+j,k) - tmp_mean(i,j))*tmp2;
 #else
 				nx_delta(i*this->prev_num_unit + j,k) =
 					this->W[0](i,0)/sqrt(tmp_var(i,j) + EPS)*delta(i*this->num_unit + j,k)*U_diff(i*this->prev_num_unit + j,k)
 					- this->W[0](i,0)/sqrt(tmp_var(i,j) + EPS)*U_diff(i*this->prev_num_unit + j,k)*tmp1
-					- this->W[0](i,0)/(pow(tmp_var(i,j), 1.5) + EPS)*U_diff(i*this->prev_num_unit + j,k)*(U_appl(i*this->prev_num_unit + j,k) - tmp_mean(i,j))*tmp2;
+                    - this->W[0](i,0)*pow(tmp_var(i,j) + EPS, -1.5)*U_diff(i*this->prev_num_unit + j,k)*(U_apply(i*this->prev_num_unit + j,k) - tmp_mean(i,j))*tmp2;
 #endif
 			}
 			auto end = std::chrono::system_clock::now();
@@ -398,41 +387,35 @@ Matrix<Real> BatchNormalize<Mat, Real>::calc_delta ( const Matrix<Real>& U, cons
 
 	this->t_delta += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
 	
-	cnt_flop += this->num_map*(my_size*U.n*(U.n*4 + 2 + 19));
-
-	return nx_delta;
+	cnt_flop += this->num_map*(my_size*U_apply.n*(U_apply.n*4 + 2 + 19));
 }
 
 #ifdef USE_GPU
 template<template<typename> class Mat, typename Real>
-clMatrix<Real> BatchNormalize<Mat, Real>::calc_delta ( const clMatrix<Real>& U, const clMatrix<Real>& delta )
+void BatchNormalize<Mat, Real>::calc_delta ( const clMatrix<Real>& U_apply, const clMatrix<Real>& U_diff, const clMatrix<Real>& delta, clMatrix<Real>& nx_delta )
 {
 	auto tot_beg = std::chrono::system_clock::now();
 	auto beg = tot_beg;
 
-	int my_offset, my_size;
+    int my_size;
 #ifdef USE_MPI
+	int my_offset;
 	std::vector<int> size(this->nprocs), offset(this->nprocs);
 	for( int i = 0; i < this->nprocs; ++i ){
-		size[i] = ((i+1)*this->prev_num_unit/this->nprocs - i*this->prev_num_unit/this->nprocs)*U.n;
-		offset[i] = i*this->prev_num_unit/this->nprocs*U.n;
+		size[i] = ((i+1)*this->prev_num_unit/this->nprocs - i*this->prev_num_unit/this->nprocs)*U_apply.n;
+		offset[i] = i*this->prev_num_unit/this->nprocs*U_apply.n;
 	}
-	my_size = size[this->rank]/U.n;
-	my_offset = offset[this->rank]/U.n;
+	my_size = size[this->rank]/U_apply.n;
+	my_offset = offset[this->rank]/U_apply.n;
 #else
-	my_offset = 0;
 	my_size = this->prev_num_unit;
 #endif
 
-	clMatrix<Real> nx_delta(this->prev_num_map*this->prev_num_unit, delta.n);
 #ifdef USE_MPI
 	clMatrix<Real> tmp_nx_delta(this->prev_num_map*my_size, delta.n);
 #endif
 	auto end = std::chrono::system_clock::now();
 	this->t_delta_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
-
-	auto U_apply = (*this->prev_func)(U, false);
-	auto U_diff = (*this->prev_func)(U, true);
 
 	cl_device_manager.set_argument( PRG::BN_DELTA, 0, &nx_delta.v );
 	cl_device_manager.set_argument( PRG::BN_DELTA, 1, &cl_prev_num_unit );
@@ -440,7 +423,7 @@ clMatrix<Real> BatchNormalize<Mat, Real>::calc_delta ( const clMatrix<Real>& U, 
 	cl_device_manager.set_argument( PRG::BN_DELTA, 3, &U_apply.v );
 	cl_device_manager.set_argument( PRG::BN_DELTA, 4, &U_diff.v );
 	cl_device_manager.set_argument( PRG::BN_DELTA, 5, &delta.v );
-	cl_device_manager.set_argument( PRG::BN_DELTA, 6, &U.N );
+	cl_device_manager.set_argument( PRG::BN_DELTA, 6, &U_apply.N );
 	if( this->is_learning ){
 		cl_device_manager.set_argument( PRG::BN_DELTA, 7, &tmp_mean.v );
 		cl_device_manager.set_argument( PRG::BN_DELTA, 8, &tmp_mean.N );
@@ -455,7 +438,7 @@ clMatrix<Real> BatchNormalize<Mat, Real>::calc_delta ( const clMatrix<Real>& U, 
 	}
 	cl_device_manager.set_argument( PRG::BN_DELTA, 11, &this->W[0].v );
 	cl_device_manager.set_argument( PRG::BN_DELTA, 12, &cl_EPS );
-	cl_device_manager.run_kernel( PRG::BN_DELTA, U.n, my_size, this->num_map );
+	cl_device_manager.run_kernel( PRG::BN_DELTA, U_apply.n, my_size, this->num_map );
 
 	beg = std::chrono::system_clock::now();
 #ifdef USE_MPI
@@ -468,9 +451,7 @@ clMatrix<Real> BatchNormalize<Mat, Real>::calc_delta ( const clMatrix<Real>& U, 
 
 	this->t_delta += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
 	
-	cnt_flop += this->num_map*(my_size*U.n*(U.n*4 + 2 + 19));
-
-	return nx_delta;
+	cnt_flop += this->num_map*(my_size*U_apply.n*(U_apply.n*4 + 2 + 19));
 }
 #endif
 
@@ -482,6 +463,16 @@ void BatchNormalize<Mat, Real>::update_W ( const std::vector<Mat<Real>>& dW, con
 
 template<template<typename> class Mat, typename Real>
 Matrix<Real> BatchNormalize<Mat, Real>::apply ( const Matrix<Real>& U, bool use_func )
+{
+    Matrix<Real> ret(this->num_map*this->num_unit, U.n);
+
+    apply( U, ret, use_func );
+
+    return ret;
+}
+
+template<template<typename> class Mat, typename Real>
+void BatchNormalize<Mat, Real>::apply ( const Matrix<Real>& U, Matrix<Real>& ret, bool use_func )
 {
 	auto tot_beg = std::chrono::system_clock::now();
 	auto beg = tot_beg;
@@ -501,7 +492,6 @@ Matrix<Real> BatchNormalize<Mat, Real>::apply ( const Matrix<Real>& U, bool use_
 #endif
 	tmp_mean = tmp_var = Matrix<Real>::zeros(this->num_map, my_size);
 
-	Matrix<Real> ret(this->num_map*this->num_unit, U.n);
 #ifdef USE_MPI
 	Matrix<Real> tmp_ret(this->num_map*my_size, U.n);
 #endif
@@ -598,19 +588,28 @@ Matrix<Real> BatchNormalize<Mat, Real>::apply ( const Matrix<Real>& U, bool use_
 	this->t_apply += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
 	
 	cnt_flop += this->num_map*U.n*my_size + this->num_map*U.n*my_size*3 + this->num_map*U.n*my_size*5;
-
-	return ret;
 }
 
 #ifdef USE_GPU
 template<template<typename> class Mat, typename Real>
 clMatrix<Real> BatchNormalize<Mat, Real>::apply ( const clMatrix<Real>& U, bool use_func )
 {
+    clMatrix<Real> ret(this->num_map*this->num_unit, U.n);
+
+    apply( U, ret, use_func );
+
+    return ret;
+}
+
+template<template<typename> class Mat, typename Real>
+void BatchNormalize<Mat, Real>::apply ( const clMatrix<Real>& U, clMatrix<Real>& ret, bool use_func )
+{
 	auto tot_beg = std::chrono::system_clock::now();
 	auto beg = tot_beg;
 
-	int my_offset, my_size;
+	int my_size;
 #ifdef USE_MPI
+    int my_offset;
 	std::vector<int> size(this->nprocs), offset(this->nprocs);
 	for( int i = 0; i < this->nprocs; ++i ){
 		size[i] = ((i+1)*this->num_unit/this->nprocs - i*this->num_unit/this->nprocs)*U.n;
@@ -619,11 +618,9 @@ clMatrix<Real> BatchNormalize<Mat, Real>::apply ( const clMatrix<Real>& U, bool 
 	my_size = size[this->rank]/U.n;
 	my_offset = offset[this->rank]/U.n;
 #else
-	my_offset = 0;
 	my_size = this->num_unit;
 #endif
 
-	clMatrix<Real> ret(this->num_map*this->num_unit, U.n);
 #ifdef USE_MPI
 	clMatrix<Real> tmp_ret(this->num_map*my_size, U.n);
 #endif
@@ -700,8 +697,6 @@ clMatrix<Real> BatchNormalize<Mat, Real>::apply ( const clMatrix<Real>& U, bool 
 	this->t_apply += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
 	
 	cnt_flop += this->num_map*U.n*my_size + this->num_map*U.n*my_size*3 + this->num_map*U.n*my_size*5;
-
-	return ret;
 }
 #endif
 
