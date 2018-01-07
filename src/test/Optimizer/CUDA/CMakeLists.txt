@@ -1,0 +1,15 @@
+cmake_minimum_required(VERSION 2.8)
+
+find_package(CUDA)
+
+if( CUDA_FOUND )
+  add_executable(adamTest_CUDA_float adamTest_CUDA_float.cpp)
+  add_definitions(-DUSE_CUDA)
+  include_directories(${CUDA_INCLUDE_DIRS})
+  cuda_add_cublas_to_target(adamTest_CUDA_float)
+  target_link_libraries(adamTest_CUDA_float ${GTEST_LIBRARIES})
+  target_link_libraries(adamTest_CUDA_float ${BLAS_LIBRARIES})
+  target_link_libraries(adamTest_CUDA_float cuda_kernels)
+else()
+  message(STATUS "No OpenCL is found. Can't build OpenCL tests.")
+endif()

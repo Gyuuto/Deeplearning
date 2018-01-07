@@ -15,5 +15,15 @@ message(STATUS "CMAKE_CXX_FLAGS : ${CMAKE_CXX_FLAGS}")
 
 include_directories(${GTEST_INCLUDE_DIRS})
 add_subdirectory(Layer/CPU)
-add_subdirectory(Layer/GPU)
+add_subdirectory(Layer/OpenCL)
+add_subdirectory(Layer/CUDA)
+
+add_subdirectory(Function/CPU)
+add_subdirectory(Function/OpenCL)
+add_subdirectory(Function/CUDA)
+
+add_subdirectory(Optimizer/CPU)
+add_subdirectory(Optimizer/OpenCL)
+add_subdirectory(Optimizer/CUDA)
+
 add_subdirectory(Matrix)

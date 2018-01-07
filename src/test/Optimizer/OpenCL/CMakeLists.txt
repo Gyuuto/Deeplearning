@@ -1,0 +1,16 @@
+cmake_minimum_required(VERSION 2.8)
+
+find_package(OpenCL)
+include(/usr/local/lib64/cmake/clBLAS/clBLASConfig.cmake)
+
+if( OpenCL_FOUND AND CLBLAS_LIBRARIES )
+  add_executable(adamTest_OpenCL_float adamTest_OpenCL_float.cpp)
+  add_definitions(-DUSE_OPENCL)
+  include_directories(${OpenCL_INCLUDE_DIRS})
+  target_link_libraries(adamTest_OpenCL_float ${GTEST_LIBRARIES})
+  target_link_libraries(adamTest_OpenCL_float ${BLAS_LIBRARIES})
+  target_link_libraries(adamTest_OpenCL_float ${OpenCL_LIBRARIES})
+  target_link_libraries(adamTest_OpenCL_float ${CLBLAS_LIBRARIES})
+else()
+  message(STATUS "No OpenCL is found. Can't build OpenCL tests.")
+endif()
