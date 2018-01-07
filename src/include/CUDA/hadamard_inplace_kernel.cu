@@ -11,7 +11,7 @@ void hadamard_inplace ( int m, int n, float* A, float* B ) {
 void cuda_hadamard_inplace_kernel ( int m, int n, float* A, float* B ) {
   const int thread_num = 32;
 
-  dim3 grid(16, 16, 1);
+  dim3 grid((m + thread_num)/thread_num, (n + thread_num)/thread_num, 1);
   dim3 block(thread_num, thread_num, 1);
   
   hadamard_inplace<<<grid, block>>>( m, n, A, B );

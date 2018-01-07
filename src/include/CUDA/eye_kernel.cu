@@ -12,7 +12,7 @@ void eye ( int m, int n, float* A ) {
 void cuda_eye_kernel ( int m, int n, float* A ) {
   const int thread_num = 32;
 
-  dim3 grid(16, 16, 1);
+  dim3 grid((m + thread_num)/thread_num, (n + thread_num)/thread_num, 1);
   dim3 block(thread_num, thread_num, 1);
   
   eye<<<grid, block>>>( m, n, A );

@@ -12,7 +12,7 @@ void clip ( float val, float* A, int m, int n ) {
 void cuda_clip_kernel ( float val, float* A, int m, int n ) {
   const int thread_num = 32;
 
-  dim3 grid(16, 16, 1);
+  dim3 grid((m + thread_num)/thread_num, (n + thread_num)/thread_num, 1);
   dim3 block(thread_num, thread_num, 1);
   
   clip<<<grid, block>>>( val, A, m, n );
