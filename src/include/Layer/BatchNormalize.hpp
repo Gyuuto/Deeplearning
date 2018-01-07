@@ -9,7 +9,7 @@ class BatchNormalize : public Layer<Mat, Real>
 {
 private:
 	Real EPS, decay;
-#ifdef USE_GPU
+#ifdef USE_OPENCL
 	cl_mem cl_EPS;
 	cl_mem cl_num_unit, cl_prev_num_unit;
 
@@ -31,12 +31,12 @@ public:
 	void finalize();
 	
 	void calc_gradient ( const Matrix<Real>& U_apply, const Matrix<Real>& U_diff, const Matrix<Real>& delta, std::vector<Matrix<Real>>& nabla_W, std::vector<Matrix<Real>>& nabla_b );
-#ifdef USE_GPU
+#ifdef USE_OPENCL
 	void calc_gradient ( const clMatrix<Real>& U_apply, const clMatrix<Real>& U_diff, const clMatrix<Real>& delta, std::vector<clMatrix<Real>>& nabla_W, std::vector<clMatrix<Real>>& nabla_b );
 #endif
 
 	void calc_delta ( const Matrix<Real>& U_apply, const Matrix<Real>& U_diff, const Matrix<Real>& delta, Matrix<Real>& nx_delta );
-#ifdef USE_GPU	
+#ifdef USE_OPENCL	
 	void calc_delta ( const clMatrix<Real>& U_apply, const clMatrix<Real>& U_diff, const clMatrix<Real>& delta, clMatrix<Real>& nx_delta );
 #endif
 	
@@ -44,7 +44,7 @@ public:
 
     void apply ( const Matrix<Real>& U, Matrix<Real>& ret, bool use_func = true );
 	Matrix<Real> apply ( const Matrix<Real>& U, bool use_func = true );
-#ifdef USE_GPU
+#ifdef USE_OPENCL
 	void apply ( const clMatrix<Real>& U, clMatrix<Real>& ret, bool use_func = true );
 	clMatrix<Real> apply ( const clMatrix<Real>& U, bool use_func = true );
 #endif
@@ -79,7 +79,7 @@ BatchNormalize<Mat, Real>::BatchNormalize( int prev_num_map, int prev_num_unit,
 template<template<typename> class Mat, typename Real>
 BatchNormalize<Mat, Real>::~BatchNormalize()
 {
-#ifdef USE_GPU
+#ifdef USE_OPENCL
 	clReleaseMemObject( cl_EPS );
 
 	clReleaseMemObject( cl_num_unit );
@@ -128,7 +128,7 @@ void BatchNormalize<Mat, Real>::init( std::mt19937& m )
 	this->W[0] = tmp_W;
 	this->b[0] = tmp_b;
 
-#ifdef USE_GPU
+#ifdef USE_OPENCL
 	cl_int err;
 
 	cl_EPS = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(Real), NULL, &err);
@@ -204,7 +204,7 @@ void BatchNormalize<Mat, Real>::calc_gradient ( const Matrix<Real>& U_apply, con
 	cnt_flop += this->num_map*(my_size*U_apply.n*5 + my_size*U_apply.n*1);
 }
 
-#ifdef USE_GPU
+#ifdef USE_OPENCL
 template<template<typename> class Mat, typename Real>
 void BatchNormalize<Mat, Real>::calc_gradient ( const clMatrix<Real>& U_apply, const clMatrix<Real>& U_diff, const clMatrix<Real>& delta, std::vector<clMatrix<Real>>& nabla_W, std::vector<clMatrix<Real>>& nabla_b )
 {
@@ -390,7 +390,7 @@ void BatchNormalize<Mat, Real>::calc_delta ( const Matrix<Real>& U_apply, const 
 	cnt_flop += this->num_map*(my_size*U_apply.n*(U_apply.n*4 + 2 + 19));
 }
 
-#ifdef USE_GPU
+#ifdef USE_OPENCL
 template<template<typename> class Mat, typename Real>
 void BatchNormalize<Mat, Real>::calc_delta ( const clMatrix<Real>& U_apply, const clMatrix<Real>& U_diff, const clMatrix<Real>& delta, clMatrix<Real>& nx_delta )
 {
@@ -590,7 +590,7 @@ void BatchNormalize<Mat, Real>::apply ( const Matrix<Real>& U, Matrix<Real>& ret
 	cnt_flop += this->num_map*U.n*my_size + this->num_map*U.n*my_size*3 + this->num_map*U.n*my_size*5;
 }
 
-#ifdef USE_GPU
+#ifdef USE_OPENCL
 template<template<typename> class Mat, typename Real>
 clMatrix<Real> BatchNormalize<Mat, Real>::apply ( const clMatrix<Real>& U, bool use_func )
 {
