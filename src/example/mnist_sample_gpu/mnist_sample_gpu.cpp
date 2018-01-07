@@ -5,11 +5,13 @@
 #include <cmath>
 #include <chrono>
 
+// #include <clMatrix.hpp>
+#include <cudaMatrix.hpp>
 #include <Neuralnet.hpp>
 #include <Layer/Layer.hpp>
 #include <Layer/FullyConnected.hpp>
-#include <Layer/Convolutional.hpp>
-// #include "../include/Pooling.hpp"
+// #include <Layer/Convolutional.hpp>
+// #include <Layer/Pooling.hpp>
 
 using namespace std;
 
@@ -35,35 +37,34 @@ int main( int argc, char* argv[] )
 {
 	// define mini-batch size.
 	const int BATCH_SIZE = 128;
-
 	// construct neuralnetwork with CrossEntropy.
-    Neuralnet<clMatrix, float> net(shared_ptr<LossFunction<float>>(new CrossEntropy<float>));
-	vector<shared_ptr<Layer<clMatrix, float>>> layers;
+    Neuralnet<cudaMatrix, float> net(shared_ptr<LossFunction<float>>(new CrossEntropy<float>));
+	vector<shared_ptr<Layer<cudaMatrix, float>>> layers;
 
 	// define layers.
-	layers.emplace_back(new Convolutional<clMatrix, float>(1, 28*28, 28,
-														   32, 28*28, 28,
-														   3, 3, 1, 1, shared_ptr<Function<float>>(new ReLU<float>)));
-	((Convolutional<clMatrix, float>*)(layers.rbegin()->get()))->set_once_num(BATCH_SIZE);
-	layers.emplace_back(new Convolutional<clMatrix, float>(32, 28*28, 28,
-														   64, 14*14, 14,
-														   3, 3, 2, 1, shared_ptr<Function<float>>(new ReLU<float>)));
-	((Convolutional<clMatrix, float>*)(layers.rbegin()->get()))->set_once_num(BATCH_SIZE);
+	// layers.emplace_back(new Convolutional<clcudaMatrixrix, float>(1, 28*28, 28,
+	// 													   32, 28*28, 28,
+	// 													   3, 3, 1, 1, shared_ptr<Function<float>>(new ReLU<float>)));
+	// ((Convolutional<clcudaMatrixrix, float>*)(layers.rbegin()->get()))->set_once_num(BATCH_SIZE);
+	// layers.emplace_back(new Convolutional<clcudaMatrixrix, float>(32, 28*28, 28,
+	// 													   64, 14*14, 14,
+	// 													   3, 3, 2, 1, shared_ptr<Function<float>>(new ReLU<float>)));
+	// ((Convolutional<clcudaMatrixrix, float>*)(layers.rbegin()->get()))->set_once_num(BATCH_SIZE);
 
-	layers.emplace_back(new FullyConnected<clMatrix, float>(64, 14*14, 1, 1000, shared_ptr<Function<float>>(new ReLU<float>)));
-	layers.emplace_back(new FullyConnected<clMatrix, float>(1, 1000, 1, 500, shared_ptr<Function<float>>(new ReLU<float>)));
-	layers.emplace_back(new FullyConnected<clMatrix, float>(1, 500, 1, 10, shared_ptr<Function<float>>(new Softmax<float>)));
+	// layers.emplace_back(new FullyConnected<clcudaMatrixrix, float>(64, 14*14, 1, 1000, shared_ptr<Function<float>>(new ReLU<float>)));
+	// layers.emplace_back(new FullyConnected<clcudaMatrixrix, float>(1, 1000, 1, 500, shared_ptr<Function<float>>(new ReLU<float>)));
+	// layers.emplace_back(new FullyConnected<clcudaMatrixrix, float>(1, 500, 1, 10, shared_ptr<Function<float>>(new Softmax<float>)));
 
-	// layers.emplace_back(new FullyConnected<clMatrix, float>(1, 28*28, 1, 2000, shared_ptr<Function<float>>(new ReLU<float>)));
-	// layers.emplace_back(new FullyConnected<clMatrix, float>(1, 2000, 1, 2000, shared_ptr<Function<float>>(new ReLU<float>)));
-	// layers.emplace_back(new FullyConnected<clMatrix, float>(1, 2000, 1, 2000, shared_ptr<Function<float>>(new ReLU<float>)));
-	// layers.emplace_back(new FullyConnected<clMatrix, float>(1, 2000, 1, 2000, shared_ptr<Function<float>>(new ReLU<float>)));
-	// layers.emplace_back(new FullyConnected<clMatrix, float>(1, 2000, 1, 2000, shared_ptr<Function<float>>(new ReLU<float>)));
-	// layers.emplace_back(new FullyConnected<clMatrix, float>(1, 2000, 1, 2000, shared_ptr<Function<float>>(new ReLU<float>)));
-	// layers.emplace_back(new FullyConnected<clMatrix, float>(1, 2000, 1, 2000, shared_ptr<Function<float>>(new ReLU<float>)));
-	// layers.emplace_back(new FullyConnected<clMatrix, float>(1, 2000, 1, 2000, shared_ptr<Function<float>>(new ReLU<float>)));
-	// layers.emplace_back(new FullyConnected<clMatrix, float>(1, 2000, 1, 2000, shared_ptr<Function<float>>(new ReLU<float>)));
-	// layers.emplace_back(new FullyConnected<clMatrix, float>(1, 2000, 1, 10, shared_ptr<Function<float>>(new Softmax<float>)));
+	layers.emplace_back(new FullyConnected<cudaMatrix, float>(1, 28*28, 1, 2000, shared_ptr<Function<float>>(new ReLU<float>)));
+	layers.emplace_back(new FullyConnected<cudaMatrix, float>(1, 2000, 1, 2000, shared_ptr<Function<float>>(new ReLU<float>)));
+	layers.emplace_back(new FullyConnected<cudaMatrix, float>(1, 2000, 1, 2000, shared_ptr<Function<float>>(new ReLU<float>)));
+	layers.emplace_back(new FullyConnected<cudaMatrix, float>(1, 2000, 1, 2000, shared_ptr<Function<float>>(new ReLU<float>)));
+	layers.emplace_back(new FullyConnected<cudaMatrix, float>(1, 2000, 1, 2000, shared_ptr<Function<float>>(new ReLU<float>)));
+	layers.emplace_back(new FullyConnected<cudaMatrix, float>(1, 2000, 1, 2000, shared_ptr<Function<float>>(new ReLU<float>)));
+	layers.emplace_back(new FullyConnected<cudaMatrix, float>(1, 2000, 1, 2000, shared_ptr<Function<float>>(new ReLU<float>)));
+	layers.emplace_back(new FullyConnected<cudaMatrix, float>(1, 2000, 1, 2000, shared_ptr<Function<float>>(new ReLU<float>)));
+	layers.emplace_back(new FullyConnected<cudaMatrix, float>(1, 2000, 1, 2000, shared_ptr<Function<float>>(new ReLU<float>)));
+	layers.emplace_back(new FullyConnected<cudaMatrix, float>(1, 2000, 1, 10, shared_ptr<Function<float>>(new Softmax<float>)));
 
 	// this neuralnet has 4 layers, input, convolutional, pooling and FullyConnected.
 	for( unsigned int i = 0; i < layers.size(); ++i ){
@@ -132,13 +133,13 @@ int main( int argc, char* argv[] )
 		}
 	}
 	
-	clMatrix<float> train_X = train_x, train_D = train_d;
-	clMatrix<float> test_X = test_x, test_D = test_d;
+	cudaMatrix<float> train_X = train_x, train_D = train_d;
+	cudaMatrix<float> test_X = test_x, test_D = test_d;
 
 	// checking error function.
 	auto total = chrono::system_clock::now();
 	auto prev_time = chrono::system_clock::now();
-	auto check_error = [&](const Neuralnet<clMatrix, float>& nn, const int iter, const clMatrix<float>& x, const clMatrix<float>& d ) -> void {
+	auto check_error = [&](const Neuralnet<cudaMatrix, float>& nn, const int iter, const cudaMatrix<float>& x, const cudaMatrix<float>& d ) -> void {
 		if( iter%(N/BATCH_SIZE) != 0 ) return;
 
 		auto tmp_time = chrono::system_clock::now();
@@ -149,7 +150,7 @@ int main( int argc, char* argv[] )
 		for( int i = 0; i < N; i += once_num ){
 			int size = min(once_num, N-i);
 
-			clMatrix<float> tmp_X = train_X.sub(0, i, train_X.m, size);
+			cudaMatrix<float> tmp_X = train_X.sub(0, i, train_X.m, size);
 
 			auto tmp_Y = nn.apply(tmp_X).get_matrix();
 			for( int j = 0; j < tmp_Y.n; ++j ){
@@ -170,7 +171,7 @@ int main( int argc, char* argv[] )
 		for( int i = 0; i < M; i += once_num ){
 			int size = min(once_num, N-i);
 
-			clMatrix<float> tmp_X = test_X.sub(0, i, test_X.m, size);
+			cudaMatrix<float> tmp_X = test_X.sub(0, i, test_X.m, size);
 
 			auto tmp_Y = nn.apply(tmp_X).get_matrix();
 			for( int j = 0; j < tmp_Y.n; ++j ){
