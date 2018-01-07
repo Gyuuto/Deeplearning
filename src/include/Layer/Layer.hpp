@@ -10,14 +10,18 @@
 
 #ifdef USE_MPI
 #include <mpi.h>
-#include "../mpi_helper.hpp"
+#include <mpi_helper.hpp>
 #endif
 
-#include "../Matrix.hpp"
-#ifdef USE_GPU
-#include "../clMatrix.hpp"
+#include <Matrix.hpp>
+#ifdef USE_OPENCL
+#include <clMatrix.hpp>
 #endif
-#include "../Function.hpp"
+#ifdef USE_CUDA
+#include <CUDA/cuda_kernel.h>
+#include <cudaMatrix.hpp>
+#endif
+#include <Function.hpp>
 
 template<template<typename> class Mat, typename Real>
 class Layer
@@ -25,7 +29,7 @@ class Layer
 protected:
 	std::string layer_name;
 	bool is_use_bias, is_learning;
-#ifdef USE_GPU
+#ifdef USE_OPENCL
 	cl_mem cl_use_bias;
 #endif
 	

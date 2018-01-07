@@ -368,7 +368,7 @@ struct cudaMatrix
         assert( m == C.m );
         assert( n == C.n );
         
-        cublasSgemm( 'T', 'N', n, m, l, alpha, B.v, k, this->v, l, beta, C.v, n );
+        cublasSgemm( 'T', 'N', n, m, l, alpha, B.mat->v, k, this->v, l, beta, C.v, n );
 
         cnt_flop += (long long)m*n*(2*l-1);
 	}
@@ -377,8 +377,6 @@ struct cudaMatrix
 	{
         assert( this->m == A.m && this->n == A.n );
         
-        int m = this->m, n = this->n;
-
         cuda_hadamard_inplace_kernel( this->m, this->n, this->v, A.v );
 	}
 

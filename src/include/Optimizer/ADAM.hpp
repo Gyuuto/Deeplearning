@@ -2,15 +2,19 @@
 #define ADAM_HPP
 
 #include <vector>
-#ifdef USE_GPU
-#include "../clDeviceManager.hpp"
-#include "../clMatrix.hpp"
+
+#ifdef USE_OPENCL
+#include <clDeviceManager.hpp>
+#include <clMatrix.hpp>
 #endif
-#include "../Matrix.hpp"
+#include <Matrix.hpp>
+
+#include "Optimizer.hpp"
 
 template<template<typename> class Mat, typename Real>
-struct ADAM
+class ADAM : public Optimizer<Mat, Real>
 {
+private:
 	const Real beta = 0.9, gamma = 0.999, eps = 1.0E-8;
 	Real EPS, beta_ = 1.0, gamma_ = 1.0;
 	Real threshold;
@@ -18,15 +22,17 @@ struct ADAM
 	std::vector<Mat<Real>> v_W, r_W;
 	std::vector<Mat<Real>> v_b, r_b;
 
+public:
 	ADAM( const ADAM& adam );
 	ADAM( const std::vector<Mat<Real>>& W, const std::vector<Mat<Real>>& b, Real EPS );
 
-	std::pair<std::vector<Mat<Real>>, std::vector<Mat<Real>>> update ( const std::vector<Mat<Real>>& nabla_W, const std::vector<Mat<Real>>& nabla_b );
+	void update ( const std::vector<Mat<Real>>& nabla_W, const std::vector<Mat<Real>>& nabla_b, std::vector<Mat<Real>>& update_W, std::vector<Mat<Real>>& update_b );
 };
 
 template<typename Real>
-struct ADAM<Matrix, Real>
+class ADAM<Matrix, Real> : public Optimizer<Matrix, Real>
 {
+private:
 	const Real beta = 0.9, gamma = 0.999, eps = 1.0E-8;
 	Real EPS, beta_ = 1.0, gamma_ = 1.0;
 	Real threshold;
@@ -34,6 +40,7 @@ struct ADAM<Matrix, Real>
 	std::vector<Matrix<Real>> v_W, r_W;
 	std::vector<Matrix<Real>> v_b, r_b;
 
+public:
 	ADAM( const std::vector<Matrix<Real>>& W, const std::vector<Matrix<Real>>& b, Real EPS, Real threshold = -1.0 )
 	{
 		this->EPS = EPS;
@@ -58,23 +65,16 @@ struct ADAM<Matrix, Real>
 		}
 	}
 
-	std::pair<std::vector<Matrix<Real>>, std::vector<Matrix<Real>>> update ( const std::vector<Matrix<Real>>& nabla_W, const std::vector<Matrix<Real>>& nabla_b )
+	void update ( const std::vector<Matrix<Real>>& nabla_W, const std::vector<Matrix<Real>>& nabla_b, std::vector<Matrix<Real>>& update_W, std::vector<Matrix<Real>>& update_b )
 	{
 		beta_ *= beta; gamma_ *= gamma;
-		if( nabla_W.size() == 0 ) return std::make_pair(std::vector<Matrix<Real>>(), std::vector<Matrix<Real>>());
 
-		std::vector<Matrix<Real>> update_W(nabla_W.size()), update_b(nabla_b.size());
-		for( int i = 0; i < nabla_W.size(); ++i ){
-			update_W[i] = Matrix<Real>(nabla_W[i].m, nabla_W[i].n);
-
-			auto tmp_nabla = nabla_W[i];
-			if( threshold > 0.0 ) tmp_nabla.clip( threshold );
-
+		for( unsigned int i = 0; i < nabla_W.size(); ++i ){
 #pragma omp parallel for
 			for( int j = 0; j < update_W[i].m; ++j )
 				for( int k = 0; k < update_W[i].n; ++k ){
-					v_W[i](j,k) = beta*v_W[i](j,k) + (1.0 - beta)*tmp_nabla(j,k);
-					r_W[i](j,k) = gamma*r_W[i](j,k) + (1.0 - gamma)*(tmp_nabla(j,k)*tmp_nabla(j,k));
+					v_W[i](j,k) = beta*v_W[i](j,k) + (1.0 - beta)*nabla_W[i](j,k);
+					r_W[i](j,k) = gamma*r_W[i](j,k) + (1.0 - gamma)*(nabla_W[i](j,k)*nabla_W[i](j,k));
 
 					auto v_hat = v_W[i](j,k) / (1.0 - beta_);
 					auto r_hat = r_W[i](j,k) / (1.0 - gamma_);
@@ -82,8 +82,7 @@ struct ADAM<Matrix, Real>
 				}
 		}
 
-		for( int i = 0; i < nabla_b.size(); ++i ){
-			update_b[i] = Matrix<Real>(nabla_b[i].m, nabla_b[i].n);
+		for( unsigned int i = 0; i < nabla_b.size(); ++i ){
 #pragma omp parallel for
 			for( int j = 0; j < update_b[i].m; ++j )
 				for( int k = 0; k < update_b[i].n; ++k ){
@@ -95,15 +94,14 @@ struct ADAM<Matrix, Real>
 					update_b[i](j,k) = -EPS*v_hat / (sqrt(r_hat) + eps);
 				}
 		}
-
-		return std::make_pair(update_W, update_b);
 	}
 };
 
-#ifdef USE_GPU
+#ifdef USE_OPENCL
 template<typename Real>
-struct ADAM<clMatrix, Real>
+class ADAM<clMatrix, Real> : public Optimizer<clMatrix, Real>
 {
+private:
 	const Real beta = 0.9, gamma = 0.999, eps = 1.0E-8;
 	Real EPS, beta_ = 1.0, gamma_ = 1.0;
 	Real threshold;
@@ -114,6 +112,7 @@ struct ADAM<clMatrix, Real>
 	std::vector<clMatrix<Real>> v_W, r_W;
 	std::vector<clMatrix<Real>> v_b, r_b;
 
+public:
 	ADAM( const ADAM<clMatrix, Real>& adam )
 	{
 		this->EPS = adam.EPS;
@@ -208,25 +207,17 @@ struct ADAM<clMatrix, Real>
 		return *this;
 	}
 
-	std::pair<std::vector<clMatrix<Real>>, std::vector<clMatrix<Real>>> update ( const std::vector<clMatrix<Real>>& nabla_W, const std::vector<clMatrix<Real>>& nabla_b )
+	void update ( const std::vector<clMatrix<Real>>& nabla_W, const std::vector<clMatrix<Real>>& nabla_b, std::vector<clMatrix<Real>>& update_W, std::vector<clMatrix<Real>>& update_b )
 	{
 		beta_ *= beta; gamma_ *= gamma;
 		clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_beta_, CL_TRUE, 0, sizeof(Real), &beta_, 0, NULL, NULL );
 		clEnqueueWriteBuffer( cl_device_manager.get_queue(), cl_gamma_, CL_TRUE, 0, sizeof(Real), &gamma_, 0, NULL, NULL );
 
-		if( nabla_W.size() == 0 ) return std::make_pair(std::vector<clMatrix<Real>>(), std::vector<clMatrix<Real>>());
-
-		std::vector<clMatrix<Real>> update_W(nabla_W.size()), update_b(nabla_b.size());
-		for( int i = 0; i < nabla_W.size(); ++i ){
-			update_W[i] = clMatrix<Real>(nabla_W[i].m, nabla_W[i].n);
-
-			auto tmp_nabla = nabla_W[i];
-			if( threshold > 0.0 ) tmp_nabla.clip(threshold);
-
+			for( unsigned int i = 0; i < nabla_W.size(); ++i ){
 			cl_device_manager.set_argument( PRG::ADAM, 0, &v_W[i].v );
 			cl_device_manager.set_argument( PRG::ADAM, 1, &r_W[i].v );
 			cl_device_manager.set_argument( PRG::ADAM, 2, &update_W[i].v );
-			cl_device_manager.set_argument( PRG::ADAM, 3, &tmp_nabla.v );
+			cl_device_manager.set_argument( PRG::ADAM, 3, &nabla_W[i].v );
 			cl_device_manager.set_argument( PRG::ADAM, 4, &cl_beta );
 			cl_device_manager.set_argument( PRG::ADAM, 5, &cl_gamma );
 			cl_device_manager.set_argument( PRG::ADAM, 6, &cl_beta_ );
@@ -236,9 +227,7 @@ struct ADAM<clMatrix, Real>
 			cl_device_manager.run_kernel( PRG::ADAM, nabla_W[i].m*nabla_W[i].n, 1 );
 		}
 
-		for( int i = 0; i < nabla_b.size(); ++i ){
-			update_b[i] = clMatrix<Real>(nabla_b[i].m, nabla_b[i].n);
-			
+		for( unsigned int i = 0; i < nabla_b.size(); ++i ){
 			cl_device_manager.set_argument( PRG::ADAM, 0, &v_b[i].v );
 			cl_device_manager.set_argument( PRG::ADAM, 1, &r_b[i].v );
 			cl_device_manager.set_argument( PRG::ADAM, 2, &update_b[i].v );
@@ -251,8 +240,84 @@ struct ADAM<clMatrix, Real>
 			cl_device_manager.set_argument( PRG::ADAM, 9, &cl_eps );
 			cl_device_manager.run_kernel( PRG::ADAM, nabla_b[i].m*nabla_b[i].n, 1 );
 		}
+	}
+};
+#endif
 
-		return std::make_pair(update_W, update_b);
+#ifdef USE_CUDA
+template<typename Real>
+class ADAM<cudaMatrix, Real> : public Optimizer<cudaMatrix, Real>
+{
+private:
+	const Real beta = 0.9, gamma = 0.999, eps = 1.0E-8;
+	Real EPS, beta_ = 1.0, gamma_ = 1.0;
+	Real threshold;
+	
+	std::vector<cudaMatrix<Real>> v_W, r_W;
+	std::vector<cudaMatrix<Real>> v_b, r_b;
+
+public:
+	ADAM( const ADAM<cudaMatrix, Real>& adam )
+	{
+		this->EPS = adam.EPS;
+		this->threshold = adam.threshold;
+
+		this->beta_ = adam.beta_;
+		this->gamma_ = adam.gamma_;
+		this->v_W = adam.v_W; this->r_W = adam.r_W;
+		this->v_b = adam.v_b; this->r_b = adam.r_b;
+	}
+
+	ADAM( const std::vector<cudaMatrix<Real>>& W, const std::vector<cudaMatrix<Real>>& b, Real EPS, Real threshold = -1.0 )
+	{
+		this->EPS = EPS;
+		this->threshold = threshold;
+		
+		if( W.size() == 0 || W[0].m == 0 || W[0].n == 0 ){
+			v_W = std::vector<cudaMatrix<Real>>();
+			r_W = std::vector<cudaMatrix<Real>>();
+		}
+		else{
+			v_W = std::vector<cudaMatrix<Real>>(W.size(), cudaMatrix<Real>::zeros(W[0].m, W[0].n));
+			r_W = std::vector<cudaMatrix<Real>>(W.size(), cudaMatrix<Real>::zeros(W[0].m, W[0].n));
+		}
+
+		if( b.size() == 0 || b[0].m == 0 || b[0].n == 0 ){
+			v_b = std::vector<cudaMatrix<Real>>();
+			r_b = std::vector<cudaMatrix<Real>>();
+		}
+		else{
+			v_b = std::vector<cudaMatrix<Real>>(b.size(), cudaMatrix<Real>::zeros(b[0].m, b[0].n));
+			r_b = std::vector<cudaMatrix<Real>>(b.size(), cudaMatrix<Real>::zeros(b[0].m, b[0].n));
+		}
+	}
+
+	~ADAM(){}
+
+	const ADAM& operator = ( const ADAM<cudaMatrix, Real>& adam )
+	{
+		this->EPS = adam.EPS;
+		this->threshold = adam.threshold;
+
+		this->beta_ = adam.beta_;
+		this->gamma_ = adam.gamma_;
+		this->v_W = adam.v_W; this->r_W = adam.r_W;
+		this->v_b = adam.v_b; this->r_b = adam.r_b;
+
+		return *this;
+	}
+
+    void update ( const std::vector<cudaMatrix<Real>>& nabla_W, const std::vector<cudaMatrix<Real>>& nabla_b, std::vector<cudaMatrix<Real>>& update_W, std::vector<cudaMatrix<Real>>& update_b  )
+	{
+		beta_ *= beta; gamma_ *= gamma;
+
+		for( unsigned int i = 0; i < nabla_W.size(); ++i ){
+            cuda_adam_kernel( nabla_W[i].m, nabla_W[i].n, v_W[i].v, r_W[i].v, update_W[i].v, nabla_W[i].v, this->beta, this->gamma, this->beta_, this->gamma_, this->EPS, this->eps );
+		}
+
+		for( unsigned int i = 0; i < nabla_b.size(); ++i ){
+            cuda_adam_kernel( nabla_b[i].m, nabla_b[i].n, v_b[i].v, r_b[i].v, update_b[i].v, nabla_b[i].v, this->beta, this->gamma, this->beta_, this->gamma_, this->EPS, this->eps );
+		}
 	}
 };
 #endif

@@ -30,9 +30,13 @@ struct Matrix;
 
 #include "tMatrix.hpp"
 
-#ifdef USE_GPU
+#ifdef USE_OPENCL
 template<class T>
 struct clMatrix;
+#endif
+#ifdef USE_CUDA
+template<class T>
+struct cudaMatrix;
 #endif
 
 template<class T>
@@ -108,7 +112,7 @@ struct Matrix
 		return *this;
 	}
 
-#ifdef USE_GPU
+#ifdef USE_OPENCL
 	Matrix( const clMatrix<T>& mat )
 	{
 		auto tmp = mat.get_matrix();
@@ -126,6 +130,30 @@ struct Matrix
 	}
 
 	Matrix<T>& operator = ( const clMatrix<T>& mat )
+	{
+		*this = mat.get_matrix();
+		
+		return *this;
+	}
+#endif
+#ifdef USE_CUDA
+	Matrix( const cudaMatrix<T>& mat )
+	{
+		auto tmp = mat.get_matrix();
+
+		this->m = mat.m; this->n = mat.n;
+		mem_size = (long long)m*n;
+		if( m == 0 || n == 0 ){
+			v = NULL;
+		}
+		else{
+			v = new T[m*n];
+#pragma omp parallel for
+			for( int i = 0; i < m*n; ++i )  v[i] = tmp.v[i];
+		}
+	}
+
+	Matrix<T>& operator = ( const cudaMatrix<T>& mat )
 	{
 		*this = mat.get_matrix();
 		

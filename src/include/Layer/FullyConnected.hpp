@@ -24,20 +24,29 @@ public:
 	void finalize();
 	
 	void calc_gradient ( const Matrix<Real>& U_apply, const Matrix<Real>& U_diff, const Matrix<Real>& delta, std::vector<Matrix<Real>>& nabla_W, std::vector<Matrix<Real>>& nabla_b );
-#ifdef USE_GPU
+#ifdef USE_OPENCL
 	void calc_gradient ( const clMatrix<Real>& U_apply, const clMatrix<Real>& U_diff, const clMatrix<Real>& delta, std::vector<clMatrix<Real>>& nabla_W, std::vector<clMatrix<Real>>& nabla_b );
 #endif
-
+#ifdef USE_CUDA
+	void calc_gradient ( const cudaMatrix<Real>& U_apply, const cudaMatrix<Real>& U_diff, const cudaMatrix<Real>& delta, std::vector<cudaMatrix<Real>>& nabla_W, std::vector<cudaMatrix<Real>>& nabla_b );
+#endif
 	void calc_delta ( const Matrix<Real>& U_apply, const Matrix<Real>& U_diff, const Matrix<Real>& delta, Matrix<Real>& nx_delta );
-#ifdef USE_GPU
+#ifdef USE_OPENCL
 	void calc_delta ( const clMatrix<Real>& U_apply, const clMatrix<Real>& U_diff, const clMatrix<Real>& delta, clMatrix<Real>& nx_delta );
+#endif
+#ifdef USE_CUDA
+    void calc_delta ( const cudaMatrix<Real>& U_apply, const cudaMatrix<Real>& U_diff, const cudaMatrix<Real>& delta, cudaMatrix<Real>& nx_delta );
 #endif
 
 	Matrix<Real> apply ( const Matrix<Real>& U, bool use_func = true );
 	void apply ( const Matrix<Real>& U, Matrix<Real>& ret, bool use_func = true );
-#ifdef USE_GPU
+#ifdef USE_OPENCL
 	clMatrix<Real> apply ( const clMatrix<Real>& U, bool use_func = true );
 	void apply ( const clMatrix<Real>& U, clMatrix<Real>& ret, bool use_func = true );
+#endif
+#ifdef USE_CUDA
+	cudaMatrix<Real> apply ( const cudaMatrix<Real>& U, bool use_func = true );
+	void apply ( const cudaMatrix<Real>& U, cudaMatrix<Real>& ret, bool use_func = true );
 #endif
 
 	void update_W ( const std::vector<Mat<Real>>& dW, const std::vector<Mat<Real>>& db );
@@ -60,7 +69,7 @@ FullyConnected<Mat, Real>::FullyConnected( int prev_num_map, int prev_num_unit, 
 	this->num_unit = num_unit;
 	this->is_use_bias = use_bias;
 
-#ifdef USE_GPU
+#ifdef USE_OPENCL
 	cl_int err, tmp = use_bias;
 	this->cl_use_bias = clCreateBuffer( cl_device_manager.get_context(), CL_MEM_READ_ONLY, sizeof(int), NULL, &err);
 	err = clEnqueueWriteBuffer( cl_device_manager.get_queue(), this->cl_use_bias, CL_TRUE, 0,
@@ -78,7 +87,7 @@ FullyConnected<Mat, Real>::FullyConnected( int prev_num_map, int prev_num_unit, 
 template<template<typename> class Mat, typename Real>
 FullyConnected<Mat, Real>::~FullyConnected()
 {
-#ifdef USE_GPU
+#ifdef USE_OPENCL
 	clReleaseMemObject(this->cl_use_bias);
 #endif
 }
@@ -158,7 +167,7 @@ void FullyConnected<Mat, Real>::calc_gradient ( const Matrix<Real>& U_apply, con
 	this->t_grad += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
 }
 
-#ifdef USE_GPU
+#ifdef USE_OPENCL
 template<template<typename> class Mat, typename Real>
 void FullyConnected<Mat, Real>::calc_gradient ( const clMatrix<Real>& U_apply, const clMatrix<Real>& U_diff, const clMatrix<Real>& delta, std::vector<clMatrix<Real>>& nabla_W, std::vector<clMatrix<Real>>& nabla_b )
 {
@@ -180,6 +189,32 @@ void FullyConnected<Mat, Real>::calc_gradient ( const clMatrix<Real>& U_apply, c
 		cl_device_manager.set_argument( PRG::FULL_GRAD_BIAS, 1, &delta.v );
 		cl_device_manager.set_argument( PRG::FULL_GRAD_BIAS, 2, &delta.N );
 		cl_device_manager.run_kernel( PRG::FULL_GRAD_BIAS, nabla_b[0].m );
+	}
+	end = std::chrono::system_clock::now();
+	this->t_grad_gemm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+
+	this->t_grad += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
+}
+#endif
+#ifdef USE_CUDA
+template<template<typename> class Mat, typename Real>
+void FullyConnected<Mat, Real>::calc_gradient ( const cudaMatrix<Real>& U_apply, const cudaMatrix<Real>& U_diff, const cudaMatrix<Real>& delta, std::vector<cudaMatrix<Real>>& nabla_W, std::vector<cudaMatrix<Real>>& nabla_b )
+{
+	auto tot_beg = std::chrono::system_clock::now();
+	auto beg = tot_beg;
+
+#ifdef USE_MPI
+	int offset = 0;
+	offset = this->rank*this->num_unit/this->nprocs;
+#endif
+	
+	auto end = std::chrono::system_clock::now();
+	this->t_grad_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+
+	beg = std::chrono::system_clock::now();
+	delta.mult( 1.0, cudaMatrix<Real>::transpose(U_apply), 0.0, nabla_W[0] );
+	if( this->is_use_bias ){
+        cuda_full_grad_bias_kernel(nabla_b[0].m, delta.n, nabla_b[0].v, delta.v);
 	}
 	end = std::chrono::system_clock::now();
 	this->t_grad_gemm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
@@ -224,7 +259,7 @@ void FullyConnected<Mat, Real>::calc_delta ( const Matrix<Real>& U_apply, const 
 	this->t_delta += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
 }
 
-#ifdef USE_GPU
+#ifdef USE_OPENCL
 template<template<typename> class Mat, typename Real>
 void FullyConnected<Mat, Real>::calc_delta ( const clMatrix<Real>& U_apply, const clMatrix<Real>& U_diff, const clMatrix<Real>& delta, clMatrix<Real>& nx_delta )
 {
@@ -248,6 +283,49 @@ void FullyConnected<Mat, Real>::calc_delta ( const clMatrix<Real>& U_apply, cons
 
 	beg = std::chrono::system_clock::now();
 	clMatrix<Real>::transpose(this->W[0]).mult( 1.0, delta, 0.0, nx_delta );
+	end = std::chrono::system_clock::now();
+	this->t_delta_gemm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+
+	beg = std::chrono::system_clock::now();
+#ifdef USE_MPI
+	MPI_Allreduce(MPI_IN_PLACE, &tmp(0,0), tmp.m*tmp.n,
+				  get_typecount(tmp(0,0)).mpi_type, MPI_SUM, this->inner_world);
+#endif
+	end = std::chrono::system_clock::now();
+	this->t_delta_comm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+
+	beg = std::chrono::system_clock::now();
+	nx_delta.hadamard( U_diff );
+	end = std::chrono::system_clock::now();
+	this->t_delta_repl += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+
+	this->t_delta += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
+}
+#endif
+#ifdef USE_CUDA
+template<template<typename> class Mat, typename Real>
+void FullyConnected<Mat, Real>::calc_delta ( const cudaMatrix<Real>& U_apply, const cudaMatrix<Real>& U_diff, const cudaMatrix<Real>& delta, cudaMatrix<Real>& nx_delta )
+{
+	auto tot_beg = std::chrono::system_clock::now();
+	auto beg = tot_beg;
+
+#ifdef USE_MPI
+	int offset = 0;
+	offset = this->rank*this->num_unit/this->nprocs;
+#endif
+	// clMatrix<Real> tmp_delta(this->W[0].m, delta.n), tmp, nx_delta;
+	// tmp_delta = delta.sub(offset, 0, this->W[0].m, delta.n);
+	auto end = std::chrono::system_clock::now();
+	this->t_delta_init += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+
+	// leave for MPI(multiple GPU), future work
+	// beg = std::chrono::system_clock::now();
+	// tmp_delta = delta;
+	// end = std::chrono::system_clock::now();
+	// this->t_delta_repl += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+
+	beg = std::chrono::system_clock::now();
+	cudaMatrix<Real>::transpose(this->W[0]).mult( 1.0, delta, 0.0, nx_delta );
 	end = std::chrono::system_clock::now();
 	this->t_delta_gemm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
 
@@ -351,7 +429,7 @@ void FullyConnected<Mat, Real>::apply ( const Matrix<Real>& U, Matrix<Real>& ret
 	this->t_apply += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
 }
 
-#ifdef USE_GPU
+#ifdef USE_OPENCL
 template<template<typename> class Mat, typename Real>
 clMatrix<Real> FullyConnected<Mat, Real>::apply ( const clMatrix<Real>& U, bool use_func )
 {
@@ -404,6 +482,68 @@ void FullyConnected<Mat, Real>::apply ( const clMatrix<Real>& U, clMatrix<Real>&
 		cl_device_manager.set_argument( PRG::FULL_APPLY_BIAS, 1, &ret.N );
 		cl_device_manager.set_argument( PRG::FULL_APPLY_BIAS, 2, &this->b[0].v );
 		cl_device_manager.run_kernel( PRG::FULL_APPLY_BIAS, ret.n, ret.m );
+	}
+	auto end = std::chrono::system_clock::now();
+	this->t_apply_gemm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+#endif
+
+	beg = std::chrono::system_clock::now();
+	if( use_func ) this->func->inplace(ret, false);	
+	end = std::chrono::system_clock::now();
+	this->t_apply_repl += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+
+	this->t_apply += std::chrono::duration_cast<std::chrono::nanoseconds>(end - tot_beg).count()/1e9;
+}
+#endif
+#ifdef USE_CUDA
+template<template<typename> class Mat, typename Real>
+cudaMatrix<Real> FullyConnected<Mat, Real>::apply ( const cudaMatrix<Real>& U, bool use_func )
+{
+	cudaMatrix<Real> ret(this->num_map*this->num_unit, U.n);
+
+	apply( U, ret, use_func );
+	
+	return ret;
+}
+template<template<typename> class Mat, typename Real>
+void FullyConnected<Mat, Real>::apply ( const cudaMatrix<Real>& U, cudaMatrix<Real>& ret, bool use_func )
+{
+	auto tot_beg = std::chrono::system_clock::now();
+#ifdef USE_MPI
+	//// future work : to use multiple GPU ////
+	// beg = std::chrono::system_clock::now();
+	// for( int i = 0; i < this->num_map; ++i ){
+	// 	tmp_ret[i] = this->W[i]*U;
+	// 	if( this->is_use_bias ) tmp_ret[i] += this->b[i]*clMatrix<Real>::ones(1, U.n);
+	// 	ret[i] = clMatrix<Real>(this->num_unit, U.n);
+	// }
+	// end = std::chrono::system_clock::now();
+	// this->t_apply_gemm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+
+	// beg = std::chrono::system_clock::now();
+	// std::vector<int> size(this->nprocs), offset(this->nprocs);
+	// for( int i = 0; i < this->nprocs; ++i ){
+	// 	size[i] = ((i+1)*this->num_unit/this->nprocs - i*this->num_unit/this->nprocs)*U.n;
+	// 	offset[i] = i*this->num_unit/this->nprocs*U.n;
+	// }
+
+	// for( int i = 0; i < this->num_map; ++i ){
+	// 	Matrix<Real> tmp_ret_ = tmp_ret[i];
+	// 	Matrix<Real> ret_ = ret[i];
+		
+	// 	MPI_Allgatherv(&tmp_ret_[i](0,0), size[this->rank], get_typecount(tmp_ret_[i](0,0)).mpi_type,
+	// 					&ret_[i](0,0), &size[0], &offset[0], get_typecount(ret_[i](0,0)).mpi_type, this->inner_world);
+
+	// 	ret[i] = ret_;
+	// }
+	// end = std::chrono::system_clock::now();
+	// this->t_apply_comm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;
+#else
+	auto beg = std::chrono::system_clock::now();
+	this->W[0].mult( 1.0, U, 0.0, ret);
+
+	if( this->is_use_bias ){
+        cuda_full_apply_bias_kernel(this->b[0].m, ret.n, this->b[0].v, ret.v);
 	}
 	auto end = std::chrono::system_clock::now();
 	this->t_apply_gemm += std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e9;

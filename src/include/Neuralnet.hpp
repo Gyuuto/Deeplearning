@@ -16,8 +16,11 @@
 #include "Layer/Layer.hpp"
 #include "Function.hpp"
 #include "Matrix.hpp"
-#ifdef USE_GPU
+#ifdef USE_OPENCL
 #include "clMatrix.hpp"
+#endif
+#ifdef USE_CUDA
+#include "cudaMatrix.hpp"
 #endif
 
 #ifdef USE_MPI
@@ -47,8 +50,11 @@ private:
 
 	void calc_gradient (const std::vector<Mat<Real>>& U_apply, const std::vector<Mat<Real>>& U_diff, const Mat<Real>& d, std::vector<std::vector<Mat<Real>>>& nabla_W, std::vector<std::vector<Mat<Real>>>& nabla_b, std::vector<Mat<Real>>& delta );
 	void check_gradient ( int cnt, const std::vector<int>& idx, const Matrix<Real>& X, const Matrix<Real>& Y, const std::vector<std::vector<Matrix<Real>>>& nabla_w, const std::vector<std::vector<Matrix<Real>>>& nabla_b );
-#ifdef USE_GPU
+#ifdef USE_OPENCL
 	void check_gradient ( int cnt, const std::vector<int>& idx, const clMatrix<Real>& X, const clMatrix<Real>& Y, const std::vector<std::vector<clMatrix<Real>>>& nabla_w, const std::vector<std::vector<clMatrix<Real>>>& nabla_b, cl_mem& cl_N, cl_mem& cl_idx, cl_mem& cl_offset );
+#endif
+#ifdef USE_CUDA
+	void check_gradient ( int cnt, const std::vector<int>& idx, const cudaMatrix<Real>& X, const cudaMatrix<Real>& Y, const std::vector<std::vector<cudaMatrix<Real>>>& nabla_w, const std::vector<std::vector<cudaMatrix<Real>>>& nabla_b );
 #endif
 public:
 #ifdef USE_MPI
@@ -75,11 +81,17 @@ public:
 					const int MAX_ITER = 1000,
 					const std::function<void(Neuralnet<Matrix, Real>&, const int, const Matrix<Real>&, const Matrix<Real>&)>& each_func
 					= [](Neuralnet<Matrix, Real>& nn, const int epoch, const Matrix<Real>& x, const Matrix<Real>& d) -> void {} );
-#ifdef USE_GPU
+#ifdef USE_OPENCL
 	void learning ( const clMatrix<Real>& X, const clMatrix<Real>& Y,
 					const int MAX_ITER = 1000,
 					const std::function<void(Neuralnet<clMatrix, Real>&, const int, const clMatrix<Real>&, const clMatrix<Real>&)>& each_func
 					= [](Neuralnet<clMatrix, Real>& nn, const int epoch, const clMatrix<Real>& x, const clMatrix<Real>& d) -> void {} );	
+#endif
+#ifdef USE_CUDA
+	void learning ( const cudaMatrix<Real>& X, const cudaMatrix<Real>& Y,
+					const int MAX_ITER = 1000,
+					const std::function<void(Neuralnet<cudaMatrix, Real>&, const int, const cudaMatrix<Real>&, const cudaMatrix<Real>&)>& each_func
+					= [](Neuralnet<cudaMatrix, Real>& nn, const int epoch, const cudaMatrix<Real>& x, const cudaMatrix<Real>& d) -> void {} );	
 #endif
 
 	std::vector<Mat<Real>> apply ( const std::vector<Mat<Real>>& X ) const;
@@ -253,7 +265,7 @@ void Neuralnet<Mat, Real>::check_gradient ( int cnt, const std::vector<int>& idx
 	}
 }
 
-#ifdef USE_GPU
+#ifdef USE_OPENCL
 template<template<typename> class Mat, typename Real>
 void Neuralnet<Mat, Real>::check_gradient ( int cnt, const std::vector<int>& idx, const clMatrix<Real>& X, const clMatrix<Real>& Y, const std::vector<std::vector<clMatrix<Real>>>& nabla_w, const std::vector<std::vector<clMatrix<Real>>>& nabla_b, cl_mem& cl_N, cl_mem& cl_idx, cl_mem& cl_offset )
 {
@@ -379,6 +391,13 @@ void Neuralnet<Mat, Real>::check_gradient ( int cnt, const std::vector<int>& idx
 		}
 		if( rank == target_rank ) puts("");
 	}
+}
+#endif
+
+#ifdef USE_CUDA
+template<template<typename> class Mat, typename Real>
+void Neuralnet<Mat, Real>::check_gradient ( int cnt, const std::vector<int>& idx, const cudaMatrix<Real>& X, const cudaMatrix<Real>& Y, const std::vector<std::vector<cudaMatrix<Real>>>& nabla_w, const std::vector<std::vector<cudaMatrix<Real>>>& nabla_b )
+{
 }
 #endif
 
@@ -711,7 +730,7 @@ void Neuralnet<Mat, Real>::learning ( const Matrix<Real>& X, const Matrix<Real>&
 	for( int i = 0; i < num_layer; ++i ) layer[i]->finalize();	
 }
 
-#ifdef USE_GPU
+#ifdef USE_OPENCL
 template<template<typename> class Mat, typename Real>
 void Neuralnet<Mat, Real>::learning ( const clMatrix<Real>& X, const clMatrix<Real>& Y,
 									  const int MAX_ITER,
@@ -752,16 +771,21 @@ void Neuralnet<Mat, Real>::learning ( const clMatrix<Real>& X, const clMatrix<Re
 	}
 
 	std::vector<std::vector<clMatrix<Real>>> nabla_W(num_layer), nabla_b(num_layer);
+    std::vector<std::vector<clMatrix<Real>>> update_W(num_layer), update_b(num_layer);
 	for( int i = 0; i < num_layer; ++i ){
 		const auto &W = layer[i]->get_W();
-		if( W.size() != 0 )
+		if( W.size() != 0 ) {
 			nabla_W[i] = std::vector<clMatrix<Real>>(W.size(), clMatrix<Real>(W[0].m, W[0].n));
+            update_W[i] = std::vector<clMatrix<Real>>(W.size(), clMatrix<Real>(W[0].m, W[0].n));
+        }
 		
 		const auto &b = layer[i]->get_b();
-		if( b.size() != 0 )
+		if( b.size() != 0 ) {
 			nabla_b[i] = std::vector<clMatrix<Real>>(b.size(), clMatrix<Real>(b[0].m, b[0].n));
+            update_b[i] = std::vector<clMatrix<Real>>(b.size(), clMatrix<Real>(b[0].m, b[0].n));
+        }
 	}
-	
+
 	for( int i = 0; i < num_layer; ++i ) layer[i]->unset_learning();
 	each_func(*this, 0, U_apply[0], D);
 	
@@ -887,8 +911,6 @@ void Neuralnet<Mat, Real>::learning ( const clMatrix<Real>& X, const clMatrix<Re
 
 			if( W.size() == 0 ) continue;
 
-			std::vector<clMatrix<Real>> update_W(W.size(), Mat<Real>(W[0].m, W[0].n)),
-				update_b(b.size(), Mat<Real>(b[0].m, b[0].n));
 			if( std::abs(LAMBDA) > 1.0E-15 ){
 				for( unsigned int j = 0; j < W.size(); ++j )
 					nabla_W[i][j] += LAMBDA*W[j];
@@ -897,7 +919,7 @@ void Neuralnet<Mat, Real>::learning ( const clMatrix<Real>& X, const clMatrix<Re
 			for( unsigned int j = 0; j < nabla_W[i].size(); ++j ){
 				cl_device_manager.set_argument( PRG::ADAM, 0, &adam_v_W[i][j].v );
 				cl_device_manager.set_argument( PRG::ADAM, 1, &adam_r_W[i][j].v );
-				cl_device_manager.set_argument( PRG::ADAM, 2, &update_W[j].v );
+				cl_device_manager.set_argument( PRG::ADAM, 2, &update_W[i][j].v );
 				cl_device_manager.set_argument( PRG::ADAM, 3, &nabla_W[i][j].v );
 				cl_device_manager.set_argument( PRG::ADAM, 4, &cl_adam_beta );
 				cl_device_manager.set_argument( PRG::ADAM, 5, &cl_adam_gamma );
@@ -911,7 +933,7 @@ void Neuralnet<Mat, Real>::learning ( const clMatrix<Real>& X, const clMatrix<Re
 			for( unsigned int j = 0; j < nabla_b[i].size(); ++j ){
 				cl_device_manager.set_argument( PRG::ADAM, 0, &adam_v_b[i][j].v );
 				cl_device_manager.set_argument( PRG::ADAM, 1, &adam_r_b[i][j].v );
-				cl_device_manager.set_argument( PRG::ADAM, 2, &update_b[j].v );
+				cl_device_manager.set_argument( PRG::ADAM, 2, &update_b[i][j].v );
 				cl_device_manager.set_argument( PRG::ADAM, 3, &nabla_b[i][j].v );
 				cl_device_manager.set_argument( PRG::ADAM, 4, &cl_adam_beta );
 				cl_device_manager.set_argument( PRG::ADAM, 5, &cl_adam_gamma );
@@ -921,7 +943,7 @@ void Neuralnet<Mat, Real>::learning ( const clMatrix<Real>& X, const clMatrix<Re
 				cl_device_manager.set_argument( PRG::ADAM, 9, &cl_adam_eps );
 				cl_device_manager.run_kernel( PRG::ADAM, b[j].m*b[j].n, 1 );
 			}
-			layer[i]->update_W(update_W, update_b);
+			layer[i]->update_W(update_W[i], update_b[i]);
 		}
 #ifdef DEBUG
 		end = std::chrono::system_clock::now();
@@ -959,6 +981,190 @@ void Neuralnet<Mat, Real>::learning ( const clMatrix<Real>& X, const clMatrix<Re
 	clReleaseMemObject(cl_adam_beta_);
 	clReleaseMemObject(cl_adam_gamma_);
 	clReleaseMemObject(cl_adam_eps);
+}
+#endif
+
+#ifdef USE_CUDA
+template<template<typename> class Mat, typename Real>
+void Neuralnet<Mat, Real>::learning ( const cudaMatrix<Real>& X, const cudaMatrix<Real>& Y,
+                                      const int MAX_ITER,
+                                      const std::function<void(Neuralnet<cudaMatrix, Real>&, const int, const cudaMatrix<Real>&, const cudaMatrix<Real>&)>& each_func )
+{
+#if defined(USE_MPI) || defined(DEBUG)
+	int myrank = 0;
+#endif
+    
+#ifdef USE_MPI
+    int nprocs = 1;
+	MPI_Comm_rank(inner_world, &myrank);
+	MPI_Comm_size(inner_world, &nprocs);
+#endif
+
+	const int num_layer = layer.size();
+	const int num_data = X.n;
+
+	int seed = time(NULL);
+#ifdef USE_MPI
+	MPI_Bcast(&seed, 1, MPI_INTEGER, 0, inner_world);
+#endif
+	mt = std::mt19937(seed);
+
+	// index of data
+	std::vector<int> idx(num_data);
+	std::iota(idx.begin(), idx.end(), 0);
+	std::shuffle( idx.begin(), idx.end(), mt );
+
+	// memory allocation for matrix U and D.
+	cudaMatrix<Real> D(Y.m, BATCH_SIZE);
+	std::vector<cudaMatrix<Real>> U_apply(num_layer+1), U_diff(num_layer+1), delta(num_layer);
+	U_apply[0] = cudaMatrix<Real>(X.m, BATCH_SIZE);
+	for( unsigned int i = 0; i < U_apply.size()-1; ++i ){
+		U_apply[i+1] = cudaMatrix<Real>(layer[i]->get_num_map()*layer[i]->get_num_unit(), BATCH_SIZE);
+		U_diff[i+1] = cudaMatrix<Real>(layer[i]->get_num_map()*layer[i]->get_num_unit(), BATCH_SIZE);
+		delta[i] = cudaMatrix<Real>(layer[i]->get_num_map()*layer[i]->get_num_unit(), BATCH_SIZE);
+	}
+
+	std::vector<std::vector<cudaMatrix<Real>>> nabla_W(num_layer), nabla_b(num_layer);
+    std::vector<std::vector<cudaMatrix<Real>>> update_W(num_layer), update_b(num_layer);
+	for( int i = 0; i < num_layer; ++i ){
+		const auto &W = layer[i]->get_W();
+		if( W.size() != 0 ) {
+			nabla_W[i] = std::vector<cudaMatrix<Real>>(W.size(), cudaMatrix<Real>(W[0].m, W[0].n));
+            update_W[i] = std::vector<cudaMatrix<Real>>(W.size(), cudaMatrix<Real>(W[0].m, W[0].n));
+        }
+		
+		const auto &b = layer[i]->get_b();
+		if( b.size() != 0 ) {
+			nabla_b[i] = std::vector<cudaMatrix<Real>>(b.size(), cudaMatrix<Real>(b[0].m, b[0].n));
+            update_b[i] = std::vector<cudaMatrix<Real>>(b.size(), cudaMatrix<Real>(b[0].m, b[0].n));
+        }
+	}
+
+	for( int i = 0; i < num_layer; ++i ) layer[i]->unset_learning();
+	each_func(*this, 0, U_apply[0], D);
+
+    int* cuda_idx;
+    cudaMalloc((void**)&cuda_idx, num_data*sizeof(int));
+    cudaMemcpy(cuda_idx, &idx[0], num_data*sizeof(int), cudaMemcpyHostToDevice);
+    
+	int cnt = 0;
+	for( int n = 0; n < MAX_ITER; ++n ){
+		for( int i = 0; i < num_layer; ++i ) layer[i]->set_learning();
+#ifdef DEBUG
+		auto beg = std::chrono::system_clock::now();
+#endif
+		// assign data to mini-batch
+        cuda_assign_data_kernel(num_data, U_apply[0].m, U_apply[0].n, U_apply[0].v, X.v, cuda_idx, cnt);
+
+        cuda_assign_data_kernel(num_data, D.m, D.n, D.v, Y.v, cuda_idx, cnt);
+#ifdef DEBUG
+		auto end = std::chrono::system_clock::now();
+		if( myrank == 0 ) printf("Init : %6.3f %d\n", std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e6, n);
+#endif
+#ifdef DEBUG
+		beg = std::chrono::system_clock::now();
+#endif
+		// feed forward calculation
+		for( int i = 0; i < num_layer; ++i ) {
+#ifdef DEBUG
+			auto beg = std::chrono::system_clock::now();
+#endif
+			layer[i]->apply(U_apply[i], U_apply[i+1], false);
+			// U_diff[i+1].sub(0, 0, U_diff[i+1].m, U_diff[i+1].n, U_apply[i+1]);
+
+			U_diff[i+1].copy(U_apply[i+1]);
+
+			layer[i]->get_function()->inplace(U_apply[i+1], false);
+			layer[i]->get_function()->inplace(U_diff[i+1], true);
+#ifdef DEBUG
+			auto end = std::chrono::system_clock::now();
+			if( myrank == 0 ) printf("  layer %d : %6.3f\n", i, std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e6);
+#endif
+		}
+#ifdef DEBUG
+		end = std::chrono::system_clock::now();
+		if( myrank == 0 ) printf("Feed : %6.3f %d\n", std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e6, n);
+#endif
+
+		// back propagation calculation
+#ifdef DEBUG
+		beg = std::chrono::system_clock::now();
+#endif
+		calc_gradient(U_apply, U_diff, D, nabla_W, nabla_b, delta);
+#ifdef DEBUG
+		end = std::chrono::system_clock::now();
+		if( myrank == 0 ) printf("Back : %6.3f\n", std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e6);
+#endif
+
+#ifdef DEBUG
+		beg = std::chrono::system_clock::now();
+#endif
+		// averaging all gradients of weights of mini-batches
+		for( unsigned int i = 0; i < nabla_W.size(); ++i )
+			for( unsigned int j = 0; j < nabla_W[i].size(); ++j )
+				nabla_W[i][j] *= 1.0/BATCH_SIZE;
+		for( unsigned int i = 0; i < nabla_b.size(); ++i )
+			for( unsigned int j = 0; j < nabla_b[i].size(); ++j )
+				nabla_b[i][j] *= 1.0/BATCH_SIZE;
+		
+#ifdef CHECK_GRAD
+		check_gradient(cnt, idx, X, Y, nabla_W, nabla_b, cl_N, cl_idx, cl_offset);
+#endif
+		cnt += BATCH_SIZE;
+		if( cnt >= num_data ){
+			std::shuffle( idx.begin(), idx.end(), mt );
+
+			cnt = 0;
+            cudaMemcpy( cuda_idx, &idx[0], num_data*sizeof(int), cudaMemcpyHostToDevice );
+		}
+
+		// update W
+		adam_beta_ *= adam_beta;
+		adam_gamma_ *= adam_gamma;
+		for( int i = 0; i < num_layer; ++i ){
+			const auto &W = layer[i]->get_W();
+
+			if( W.size() == 0 ) continue;
+
+			if( std::abs(LAMBDA) > 1.0E-15 ){
+				for( unsigned int j = 0; j < W.size(); ++j )
+					nabla_W[i][j] += LAMBDA*W[j];
+			}
+
+			for( unsigned int j = 0; j < nabla_W[i].size(); ++j ){
+                cuda_adam_kernel(nabla_W[i][j].m, nabla_W[i][j].n, adam_v_W[i][j].v, adam_r_W[i][j].v, update_W[i][j].v, nabla_W[i][j].v, adam_beta, adam_gamma, adam_beta_, adam_gamma_, EPS, adam_eps);
+			}
+
+			for( unsigned int j = 0; j < nabla_b[i].size(); ++j ){
+                cuda_adam_kernel(nabla_b[i][j].m, nabla_b[i][j].n, adam_v_b[i][j].v, adam_r_b[i][j].v, update_b[i][j].v, nabla_b[i][j].v, adam_beta, adam_gamma, adam_beta_, adam_gamma_, EPS, adam_eps);
+			}
+			layer[i]->update_W(update_W[i], update_b[i]);
+		}
+#ifdef DEBUG
+		end = std::chrono::system_clock::now();
+		if( myrank == 0 ) printf("Update : %6.3f\n", std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e6);
+#endif
+
+#ifdef DEBUG
+		beg = std::chrono::system_clock::now();
+#endif
+#ifdef USE_MPI
+		if( UPDATE_ITER != -1 && (n+1) % UPDATE_ITER == 0 ){
+			averaging();
+		}
+#endif
+		
+#ifdef DEBUG
+		end = std::chrono::system_clock::now();
+		if( myrank == 0 ) printf("Averaging : %6.3f\n", std::chrono::duration_cast<std::chrono::nanoseconds>(end - beg).count()/1e6);
+#endif
+		for( int i = 0; i < num_layer; ++i ) layer[i]->unset_learning();
+		each_func(*this, n+1, U_apply[0], D);
+	}
+
+	for( int i = 0; i < num_layer; ++i ) layer[i]->finalize();
+
+	cudaFree(cuda_idx);
 }
 #endif
 
